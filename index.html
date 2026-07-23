@@ -560,7 +560,12 @@ function loadProjects() {
 }
 
 function saveProjects(projects) {
-  localStorage.setItem(SK_PROJECTS, JSON.stringify(projects));
+  try {
+    localStorage.setItem(SK_PROJECTS, JSON.stringify(projects));
+  } catch (e) {
+    console.error('Failed to save projects to localStorage:', e);
+    alert('プロジェクトの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
 }
 
 function loadAllReviews() {
@@ -573,7 +578,12 @@ function loadAllReviews() {
 }
 
 function saveAllReviews(reviews) {
-  localStorage.setItem(SK_REVIEWS, JSON.stringify(reviews));
+  try {
+    localStorage.setItem(SK_REVIEWS, JSON.stringify(reviews));
+  } catch (e) {
+    console.error('Failed to save reviews to localStorage:', e);
+    alert('レビュー状態の保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -679,11 +689,15 @@ async function sha256hex(text) {
  * (NOT the @@ header), so line-number shifts don't alter the hash.
  */
 async function computeAllHashes(files) {
+  const promises = [];
   for (const file of files) {
     for (const hunk of file.hunks) {
-      hunk.hash = await sha256hex(hunk.lines.join('\n'));
+      promises.push(
+        sha256hex(hunk.lines.join('\n')).then(hash => { hunk.hash = hash; })
+      );
     }
   }
+  await Promise.all(promises);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -860,10 +874,9 @@ function buildHunkCard(filePath, hunk, isReviewed) {
 
     // "\ No newline at end of file"
     if (line.startsWith('\\')) {
-      tr.className = 'line-no-newline';
       const td = document.createElement('td');
       td.colSpan = 3;
-      td.className = 'line-content';
+      td.className = 'line-content line-no-newline';
       td.textContent = line;
       tr.appendChild(td);
       tbody.appendChild(tr);
@@ -1107,6 +1120,11 @@ function showConflictModal(fileName, existingProjects, parsed) {
   }
 
   document.getElementById('modal-overlay').classList.add('active');
+  
+  // Focus on the primary button for keyboard/screen-reader accessibility
+  setTimeout(() => {
+    document.getElementById('modal-btn-update').focus();
+  }, 100);
 }
 
 function hideModal() {
@@ -1182,6 +1200,13 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
 // Close modal by clicking the backdrop
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
   if (e.target === document.getElementById('modal-overlay')) hideModal();
+});
+
+// Close modal with ESC key for keyboard accessibility
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('modal-overlay').classList.contains('active')) {
+    hideModal();
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
