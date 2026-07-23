@@ -1,0 +1,21 @@
+diff --git a/src/utils/calculator.js b/src/utils/calculator.js
+index 3a1b2c4..7f8d9e0 100644
+--- a/src/utils/calculator.js
++++ b/src/utils/calculator.js
+@@ -1,10 +1,14 @@
++// Simple calculator utility
+ function add(a, b) {
+   return a + b;
+ }
+ 
+ function subtract(a, b) {
+-  return a - b;
++  if (typeof a !== 'number' || typeof b !== 'number') {
++    throw new TypeError('Arguments must be numbers');
++  }
++  return a - b;
+ }
+ 
+ function multiply(a, b) {
+   return a * b;
+ }

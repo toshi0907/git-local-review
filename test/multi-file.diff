@@ -1,0 +1,124 @@
+diff --git a/src/app.js b/src/app.js
+index 1a2b3c4..5d6e7f8 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -1,15 +1,18 @@
+-const express = require('express');
++const express = require('express');
++const helmet  = require('helmet');
++const cors    = require('cors');
+ 
+ const app = express();
++app.use(helmet());
++app.use(cors());
+ app.use(express.json());
+ 
+-const PORT = 3000;
++const PORT = process.env.PORT || 3000;
+ 
+ app.get('/', (req, res) => {
+   res.send('Hello World');
+ });
+ 
+-app.listen(PORT, () => console.log(`Listening on ${PORT}`));
++app.listen(PORT, () => {
++  console.log(`Server listening on port ${PORT}`);
++});
+ 
+ module.exports = app;
+@@ -20,8 +23,14 @@ module.exports = app;
+ // Routes
+ app.get('/health', (req, res) => {
+-  res.json({ status: 'ok' });
++  res.json({
++    status: 'ok',
++    uptime: process.uptime(),
++    timestamp: new Date().toISOString(),
++  });
+ });
+ 
+ app.get('/users', async (req, res) => {
+   try {
+-    const users = await db.getUsers();
++    const { page = 1, limit = 20 } = req.query;
++    const users = await db.getUsers({ page: +page, limit: +limit });
+     res.json(users);
+   } catch (err) {
+     res.status(500).json({ error: err.message });
+diff --git a/src/models/user.js b/src/models/user.js
+index 9a8b7c6..3f2e1d0 100644
+--- a/src/models/user.js
++++ b/src/models/user.js
+@@ -1,20 +1,22 @@
+ class User {
+   constructor(data) {
+     this.id    = data.id;
+     this.name  = data.name;
+     this.email = data.email;
++    this.role  = data.role || 'user';
+     this.createdAt = data.createdAt || new Date();
+   }
+ 
+   validate() {
+-    if (!this.name)  throw new Error('Name is required');
+-    if (!this.email) throw new Error('Email is required');
++    if (!this.name || this.name.trim() === '')
++      throw new Error('Name is required and must not be blank');
++    if (!this.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.email))
++      throw new Error('A valid email address is required');
+   }
+ 
+   toJSON() {
+     return {
+       id:        this.id,
+       name:      this.name,
+       email:     this.email,
++      role:      this.role,
+       createdAt: this.createdAt,
+     };
+   }
+@@ -24,9 +26,13 @@ class User {
+ 
+ User.fromDB = function(row) {
+-  return new User({
+-    id:        row.user_id,
+-    name:      row.full_name,
+-    email:     row.email_address,
+-    createdAt: row.created_at,
+-  });
++  if (!row) throw new Error('Cannot create User from null row');
++  return new User({
++    id:        row.user_id,
++    name:      row.full_name,
++    email:     row.email_address,
++    role:      row.user_role,
++    createdAt: row.created_at,
++  });
+ };
+ 
+ module.exports = User;
+diff --git a/src/config/database.js b/src/config/database.js
+index 4c5d6e7..8a9b0c1 100644
+--- a/src/config/database.js
++++ b/src/config/database.js
+@@ -5,12 +5,16 @@
+ const knex = require('knex');
+ 
+ const db = knex({
+   client: 'pg',
+   connection: {
+-    host:     'localhost',
+-    port:     5432,
+-    database: 'myapp',
+-    user:     'admin',
+-    password: 'secret',
++    host:     process.env.DB_HOST     || 'localhost',
++    port:     +(process.env.DB_PORT   || 5432),
++    database: process.env.DB_NAME     || 'myapp',
++    user:     process.env.DB_USER     || 'admin',
++    password: process.env.DB_PASSWORD || '',
+   },
++  pool: { min: 2, max: 10 },
+ });
+ 
+ module.exports = db;
