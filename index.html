@@ -649,11 +649,29 @@ function parseDiff(text) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHA-256 hashing (Web Crypto API)
+// Hashing (Web Crypto API with non-cryptographic fallback for file:// etc.)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Simple djb2-based fallback used when crypto.subtle is unavailable
+function djb2hex(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h) ^ text.charCodeAt(i);
+    h = h >>> 0; // keep unsigned 32-bit
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
 async function sha256hex(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  if (crypto && crypto.subtle) {
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) {
+      // fall through to non-cryptographic fallback
+    }
+  }
+  return djb2hex(text);
 }
 
 /**
