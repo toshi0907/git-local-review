@@ -109,6 +109,33 @@
 
     #file-input { display: none; }
 
+    .io-btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .io-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #f6f8fa;
+      color: #24292e;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .io-btn:hover { background: #e7eaef; }
+
+    #import-input { display: none; }
+
     .sidebar-section-title {
       padding: 10px 16px;
       font-size: 11px;
@@ -541,6 +568,15 @@
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
+      <div class="io-btn-row">
+        <input type="file" id="import-input" accept="application/json,.json">
+        <button class="io-btn" id="export-btn" title="プロジェクトとレビュー状態をJSONファイルに保存">
+          <span aria-hidden="true">💾</span> エクスポート
+        </button>
+        <button class="io-btn" id="import-btn" title="エクスポートしたJSONファイルから復元">
+          <span aria-hidden="true">📥</span> インポート
+        </button>
+      </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
     <div class="project-list" id="project-list"></div>
@@ -618,28 +654,33 @@ function saveProjects(projects) {
   }
 }
 
-function loadAllReviews() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
-    // Rebuild with null-prototype objects to prevent prototype pollution
-    // from diff-derived file paths used as object keys.
-    const safe = Object.create(null);
-    for (const pid of Object.keys(parsed)) {
-      safe[pid] = Object.create(null);
-      const fileMap = parsed[pid];
-      if (fileMap && typeof fileMap === 'object') {
-        for (const fp of Object.keys(fileMap)) {
-          safe[pid][fp] = Object.create(null);
-          const hashMap = fileMap[fp];
-          if (hashMap && typeof hashMap === 'object') {
-            for (const h of Object.keys(hashMap)) {
-              safe[pid][fp][h] = hashMap[h];
-            }
+// Rebuild with null-prototype objects to prevent prototype pollution
+// from diff-derived (or imported) file paths used as object keys.
+function sanitizeReviewsData(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object') return safe;
+  for (const pid of Object.keys(parsed)) {
+    safe[pid] = Object.create(null);
+    const fileMap = parsed[pid];
+    if (fileMap && typeof fileMap === 'object') {
+      for (const fp of Object.keys(fileMap)) {
+        safe[pid][fp] = Object.create(null);
+        const hashMap = fileMap[fp];
+        if (hashMap && typeof hashMap === 'object') {
+          for (const h of Object.keys(hashMap)) {
+            safe[pid][fp][h] = hashMap[h];
           }
         }
       }
     }
-    return safe;
+  }
+  return safe;
+}
+
+function loadAllReviews() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
+    return sanitizeReviewsData(parsed);
   } catch (e) {
     console.error('Failed to parse reviews from localStorage:', e);
     return Object.create(null);
@@ -1343,6 +1384,88 @@ function updateExistingProject(projectId, parsed) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Export / Import
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Keep only well-formed project entries; drop anything with an unexpected shape. */
+function sanitizeImportedProjects(rawProjects) {
+  if (!Array.isArray(rawProjects)) return [];
+  const result = [];
+  for (const p of rawProjects) {
+    if (!p || typeof p !== 'object') continue;
+    if (typeof p.id !== 'string' || typeof p.fileName !== 'string') continue;
+    const createdAt = typeof p.createdAt === 'number' ? p.createdAt : Date.now();
+    const lastUpdated = typeof p.lastUpdated === 'number' ? p.lastUpdated : createdAt;
+    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated });
+  }
+  return result;
+}
+
+/** Download all projects + review state as a single JSON file. */
+function exportAppData() {
+  const data = {
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    projects: loadProjects(),
+    reviews: loadAllReviews(),
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `git-local-review-export_${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Restore projects + review state from a previously exported JSON file. */
+async function importAppData(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+  } catch (err) {
+    alert(`インポートファイルの読み込みに失敗しました:\n${err.message}`);
+    return;
+  }
+
+  if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) {
+    alert('インポートファイルの形式が正しくありません。');
+    return;
+  }
+
+  const importedProjects = sanitizeImportedProjects(data.projects);
+  const importedReviews  = sanitizeReviewsData(data.reviews);
+
+  if (importedProjects.length === 0) {
+    alert('インポート可能なプロジェクトが見つかりませんでした。');
+    return;
+  }
+
+  if (!confirm(
+    `${importedProjects.length} 件のプロジェクトをインポートします。\n` +
+    `同じIDの既存プロジェクトは上書きされます。よろしいですか？`
+  )) return;
+
+  const byId = new Map(loadProjects().map(p => [p.id, p]));
+  for (const p of importedProjects) byId.set(p.id, p);
+  saveProjects([...byId.values()]);
+
+  const reviews = loadAllReviews();
+  for (const pid of Object.keys(importedReviews)) {
+    reviews[pid] = importedReviews[pid];
+  }
+  saveAllReviews(reviews);
+
+  renderProjectList();
+  alert(`${importedProjects.length} 件のプロジェクトをインポートしました。`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Conflict modal (same filename detected)
 // ─────────────────────────────────────────────────────────────────────────────
 function showConflictModal(fileName, existingProjects, parsed) {
@@ -1452,6 +1575,19 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   if (!file) return;
   e.target.value = ''; // allow re-selecting the same file
   await loadDiffFile(file);
+});
+
+document.getElementById('export-btn').addEventListener('click', exportAppData);
+
+document.getElementById('import-btn').addEventListener('click', () => {
+  document.getElementById('import-input').click();
+});
+
+document.getElementById('import-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = ''; // allow re-selecting the same file
+  await importAppData(file);
 });
 
 document.getElementById('modal-btn-new').addEventListener('click', () => {
