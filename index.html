@@ -656,7 +656,7 @@ function parseDiff(text) {
 function djb2hex(text) {
   let h = 5381;
   for (let i = 0; i < text.length; i++) {
-    h = ((h << 5) + h) ^ text.charCodeAt(i);
+    h = ((h << 5) + h) + text.charCodeAt(i);
     h = h >>> 0; // keep unsigned 32-bit
   }
   return h.toString(16).padStart(8, '0');
@@ -667,8 +667,8 @@ async function sha256hex(text) {
     try {
       const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
       return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (_) {
-      // fall through to non-cryptographic fallback
+    } catch (err) {
+      console.error('crypto.subtle unavailable, using fallback hash:', err);
     }
   }
   return djb2hex(text);
