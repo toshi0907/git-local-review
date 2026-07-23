@@ -1,0 +1,46 @@
+diff --git a/docs/CHANGELOG.md b/docs/CHANGELOG.md
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/docs/CHANGELOG.md
+@@ -0,0 +1,12 @@
++# Changelog
++
++## [1.1.0] - 2026-07-01
++
++### Added
++- User role field (`admin`, `user`)
++- Pagination support for `/users` endpoint
++- Helmet and CORS middleware
++
++### Fixed
++- Database credentials now read from environment variables
++- Email validation uses regex pattern
+diff --git a/src/utils/legacy-helper.js b/src/utils/legacy-helper.js
+deleted file mode 100644
+index d4e5f6a..0000000
+--- a/src/utils/legacy-helper.js
++++ /dev/null
+@@ -1,10 +0,0 @@
+-// TODO: remove after migration
+-function legacyFormat(data) {
+-  return JSON.stringify(data);
+-}
+-
+-function legacyParse(str) {
+-  return JSON.parse(str);
+-}
+-
+-module.exports = { legacyFormat, legacyParse };
+diff --git a/src/utils/formatter.js b/src/utils/formatter.js
+index 2b3c4d5..6e7f8a9 100644
+--- a/src/utils/formatter.js
++++ b/src/utils/formatter.js
+@@ -8,4 +8,5 @@
+ function formatDate(date) {
+   return date.toISOString().slice(0, 10);
+ }
+-module.exports = { formatName, formatDate };
+\ No newline at end of file
++
++module.exports = { formatName, formatDate };
