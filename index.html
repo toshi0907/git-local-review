@@ -551,7 +551,12 @@ let modalSelectedId  = null;
 // localStorage helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function loadProjects() {
-  try { return JSON.parse(localStorage.getItem(SK_PROJECTS) || '[]'); } catch (e) { console.error('Failed to parse projects from localStorage:', e); return []; }
+  try {
+    return JSON.parse(localStorage.getItem(SK_PROJECTS) || '[]');
+  } catch (e) {
+    console.error('Failed to parse projects from localStorage:', e);
+    return [];
+  }
 }
 
 function saveProjects(projects) {
@@ -559,7 +564,12 @@ function saveProjects(projects) {
 }
 
 function loadAllReviews() {
-  try { return JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}'); } catch (e) { console.error('Failed to parse reviews from localStorage:', e); return {}; }
+  try {
+    return JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
+  } catch (e) {
+    console.error('Failed to parse reviews from localStorage:', e);
+    return {};
+  }
 }
 
 function saveAllReviews(reviews) {
@@ -595,7 +605,10 @@ function parseDiff(text) {
   let curHunk = null;
 
   function commitHunk() {
-    if (curHunk && curFile) { curFile.hunks.push(curHunk); curHunk = null; }
+    if (curHunk && curFile) {
+      curFile.hunks.push(curHunk);
+      curHunk = null;
+    }
   }
   function commitFile() {
     commitHunk();
@@ -843,9 +856,17 @@ function buildHunkCard(filePath, hunk, isReviewed) {
     const content = line.length > 1 ? line.slice(1) : '';
 
     let cls, oldLabel = '', newLabel = '';
-    if (type === '+')      { cls = 'line-add';     newLabel = newN++; }
-    else if (type === '-') { cls = 'line-del';     oldLabel = oldN++; }
-    else                   { cls = 'line-context'; oldLabel = oldN++; newLabel = newN++; }
+    if (type === '+') {
+      cls = 'line-add';
+      newLabel = newN++;
+    } else if (type === '-') {
+      cls = 'line-del';
+      oldLabel = oldN++;
+    } else {
+      cls = 'line-context';
+      oldLabel = oldN++;
+      newLabel = newN++;
+    }
 
     tr.className = cls;
 
