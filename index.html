@@ -1364,6 +1364,13 @@ async function activateProject(projectId) {
   localStorage.setItem(SK_CURRENT, projectId);
 
   renderProjectList();
+  // Clear the previous project's diff (and its checkboxes) immediately so
+  // there's no window where the visible hunks belong to a different project
+  // than app.currentProjectId while restoreProjectDiff's hashing is pending.
+  showEmptyState(`
+    <span class="icon" aria-hidden="true">⏳</span>
+    プロジェクト「${esc(proj.fileName)}」を読み込み中…
+  `);
   await restoreProjectDiff(proj);
 }
 
@@ -1378,12 +1385,16 @@ async function restoreProjectDiff(proj) {
     const parsed = parseDiff(savedText);
     if (parsed.length > 0) {
       await computeAllHashes(parsed);
+      // If the user switched to a different project while hashing was in
+      // flight, don't clobber whatever is now on screen with stale results.
+      if (app.currentProjectId !== proj.id) return;
       app.parsedDiff = parsed;
       renderDiff();
       return;
     }
   }
 
+  if (app.currentProjectId !== proj.id) return;
   app.parsedDiff = null;
   showEmptyState(`
     <span class="icon" aria-hidden="true">📂</span>
