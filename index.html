@@ -739,13 +739,14 @@ function parseDiff(text) {
  */
 function detectLanguage(filePath) {
   // Extract the filename from the path, then find its extension.
-  // Using lastIndexOf ensures that dotfiles with extensions (e.g. ".myfile.cpp")
-  // are handled correctly: dotIdx is the position of the *last* dot, so
-  // dotIdx <= 0 only rejects no-extension files ("Makefile") and plain hidden
-  // files whose sole dot is the leading one (".gitignore").
+  // Using lastIndexOf ensures that dotfiles with a real extension
+  // (e.g. ".myfile.cpp", dotIdx = 8) are handled correctly.
+  // dotIdx < 0 rejects files with no dot at all (e.g. "Makefile").
+  // dotIdx = 0 means the sole dot is the leading dot (e.g. ".gitignore"),
+  // which has no meaningful extension, so dotIdx <= 0 rejects both cases.
   const fileName = filePath.split('/').pop();
   const dotIdx   = fileName.lastIndexOf('.');
-  if (dotIdx <= 0) return null; // no extension or leading-dot with no further extension
+  if (dotIdx <= 0) return null; // no extension or leading-dot only (e.g. ".gitignore")
   const ext = fileName.slice(dotIdx + 1).toLowerCase();
   const map = {
     'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'c++': 'cpp',
@@ -784,9 +785,18 @@ function detectLanguage(filePath) {
  * @returns {string[]}
  */
 function splitHighlightedLines(html) {
+  const openTagStack = []; // stack of full opening tag strings, e.g. '<span class="hljs-comment">'
+
+  // Build closing tags for all currently open spans (innermost first)
+  function buildClosers() {
+    return openTagStack.slice().reverse().map(t => {
+      const m = t.match(/^<(\w+)/);
+      return m ? `</${m[1]}>` : '';
+    }).join('');
+  }
+
   const result = [];
   let line = '';
-  const openTagStack = []; // stack of full opening tag strings, e.g. '<span class="hljs-comment">'
   let i = 0;
 
   while (i < html.length) {
@@ -794,11 +804,7 @@ function splitHighlightedLines(html) {
       const tagEnd = html.indexOf('>', i);
       if (tagEnd === -1) {
         // Malformed HTML: close any open tags before appending remainder
-        const closers = openTagStack.slice().reverse().map(t => {
-          const m = t.match(/^<(\w+)/);
-          return m ? `</${m[1]}>` : '';
-        }).join('');
-        line += closers + html.slice(i);
+        line += buildClosers() + html.slice(i);
         break;
       }
       const tag = html.slice(i, tagEnd + 1);
@@ -811,11 +817,7 @@ function splitHighlightedLines(html) {
       i = tagEnd + 1;
     } else if (html[i] === '\n') {
       // Close all open tags before line break, then reopen them on the next line
-      const closers = openTagStack.slice().reverse().map(t => {
-        const m = t.match(/^<(\w+)/);
-        return m ? `</${m[1]}>` : '';
-      }).join('');
-      result.push(line + closers);
+      result.push(line + buildClosers());
       line = openTagStack.join('');
       i++;
     } else {
@@ -1128,10 +1130,11 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     tdCon.appendChild(pfx);
 
     if (hlLines && currentIdx < hlLines.length) {
-      // highlight.js HTML-encodes all source characters (<, >, &, ") before
-      // wrapping them in <span> elements, so innerHTML is safe to use here.
+      // Use DOMParser to safely convert highlighted HTML into DOM nodes,
+      // avoiding direct innerHTML assignment.
       const codeSpan = document.createElement('span');
-      codeSpan.innerHTML = hlLines[currentIdx];
+      const parsed = new DOMParser().parseFromString(hlLines[currentIdx], 'text/html');
+      parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
       tdCon.appendChild(codeSpan);
     } else {
       tdCon.appendChild(document.createTextNode(content));
