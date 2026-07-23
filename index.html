@@ -615,6 +615,7 @@
 const SK_PROJECTS = 'gitLocalReview_projects';
 const SK_REVIEWS  = 'gitLocalReview_reviews';
 const SK_CURRENT  = 'gitLocalReview_currentProject';
+const SK_FILES    = 'gitLocalReview_files';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -631,6 +632,7 @@ const app = {
 // Modal transient state
 let modalFileName    = '';
 let modalParsedDiff  = null;
+let modalRawText     = null;
 let modalSelectedId  = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -694,6 +696,56 @@ function saveAllReviews(reviews) {
     console.error('Failed to save reviews to localStorage:', e);
     alert('レビュー状態の保存に失敗しました。ストレージの容量が不足している可能性があります。');
   }
+}
+
+// Rebuild with a null-prototype object for the same reason as sanitizeReviewsData:
+// project IDs stored here may originate from an imported export file.
+function sanitizeFilesData(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object') return safe;
+  for (const pid of Object.keys(parsed)) {
+    if (typeof parsed[pid] === 'string') safe[pid] = parsed[pid];
+  }
+  return safe;
+}
+
+function loadAllFiles() {
+  try {
+    return sanitizeFilesData(JSON.parse(localStorage.getItem(SK_FILES) || '{}'));
+  } catch (e) {
+    console.error('Failed to parse saved file contents from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllFiles(files) {
+  try {
+    localStorage.setItem(SK_FILES, JSON.stringify(files));
+  } catch (e) {
+    console.error('Failed to save file content to localStorage:', e);
+    alert(
+      'アップロードしたファイルの保存に失敗しました。ストレージの容量が不足している可能性があります。\n' +
+      '表示中のレビューはそのまま続けられますが、次回はdiffファイルの再読み込みが必要です。'
+    );
+  }
+}
+
+/** Get the last uploaded diff content for a project, or null if none is saved. */
+function loadFileContent(projectId) {
+  const files = loadAllFiles();
+  return typeof files[projectId] === 'string' ? files[projectId] : null;
+}
+
+function saveFileContent(projectId, text) {
+  const files = loadAllFiles();
+  files[projectId] = text;
+  saveAllFiles(files);
+}
+
+function deleteFileContent(projectId) {
+  const files = loadAllFiles();
+  delete files[projectId];
+  saveAllFiles(files);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1301,8 +1353,8 @@ function showEmptyState(html) {
 // Project actions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Switch active project selection in the sidebar (diff must be reloaded) */
-function activateProject(projectId) {
+/** Switch active project selection in the sidebar and restore its last diff, if saved */
+async function activateProject(projectId) {
   if (app.currentProjectId === projectId) return;
   const proj = loadProjects().find(p => p.id === projectId);
   if (!proj) return;
@@ -1312,6 +1364,27 @@ function activateProject(projectId) {
   localStorage.setItem(SK_CURRENT, projectId);
 
   renderProjectList();
+  await restoreProjectDiff(proj);
+}
+
+/**
+ * Try to re-render a project's diff from its saved file content.
+ * Falls back to the "please reload the file" prompt if nothing was saved
+ * (e.g. projects created before this feature, or a failed save due to quota).
+ */
+async function restoreProjectDiff(proj) {
+  const savedText = loadFileContent(proj.id);
+  if (savedText != null) {
+    const parsed = parseDiff(savedText);
+    if (parsed.length > 0) {
+      await computeAllHashes(parsed);
+      app.parsedDiff = parsed;
+      renderDiff();
+      return;
+    }
+  }
+
+  app.parsedDiff = null;
   showEmptyState(`
     <span class="icon" aria-hidden="true">📂</span>
     プロジェクト「${esc(proj.fileName)}」を選択中<br>
@@ -1340,6 +1413,7 @@ function deleteProject(projectId) {
   const allReviews = loadAllReviews();
   delete allReviews[projectId];
   saveAllReviews(allReviews);
+  deleteFileContent(projectId);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
 
@@ -1354,12 +1428,13 @@ function deleteProject(projectId) {
 }
 
 /** Create a brand-new project and display its diff */
-function createNewProject(fileName, parsed) {
+function createNewProject(fileName, parsed, rawText) {
   const id  = generateProjectId(fileName);
   const now = Date.now();
   const projects = loadProjects();
   projects.push({ id, fileName, createdAt: now, lastUpdated: now });
   saveProjects(projects);
+  saveFileContent(id, rawText);
 
   app.currentProjectId = id;
   app.parsedDiff = parsed;
@@ -1370,10 +1445,11 @@ function createNewProject(fileName, parsed) {
 }
 
 /** Update an existing project's metadata and display its (new) diff */
-function updateExistingProject(projectId, parsed) {
+function updateExistingProject(projectId, parsed, rawText) {
   const projects = loadProjects();
   const proj = projects.find(p => p.id === projectId);
   if (proj) { proj.lastUpdated = Date.now(); saveProjects(projects); }
+  saveFileContent(projectId, rawText);
 
   app.currentProjectId = projectId;
   app.parsedDiff = parsed;
@@ -1468,9 +1544,10 @@ async function importAppData(file) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Conflict modal (same filename detected)
 // ─────────────────────────────────────────────────────────────────────────────
-function showConflictModal(fileName, existingProjects, parsed) {
+function showConflictModal(fileName, existingProjects, parsed, rawText) {
   modalFileName   = fileName;
   modalParsedDiff = parsed;
+  modalRawText    = rawText;
 
   document.getElementById('modal-desc').textContent =
     `ファイル名「${fileName}」の既存プロジェクトが ${existingProjects.length} 件あります。` +
@@ -1526,6 +1603,7 @@ function hideModal() {
   document.getElementById('modal-overlay').classList.remove('active');
   modalFileName   = '';
   modalParsedDiff = null;
+  modalRawText    = null;
   modalSelectedId = null;
 }
 
@@ -1557,9 +1635,9 @@ async function loadDiffFile(file) {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed);
+    showConflictModal(fileName, existing, parsed, text);
   } else {
-    createNewProject(fileName, parsed);
+    createNewProject(fileName, parsed, text);
   }
 }
 
@@ -1591,18 +1669,20 @@ document.getElementById('import-input').addEventListener('change', async (e) => 
 });
 
 document.getElementById('modal-btn-new').addEventListener('click', () => {
-  const fn     = modalFileName;
-  const parsed = modalParsedDiff;
+  const fn      = modalFileName;
+  const parsed  = modalParsedDiff;
+  const rawText = modalRawText;
   hideModal();
-  createNewProject(fn, parsed);
+  createNewProject(fn, parsed, rawText);
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
   if (!modalSelectedId) { alert('更新するプロジェクトを選択してください。'); return; }
-  const id     = modalSelectedId;
-  const parsed = modalParsedDiff;
+  const id      = modalSelectedId;
+  const parsed  = modalParsedDiff;
+  const rawText = modalRawText;
   hideModal();
-  updateExistingProject(id, parsed);
+  updateExistingProject(id, parsed, rawText);
 });
 
 // Close modal by clicking the backdrop
@@ -1621,23 +1701,18 @@ document.addEventListener('keydown', (e) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
-(function init() {
+(async function init() {
   renderProjectList();
 
-  // Restore the last active project selection.
-  // The diff itself cannot be stored (potentially large), so we just show a
-  // prompt to reload the file.
+  // Restore the last active project selection, and its diff if a copy of the
+  // last uploaded file was saved for it.
   const lastId = localStorage.getItem(SK_CURRENT);
   if (lastId) {
     const proj = loadProjects().find(p => p.id === lastId);
     if (proj) {
       app.currentProjectId = lastId;
       renderProjectList();
-      showEmptyState(`
-        <span class="icon" aria-hidden="true">📂</span>
-        プロジェクト「${esc(proj.fileName)}」を選択中<br>
-        同じdiffファイルを再度読み込むと、レビュー済み状態が復元されます
-      `);
+      await restoreProjectDiff(proj);
     }
   } else {
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
