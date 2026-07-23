@@ -570,10 +570,29 @@ function saveProjects(projects) {
 
 function loadAllReviews() {
   try {
-    return JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
+    // Rebuild with null-prototype objects to prevent prototype pollution
+    // from diff-derived file paths used as object keys.
+    const safe = Object.create(null);
+    for (const pid of Object.keys(parsed)) {
+      safe[pid] = Object.create(null);
+      const fileMap = parsed[pid];
+      if (fileMap && typeof fileMap === 'object') {
+        for (const fp of Object.keys(fileMap)) {
+          safe[pid][fp] = Object.create(null);
+          const hashMap = fileMap[fp];
+          if (hashMap && typeof hashMap === 'object') {
+            for (const h of Object.keys(hashMap)) {
+              safe[pid][fp][h] = hashMap[h];
+            }
+          }
+        }
+      }
+    }
+    return safe;
   } catch (e) {
     console.error('Failed to parse reviews from localStorage:', e);
-    return {};
+    return Object.create(null);
   }
 }
 
@@ -792,12 +811,12 @@ function renderDiff() {
   emptyState.style.display = 'none';
 
   const allReviews     = loadAllReviews();
-  const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || {}) : {};
+  const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
 
   let totalHunks = 0, totalReviewed = 0;
 
   for (const file of files) {
-    const fileReviews  = projectReviews[file.filePath] || {};
+    const fileReviews  = projectReviews[file.filePath] || Object.create(null);
     const reviewedCnt  = file.hunks.filter(h => fileReviews[h.hash]).length;
     totalHunks    += file.hunks.length;
     totalReviewed += reviewedCnt;
@@ -931,8 +950,8 @@ function onCheckboxChange(e) {
   const hash     = card.dataset.hunkHash;
 
   const allReviews = loadAllReviews();
-  if (!allReviews[app.currentProjectId])           allReviews[app.currentProjectId] = {};
-  if (!allReviews[app.currentProjectId][filePath]) allReviews[app.currentProjectId][filePath] = {};
+  if (!allReviews[app.currentProjectId])           allReviews[app.currentProjectId] = Object.create(null);
+  if (!allReviews[app.currentProjectId][filePath]) allReviews[app.currentProjectId][filePath] = Object.create(null);
 
   if (cb.checked) {
     allReviews[app.currentProjectId][filePath][hash] = true;
@@ -952,11 +971,11 @@ function onCheckboxChange(e) {
 function refreshProgress() {
   if (!app.parsedDiff || !app.currentProjectId) return;
 
-  const projectReviews = (loadAllReviews()[app.currentProjectId]) || {};
+  const projectReviews = (loadAllReviews()[app.currentProjectId]) || Object.create(null);
   let totalHunks = 0, totalReviewed = 0;
 
   for (const file of app.parsedDiff) {
-    const fileReviews = projectReviews[file.filePath] || {};
+    const fileReviews = projectReviews[file.filePath] || Object.create(null);
     const rev   = file.hunks.filter(h => fileReviews[h.hash]).length;
     const total = file.hunks.length;
     totalHunks    += total;
