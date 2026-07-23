@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Git Local Review</title>
-  <!-- highlight.js (v11.9.0, bundled) -->
+  <!-- highlight.js (v11.9.0, minified and bundled for offline use) -->
   <style>
     pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}/*!
   Theme: GitHub
@@ -739,11 +739,13 @@ function parseDiff(text) {
  */
 function detectLanguage(filePath) {
   // Extract the filename from the path, then find its extension.
-  // Handles: no extension (e.g. "Makefile"), hidden files (e.g. ".gitignore")
-  // and normal extensions (e.g. "main.cpp").
+  // Using lastIndexOf ensures that dotfiles with extensions (e.g. ".myfile.cpp")
+  // are handled correctly: dotIdx is the position of the *last* dot, so
+  // dotIdx <= 0 only rejects no-extension files ("Makefile") and plain hidden
+  // files whose sole dot is the leading one (".gitignore").
   const fileName = filePath.split('/').pop();
   const dotIdx   = fileName.lastIndexOf('.');
-  if (dotIdx <= 0) return null; // no extension or leading-dot file with no real extension
+  if (dotIdx <= 0) return null; // no extension or leading-dot with no further extension
   const ext = fileName.slice(dotIdx + 1).toLowerCase();
   const map = {
     'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'c++': 'cpp',
@@ -1019,8 +1021,9 @@ function renderDiff() {
     section.appendChild(fileHeader);
 
     // Hunks
+    const fileLanguage = detectLanguage(file.filePath);
     for (const hunk of file.hunks) {
-      section.appendChild(buildHunkCard(file.filePath, hunk, !!fileReviews[hunk.hash]));
+      section.appendChild(buildHunkCard(file.filePath, hunk, !!fileReviews[hunk.hash], fileLanguage));
     }
 
     container.appendChild(section);
@@ -1032,7 +1035,7 @@ function renderDiff() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Build a single hunk card element
 // ─────────────────────────────────────────────────────────────────────────────
-function buildHunkCard(filePath, hunk, isReviewed) {
+function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   const card = document.createElement('div');
   card.className = 'hunk-card' + (isReviewed ? ' reviewed collapsed' : '');
   card.dataset.filePath = filePath;
@@ -1081,8 +1084,7 @@ function buildHunkCard(filePath, hunk, isReviewed) {
   let oldN = oldStart, newN = newStart;
 
   // Pre-compute highlighted lines for this hunk (may be null if unavailable)
-  const language = detectLanguage(filePath);
-  const hlLines  = highlightHunkLines(hunk.lines, language);
+  const hlLines = highlightHunkLines(hunk.lines, language);
   let lineIdx = 0;
 
   for (const line of hunk.lines) {
