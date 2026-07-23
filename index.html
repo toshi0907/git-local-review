@@ -842,11 +842,14 @@ const domParser = (typeof DOMParser !== 'undefined') ? new DOMParser() : null;
  * Highlight all lines of a hunk using highlight.js.
  * Returns an array of HTML strings (one per line, matching hunk.lines),
  * or null when highlighting is unavailable or the language is not detected.
- * @param {string[]} lines  – raw diff lines (each starts with +, -, or space)
+ * When language is null this function returns immediately (O(1)), so it is
+ * safe to call it unconditionally for every hunk.
+ * @param {string[]} lines    – raw diff lines (each starts with +, -, or space)
  * @param {string|null} language
+ * @param {string} [filePath] – used only in debug messages
  * @returns {string[]|null}
  */
-function highlightHunkLines(lines, language) {
+function highlightHunkLines(lines, language, filePath) {
   if (!language || typeof hljs === 'undefined') return null;
 
   // Strip the diff prefix character (+/-/space). Lines starting with '\'
@@ -862,7 +865,7 @@ function highlightHunkLines(lines, language) {
   try {
     highlighted = hljs.highlight(code, { language, ignoreIllegals: true }).value;
   } catch (e) {
-    console.warn('highlight.js failed for language', language, e);
+    console.warn('highlight.js failed for language', language, 'in', filePath || '(unknown file)', e);
     return null;
   }
 
@@ -1096,8 +1099,9 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   const { oldStart, newStart } = parseHunkHeader(hunk.header);
   let oldN = oldStart, newN = newStart;
 
-  // Pre-compute highlighted lines for this hunk (may be null if unavailable)
-  const hlLines = highlightHunkLines(hunk.lines, language);
+  // Pre-compute highlighted lines for this hunk (may be null if unavailable).
+  // When language is null, highlightHunkLines returns immediately (O(1)).
+  const hlLines = highlightHunkLines(hunk.lines, language, filePath);
   let lineIdx = 0;
 
   for (const line of hunk.lines) {
