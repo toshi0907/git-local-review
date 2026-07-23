@@ -5,7 +5,9 @@
 ## 特徴
 
 - **シングルファイル** — `index.html` をブラウザで開くだけで動作（サーバー・ビルド不要）
+- **オフライン動作** — 外部サーバーへの通信は一切なし。highlight.js を含むすべての依存ライブラリをインライン同梱済み
 - **差分の表示** — `git diff` / `git show` で生成されたユニファイド diff を貼り付けてレビュー
+- **シンタックスハイライト** — ファイル拡張子を元に言語を自動検出し、差分行をハンク単位でハイライト表示（highlight.js v11.9.0 使用）
 - **ハンクごとのレビュー管理** — ハンク単位で「レビュー済み」チェックが可能
 - **進捗カウンター** — ファイルごと・全体の `n / m hunk` 進捗をリアルタイム表示
 - **状態の永続化** — レビュー状態は `localStorage` に保存され、ページを再読み込みしても復元
@@ -25,6 +27,14 @@ git diff HEAD~1 > review.diff
 git diff main..feature-branch > feature.diff
 git show abc1234 > commit.diff
 ```
+
+## シンタックスハイライト
+
+ファイル拡張子から言語を自動検出し、diff の各行をハンク単位でハイライト表示します。拡張子が不明な場合はプレーンテキストとして表示されます。
+
+**対応言語:** C++, C, JavaScript, TypeScript, Python, Ruby, Go, Rust, Java, C#, HTML, CSS, Bash, JSON, XML, YAML, Markdown, SQL, Kotlin, Swift, PHP, Scala
+
+> highlight.js はファイル内にインライン同梱されており、外部 CDN への通信は発生しません。
 
 ## プロジェクト ID
 
