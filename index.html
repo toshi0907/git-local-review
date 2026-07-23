@@ -384,10 +384,10 @@
     }
 
     /* Prevent highlight.js from overriding diff row background colors */
-    .diff-table .hljs-code { background: transparent; }
-    .diff-table td .hljs { background: transparent; padding: 0; }
+    .diff-table td .hljs,
+    .diff-table .hljs-code,
     .diff-table .hljs-addition,
-    .diff-table .hljs-deletion { background: transparent; }
+    .diff-table .hljs-deletion { background: transparent; padding: 0; }
 
     .line-prefix {
       display: inline-block;
@@ -731,6 +731,33 @@ function parseDiff(text) {
 // Syntax highlighting helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Maps file extensions to highlight.js language identifiers. */
+const EXT_TO_LANGUAGE = Object.freeze({
+  'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'c++': 'cpp',
+  'h': 'cpp', 'hpp': 'cpp', 'hxx': 'cpp',
+  'c': 'c',
+  'js': 'javascript', 'mjs': 'javascript', 'cjs': 'javascript',
+  'ts': 'typescript',
+  'py': 'python',
+  'rb': 'ruby',
+  'go': 'go',
+  'rs': 'rust',
+  'java': 'java',
+  'cs': 'csharp',
+  'html': 'html', 'htm': 'html',
+  'css': 'css',
+  'sh': 'bash', 'bash': 'bash',
+  'json': 'json',
+  'xml': 'xml',
+  'yaml': 'yaml', 'yml': 'yaml',
+  'md': 'markdown',
+  'sql': 'sql',
+  'kt': 'kotlin',
+  'swift': 'swift',
+  'php': 'php',
+  'scala': 'scala',
+});
+
 /**
  * Map a file extension to a highlight.js language identifier.
  * Returns null if the extension is not recognised.
@@ -738,42 +765,16 @@ function parseDiff(text) {
  * @returns {string|null}
  */
 function detectLanguage(filePath) {
-  // Extract the filename from the path, then find its extension.
-  // Using lastIndexOf ensures that dotfiles with a real extension
-  // (e.g. ".myfile.cpp", dotIdx = 8) are handled correctly.
-  // dotIdx < 0 rejects files with no dot at all (e.g. "Makefile").
-  // dotIdx = 0 means the sole dot is the leading dot (e.g. ".gitignore"),
-  // which has no meaningful extension, so dotIdx <= 0 rejects both cases.
+  // Extract the filename from the path, then find its extension using the
+  // last dot so that dotfiles with extensions (e.g. ".myfile.cpp") work.
+  // dotIdx < 0 rejects files with no dot (e.g. "Makefile"); dotIdx = 0
+  // is the leading dot of a plain hidden file (e.g. ".gitignore"), which
+  // has no meaningful extension — both are correctly rejected by <= 0.
   const fileName = filePath.split('/').pop();
   const dotIdx   = fileName.lastIndexOf('.');
-  if (dotIdx <= 0) return null; // no extension or leading-dot only (e.g. ".gitignore")
+  if (dotIdx <= 0) return null;
   const ext = fileName.slice(dotIdx + 1).toLowerCase();
-  const map = {
-    'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'c++': 'cpp',
-    'h': 'cpp', 'hpp': 'cpp', 'hxx': 'cpp',
-    'c': 'c',
-    'js': 'javascript', 'mjs': 'javascript', 'cjs': 'javascript',
-    'ts': 'typescript',
-    'py': 'python',
-    'rb': 'ruby',
-    'go': 'go',
-    'rs': 'rust',
-    'java': 'java',
-    'cs': 'csharp',
-    'html': 'html', 'htm': 'html',
-    'css': 'css',
-    'sh': 'bash', 'bash': 'bash',
-    'json': 'json',
-    'xml': 'xml',
-    'yaml': 'yaml', 'yml': 'yaml',
-    'md': 'markdown',
-    'sql': 'sql',
-    'kt': 'kotlin',
-    'swift': 'swift',
-    'php': 'php',
-    'scala': 'scala',
-  };
-  return map[ext] || null;
+  return EXT_TO_LANGUAGE[ext] || null;
 }
 
 /**
@@ -787,7 +788,9 @@ function detectLanguage(filePath) {
 function splitHighlightedLines(html) {
   const openTagStack = []; // stack of full opening tag strings, e.g. '<span class="hljs-comment">'
 
-  // Build closing tags for all currently open spans (innermost first)
+  // Build closing tags for all currently open spans (innermost first).
+  // If a tag in the stack is somehow malformed, the regex returns null and
+  // that entry contributes an empty string, which is safe to ignore.
   function buildClosers() {
     return openTagStack.slice().reverse().map(t => {
       const m = t.match(/^<(\w+)/);
@@ -830,6 +833,9 @@ function splitHighlightedLines(html) {
   return result;
 }
 
+/** Reusable DOMParser instance for converting highlighted HTML to DOM nodes. */
+const _domParser = (typeof DOMParser !== 'undefined') ? new DOMParser() : null;
+
 /**
  * Highlight all lines of a hunk using highlight.js.
  * Returns an array of HTML strings (one per line, matching hunk.lines),
@@ -841,7 +847,9 @@ function splitHighlightedLines(html) {
 function highlightHunkLines(lines, language) {
   if (!language || typeof hljs === 'undefined') return null;
 
-  // Strip the diff prefix character from each line
+  // Strip the diff prefix character (+/-/space). Lines starting with '\'
+  // are the "\ No newline at end of file" marker — they contribute an empty
+  // placeholder so the returned array index stays aligned with hunk.lines.
   const codeLines = lines.map(l => {
     if (l.startsWith('\\')) return '';
     return l.length > 1 ? l.slice(1) : '';
@@ -1129,11 +1137,11 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     const pfx = document.createElement('span'); pfx.className = 'line-prefix'; pfx.textContent = type;
     tdCon.appendChild(pfx);
 
-    if (hlLines && currentIdx < hlLines.length) {
-      // Use DOMParser to safely convert highlighted HTML into DOM nodes,
-      // avoiding direct innerHTML assignment.
+    if (hlLines && currentIdx < hlLines.length && _domParser) {
+      // Use the shared DOMParser to safely convert highlighted HTML into DOM
+      // nodes, avoiding direct innerHTML assignment.
       const codeSpan = document.createElement('span');
-      const parsed = new DOMParser().parseFromString(hlLines[currentIdx], 'text/html');
+      const parsed = _domParser.parseFromString(hlLines[currentIdx], 'text/html');
       parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
       tdCon.appendChild(codeSpan);
     } else {
