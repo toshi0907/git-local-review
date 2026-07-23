@@ -281,6 +281,34 @@
       border-bottom-color: #c3e6cb;
     }
 
+    .hunk-card.collapsed .hunk-header-bar {
+      border-bottom: none;
+    }
+
+    .hunk-body {
+      overflow: hidden;
+    }
+
+    .hunk-card.collapsed .hunk-body {
+      display: none;
+    }
+
+    .hunk-toggle-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0 2px;
+      color: #57606a;
+      font-size: 14px;
+      line-height: 1;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s;
+    }
+
+    .hunk-toggle-btn:hover { color: #24292e; }
+
     .hunk-header-text {
       font-family: 'SFMono-Regular', Consolas, monospace;
       font-size: 12px;
@@ -857,13 +885,21 @@ function renderDiff() {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildHunkCard(filePath, hunk, isReviewed) {
   const card = document.createElement('div');
-  card.className = 'hunk-card' + (isReviewed ? ' reviewed' : '');
+  card.className = 'hunk-card' + (isReviewed ? ' reviewed collapsed' : '');
   card.dataset.filePath = filePath;
   card.dataset.hunkHash = hunk.hash;
 
   // ── Header bar ──────────────────────────────────────
   const bar = document.createElement('div');
   bar.className = 'hunk-header-bar';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'hunk-toggle-btn';
+  toggleBtn.title = isReviewed ? '展開' : '折りたたむ';
+  toggleBtn.textContent = isReviewed ? '▶' : '▼';
+  toggleBtn.addEventListener('click', () => {
+    setHunkCollapsedState(card, !card.classList.contains('collapsed'));
+  });
 
   const headerText = document.createElement('span');
   headerText.className = 'hunk-header-text';
@@ -879,11 +915,15 @@ function buildHunkCard(filePath, hunk, isReviewed) {
 
   label.appendChild(cb);
   label.appendChild(document.createTextNode(' レビュー済み'));
+  bar.appendChild(toggleBtn);
   bar.appendChild(headerText);
   bar.appendChild(label);
   card.appendChild(bar);
 
   // ── Diff table ──────────────────────────────────────
+  const body = document.createElement('div');
+  body.className = 'hunk-body';
+
   const table = document.createElement('table');
   table.className = 'diff-table';
   const tbody = document.createElement('tbody');
@@ -936,8 +976,23 @@ function buildHunkCard(filePath, hunk, isReviewed) {
   }
 
   table.appendChild(tbody);
-  card.appendChild(table);
+  body.appendChild(table);
+  card.appendChild(body);
   return card;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Set collapsed state on a hunk card
+// ─────────────────────────────────────────────────────────────────────────────
+function setHunkCollapsedState(card, collapsed) {
+  const btn = card.querySelector('.hunk-toggle-btn');
+  if (collapsed) {
+    card.classList.add('collapsed');
+    if (btn) { btn.textContent = '▶'; btn.title = '展開'; }
+  } else {
+    card.classList.remove('collapsed');
+    if (btn) { btn.textContent = '▼'; btn.title = '折りたたむ'; }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -956,9 +1011,11 @@ function onCheckboxChange(e) {
   if (cb.checked) {
     allReviews[app.currentProjectId][filePath][hash] = true;
     card.classList.add('reviewed');
+    setHunkCollapsedState(card, true);
   } else {
     delete allReviews[app.currentProjectId][filePath][hash];
     card.classList.remove('reviewed');
+    setHunkCollapsedState(card, false);
   }
 
   saveAllReviews(allReviews);
