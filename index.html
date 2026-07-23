@@ -806,7 +806,9 @@ function splitHighlightedLines(html) {
     if (html[i] === '<') {
       const tagEnd = html.indexOf('>', i);
       if (tagEnd === -1) {
-        // Malformed HTML: close any open tags before appending remainder
+        // Malformed HTML: no closing '>' found. Close open tags to keep the
+        // output valid up to this point, then append the remaining raw string
+        // as-is. Rendering may be imperfect but won't produce infinite loops.
         line += buildClosers() + html.slice(i);
         break;
       }
@@ -834,7 +836,7 @@ function splitHighlightedLines(html) {
 }
 
 /** Reusable DOMParser instance for converting highlighted HTML to DOM nodes. */
-const _domParser = (typeof DOMParser !== 'undefined') ? new DOMParser() : null;
+const domParser = (typeof DOMParser !== 'undefined') ? new DOMParser() : null;
 
 /**
  * Highlight all lines of a hunk using highlight.js.
@@ -860,6 +862,7 @@ function highlightHunkLines(lines, language) {
   try {
     highlighted = hljs.highlight(code, { language, ignoreIllegals: true }).value;
   } catch (e) {
+    console.warn('highlight.js failed for language', language, e);
     return null;
   }
 
@@ -1137,11 +1140,11 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     const pfx = document.createElement('span'); pfx.className = 'line-prefix'; pfx.textContent = type;
     tdCon.appendChild(pfx);
 
-    if (hlLines && currentIdx < hlLines.length && _domParser) {
+    if (hlLines && currentIdx < hlLines.length && domParser) {
       // Use the shared DOMParser to safely convert highlighted HTML into DOM
       // nodes, avoiding direct innerHTML assignment.
       const codeSpan = document.createElement('span');
-      const parsed = _domParser.parseFromString(hlLines[currentIdx], 'text/html');
+      const parsed = domParser.parseFromString(hlLines[currentIdx], 'text/html');
       parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
       tdCon.appendChild(codeSpan);
     } else {
