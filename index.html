@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Local Review</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #24292e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ===== Top bar ===== */
+    .topbar {
+      background: #24292e;
+      color: #fff;
+      padding: 0 20px;
+      height: 50px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      flex-shrink: 0;
+    }
+
+    .topbar h1 {
+      font-size: 17px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .topbar .spacer { flex: 1; }
+
+    #overall-progress {
+      font-size: 13px;
+      color: #8b949e;
+      white-space: nowrap;
+    }
+
+    #overall-progress.has-progress { color: #58a6ff; }
+
+    /* ===== Layout ===== */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      height: calc(100vh - 50px);
+    }
+
+    /* ===== Sidebar ===== */
+    .sidebar {
+      width: 280px;
+      min-width: 220px;
+      background: #fff;
+      border-right: 1px solid #d0d7de;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .load-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid #e1e4e8;
+    }
+
+    .load-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 14px;
+      background: #0969da;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .load-btn:hover { background: #0550ae; }
+
+    #file-input { display: none; }
+
+    .sidebar-section-title {
+      padding: 10px 16px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #57606a;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid #e1e4e8;
+      background: #f6f8fa;
+    }
+
+    .project-list {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .project-empty {
+      padding: 20px 16px;
+      color: #8b949e;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    .project-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f2f5;
+      border-left: 3px solid transparent;
+      transition: background 0.1s;
+    }
+
+    .project-item:hover { background: #f6f8fa; }
+
+    .project-item.active {
+      background: #ddf4ff;
+      border-left-color: #0969da;
+    }
+
+    .proj-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #24292e;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+
+    .proj-id {
+      font-size: 10px;
+      color: #8b949e;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      margin-bottom: 4px;
+    }
+
+    .proj-meta {
+      font-size: 11px;
+      color: #8b949e;
+      margin-bottom: 6px;
+    }
+
+    .proj-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      background: none;
+    }
+
+    .btn-reset {
+      color: #953800;
+      border-color: #f0a76c;
+      background: #fff8f0;
+    }
+    .btn-reset:hover { background: #ffe8cc; }
+
+    .btn-delete {
+      color: #57606a;
+      border-color: #d0d7de;
+      background: #fff;
+    }
+    .btn-delete:hover { background: #f6f8fa; }
+
+    /* ===== Main content ===== */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 24px;
+    }
+
+    .empty-state {
+      text-align: center;
+      color: #8b949e;
+      margin-top: 80px;
+      font-size: 15px;
+      line-height: 2;
+    }
+
+    .empty-state .icon {
+      font-size: 48px;
+      display: block;
+      margin-bottom: 12px;
+    }
+
+    /* ===== File sections ===== */
+    .file-section {
+      margin-bottom: 28px;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .file-header {
+      background: #f6f8fa;
+      border-bottom: 1px solid #d0d7de;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .file-path {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: #24292e;
+      word-break: break-all;
+    }
+
+    .file-progress {
+      font-size: 12px;
+      color: #57606a;
+      background: #e1e4e8;
+      padding: 2px 10px;
+      border-radius: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .file-progress.complete {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    /* ===== Hunk cards ===== */
+    .hunk-card {
+      border-top: 1px solid #e1e4e8;
+      transition: background 0.15s;
+    }
+
+    .hunk-card:first-of-type { border-top: none; }
+
+    .hunk-card.reviewed { background: #f0fff4; }
+
+    .hunk-header-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 14px;
+      background: #f1f8ff;
+      border-bottom: 1px solid #dbe9fd;
+      gap: 10px;
+    }
+
+    .hunk-card.reviewed .hunk-header-bar {
+      background: #e6ffed;
+      border-bottom-color: #c3e6cb;
+    }
+
+    .hunk-header-text {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      color: #0550ae;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .review-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #24292e;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .review-label input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      accent-color: #1a7f37;
+    }
+
+    /* ===== Diff table ===== */
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      table-layout: fixed;
+    }
+
+    .diff-table tbody tr { line-height: 20px; }
+
+    .line-num {
+      width: 50px;
+      text-align: right;
+      padding: 0 8px;
+      color: #8b949e;
+      border-right: 1px solid #e1e4e8;
+      user-select: none;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    .line-content {
+      padding: 0 8px;
+      white-space: pre;
+      overflow-x: hidden;
+      vertical-align: top;
+    }
+
+    .line-prefix {
+      display: inline-block;
+      width: 14px;
+    }
+
+    .line-add { background: #e6ffec; }
+    .line-add .line-num { background: #ccffd8; }
+    .line-add .line-prefix { color: #1a7f37; font-weight: bold; }
+
+    .line-del { background: #ffebe9; }
+    .line-del .line-num { background: #ffd7d5; }
+    .line-del .line-prefix { color: #cf222e; font-weight: bold; }
+
+    .line-context { background: #fff; }
+    .line-context .line-prefix { color: #8b949e; }
+
+    .line-no-newline {
+      background: #fffce0;
+      font-style: italic;
+      color: #8b949e;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      padding: 2px 8px;
+    }
+
+    /* ===== Modal ===== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: #fff;
+      border-radius: 12px;
+      padding: 28px;
+      max-width: 500px;
+      width: 92%;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .modal h2 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #24292e;
+    }
+
+    .modal-desc {
+      font-size: 14px;
+      color: #57606a;
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+
+    .modal-proj-list {
+      margin-bottom: 20px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      overflow: hidden;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .proj-option {
+      padding: 9px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid #e1e4e8;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+
+    .proj-option:last-child { border-bottom: none; }
+    .proj-option:hover { background: #f6f8fa; }
+    .proj-option.selected { background: #ddf4ff; }
+
+    .proj-option .opt-id {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 11px;
+      color: #24292e;
+      font-weight: 600;
+    }
+
+    .proj-option .opt-meta {
+      font-size: 11px;
+      color: #8b949e;
+      margin-top: 2px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .modal-btn {
+      padding: 7px 16px;
+      border-radius: 6px;
+      border: 1px solid;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .modal-btn-primary {
+      background: #0969da;
+      color: #fff;
+      border-color: #0969da;
+    }
+    .modal-btn-primary:hover { background: #0550ae; }
+
+    .modal-btn-secondary {
+      background: #f6f8fa;
+      color: #24292e;
+      border-color: #d0d7de;
+    }
+    .modal-btn-secondary:hover { background: #e7eaef; }
+
+    /* ===== Scrollbar ===== */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d0d7de; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #8b949e; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar">
+  <h1>🔍 Git Local Review</h1>
+  <div class="spacer"></div>
+  <span id="overall-progress"></span>
+</div>
+
+<!-- Main layout -->
+<div class="layout">
+
+  <!-- Sidebar: file loader + project list -->
+  <div class="sidebar">
+    <div class="load-section">
+      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain">
+      <button class="load-btn" id="load-btn">
+        <span aria-hidden="true">📂</span> Diffファイルを開く
+      </button>
+    </div>
+    <div class="sidebar-section-title">プロジェクト一覧</div>
+    <div class="project-list" id="project-list"></div>
+  </div>
+
+  <!-- Diff view -->
+  <div class="main">
+    <div class="empty-state" id="empty-state">
+      <span class="icon" aria-hidden="true">📄</span>
+      Diffファイルを読み込んでください
+    </div>
+    <div id="diff-container"></div>
+  </div>
+
+</div>
+
+<!-- Conflict modal (same filename loaded again) -->
+<div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <h2 id="modal-title">📁 既存プロジェクトが見つかりました</h2>
+    <p class="modal-desc" id="modal-desc"></p>
+    <div class="modal-proj-list" id="modal-proj-list"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" id="modal-btn-new">新規プロジェクトとして作成</button>
+      <button class="modal-btn modal-btn-primary" id="modal-btn-update">選択したプロジェクトを更新</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Storage keys
+// ─────────────────────────────────────────────────────────────────────────────
+const SK_PROJECTS = 'gitLocalReview_projects';
+const SK_REVIEWS  = 'gitLocalReview_reviews';
+const SK_CURRENT  = 'gitLocalReview_currentProject';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Application state
+// ─────────────────────────────────────────────────────────────────────────────
+const app = {
+  /** @type {string|null} Active project ID */
+  currentProjectId: null,
+  /** @type {Array<{filePath:string, hunks:Array<{header:string,lines:string[],hash:string}>}>|null} */
+  parsedDiff: null,
+  /** Holds progress badge elements keyed by filePath, populated during renderDiff */
+  fileProgressEls: new Map(),
+};
+
+// Modal transient state
+let modalFileName    = '';
+let modalParsedDiff  = null;
+let modalSelectedId  = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// localStorage helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function loadProjects() {
+  try {
+    return JSON.parse(localStorage.getItem(SK_PROJECTS) || '[]');
+  } catch (e) {
+    console.error('Failed to parse projects from localStorage:', e);
+    return [];
+  }
+}
+
+function saveProjects(projects) {
+  try {
+    localStorage.setItem(SK_PROJECTS, JSON.stringify(projects));
+  } catch (e) {
+    console.error('Failed to save projects to localStorage:', e);
+    alert('プロジェクトの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function loadAllReviews() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SK_REVIEWS) || '{}');
+    // Rebuild with null-prototype objects to prevent prototype pollution
+    // from diff-derived file paths used as object keys.
+    const safe = Object.create(null);
+    for (const pid of Object.keys(parsed)) {
+      safe[pid] = Object.create(null);
+      const fileMap = parsed[pid];
+      if (fileMap && typeof fileMap === 'object') {
+        for (const fp of Object.keys(fileMap)) {
+          safe[pid][fp] = Object.create(null);
+          const hashMap = fileMap[fp];
+          if (hashMap && typeof hashMap === 'object') {
+            for (const h of Object.keys(hashMap)) {
+              safe[pid][fp][h] = hashMap[h];
+            }
+          }
+        }
+      }
+    }
+    return safe;
+  } catch (e) {
+    console.error('Failed to parse reviews from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllReviews(reviews) {
+  try {
+    localStorage.setItem(SK_REVIEWS, JSON.stringify(reviews));
+  } catch (e) {
+    console.error('Failed to save reviews to localStorage:', e);
+    alert('レビュー状態の保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project ID generation  →  "filename__proj_YYYYMMDD_NNN"
+// ─────────────────────────────────────────────────────────────────────────────
+function generateProjectId(fileName) {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const prefix = `${fileName}__proj_${date}_`;
+  const count = loadProjects().filter(p => p.id.startsWith(prefix)).length;
+  return prefix + String(count + 1).padStart(3, '0');
+}
+
+function projectsByFileName(fileName) {
+  return loadProjects().filter(p => p.fileName === fileName);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unified diff parser
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Parse a unified diff string into a structured array.
+ * @param {string} text
+ * @returns {Array<{filePath:string, hunks:Array<{header:string, lines:string[]}>}>}
+ */
+function parseDiff(text) {
+  const lines = text.split(/\r?\n/);
+  const files = [];
+  let curFile = null;
+  let curHunk = null;
+
+  function commitHunk() {
+    if (curHunk && curFile) {
+      curFile.hunks.push(curHunk);
+      curHunk = null;
+    }
+  }
+  function commitFile() {
+    commitHunk();
+    if (curFile && curFile.hunks.length > 0) files.push(curFile);
+    curFile = null;
+  }
+
+  for (const line of lines) {
+    if (line.startsWith('diff --git ')) {
+      commitFile();
+      const m = line.match(/^diff --git a\/.+ b\/(.+)$/);
+      curFile = { filePath: m ? m[1] : '', hunks: [] };
+
+    } else if (line.startsWith('+++ ') && curFile) {
+      // "+++ b/path" → prefer this for the file path (handles renames)
+      const m = line.match(/^\+\+\+ b\/(.+)$/);
+      if (m) curFile.filePath = m[1];
+      // "+++ /dev/null" → deleted file; keep path from diff --git line
+
+    } else if (line.startsWith('@@ ') && curFile) {
+      commitHunk();
+      curHunk = { header: line, lines: [] };
+
+    } else if (curHunk) {
+      if (
+        line.startsWith('+') ||
+        line.startsWith('-') ||
+        line.startsWith(' ') ||
+        line.startsWith('\\')          // "\ No newline at end of file"
+      ) {
+        curHunk.lines.push(line);
+      }
+    }
+  }
+
+  commitFile();
+  return files;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hashing (Web Crypto API with non-cryptographic fallback for file:// etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Simple djb2-based fallback used when crypto.subtle is unavailable
+function djb2hex(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) {
+    h = ((h << 5) + h) + text.charCodeAt(i);
+    h = h >>> 0; // keep unsigned 32-bit
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+async function sha256hex(text) {
+  if (crypto && crypto.subtle) {
+    try {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (err) {
+      console.error('crypto.subtle unavailable, using fallback hash:', err);
+    }
+  }
+  return djb2hex(text);
+}
+
+/**
+ * Attach a `hash` to each hunk. The hash covers only diff-content lines
+ * (NOT the @@ header), so line-number shifts don't alter the hash.
+ */
+async function computeAllHashes(files) {
+  const promises = [];
+  for (const file of files) {
+    for (const hunk of file.hunks) {
+      const text = hunk.lines.join('\n');
+      promises.push(
+        (async () => {
+          hunk.hash = await sha256hex(text);
+        })()
+      );
+    }
+  }
+  await Promise.all(promises);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML escaping
+// ─────────────────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Parse @@ header → starting line numbers
+// ─────────────────────────────────────────────────────────────────────────────
+function parseHunkHeader(header) {
+  const m = header.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+  return m ? { oldStart: +m[1], newStart: +m[2] } : { oldStart: 1, newStart: 1 };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: sidebar project list
+// ─────────────────────────────────────────────────────────────────────────────
+function renderProjectList() {
+  const listEl = document.getElementById('project-list');
+  const projects = loadProjects();
+
+  if (projects.length === 0) {
+    listEl.innerHTML = '<div class="project-empty">プロジェクトなし</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  const sorted = [...projects].sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
+
+  for (const proj of sorted) {
+    const isActive = proj.id === app.currentProjectId;
+    const item = document.createElement('div');
+    item.className = 'project-item' + (isActive ? ' active' : '');
+
+    const updated = new Date(proj.lastUpdated || proj.createdAt).toLocaleString('ja-JP', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+
+    const nameEl   = document.createElement('div'); nameEl.className = 'proj-name'; nameEl.title = proj.id; nameEl.textContent = proj.fileName;
+    const idEl     = document.createElement('div'); idEl.className = 'proj-id'; idEl.textContent = proj.id;
+    const metaEl   = document.createElement('div'); metaEl.className = 'proj-meta'; metaEl.textContent = `更新: ${updated}`;
+    const actEl    = document.createElement('div'); actEl.className = 'proj-actions';
+
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'btn btn-reset';
+    resetBtn.textContent = '🔄 リセット';
+    resetBtn.title = 'チェック状態をリセット';
+    resetBtn.addEventListener('click', e => { e.stopPropagation(); resetProject(proj.id); });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-delete';
+    delBtn.textContent = '🗑 削除';
+    delBtn.title = 'プロジェクトを削除';
+    delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
+
+    actEl.appendChild(resetBtn);
+    actEl.appendChild(delBtn);
+    item.appendChild(nameEl);
+    item.appendChild(idEl);
+    item.appendChild(metaEl);
+    item.appendChild(actEl);
+
+    item.addEventListener('click', () => activateProject(proj.id));
+    listEl.appendChild(item);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Render: full diff view
+// ─────────────────────────────────────────────────────────────────────────────
+function renderDiff() {
+  const container  = document.getElementById('diff-container');
+  const emptyState = document.getElementById('empty-state');
+  container.innerHTML = '';
+  app.fileProgressEls.clear();
+
+  const files = app.parsedDiff;
+  if (!files || files.length === 0) {
+    emptyState.style.display = 'block';
+    clearOverallProgress();
+    return;
+  }
+
+  emptyState.style.display = 'none';
+
+  const allReviews     = loadAllReviews();
+  const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
+
+  let totalHunks = 0, totalReviewed = 0;
+
+  for (const file of files) {
+    const fileReviews  = projectReviews[file.filePath] || Object.create(null);
+    const reviewedCnt  = file.hunks.filter(h => fileReviews[h.hash]).length;
+    totalHunks    += file.hunks.length;
+    totalReviewed += reviewedCnt;
+
+    const section = document.createElement('div');
+    section.className = 'file-section';
+
+    // File header
+    const fileHeader = document.createElement('div');
+    fileHeader.className = 'file-header';
+
+    const pathEl = document.createElement('span');
+    pathEl.className = 'file-path';
+    pathEl.textContent = file.filePath;
+
+    const progressEl = document.createElement('span');
+    progressEl.className = 'file-progress' + (reviewedCnt === file.hunks.length ? ' complete' : '');
+    progressEl.textContent = `${reviewedCnt} / ${file.hunks.length} hunk レビュー済み`;
+    app.fileProgressEls.set(file.filePath, progressEl);
+
+    fileHeader.appendChild(pathEl);
+    fileHeader.appendChild(progressEl);
+    section.appendChild(fileHeader);
+
+    // Hunks
+    for (const hunk of file.hunks) {
+      section.appendChild(buildHunkCard(file.filePath, hunk, !!fileReviews[hunk.hash]));
+    }
+
+    container.appendChild(section);
+  }
+
+  setOverallProgress(totalReviewed, totalHunks);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Build a single hunk card element
+// ─────────────────────────────────────────────────────────────────────────────
+function buildHunkCard(filePath, hunk, isReviewed) {
+  const card = document.createElement('div');
+  card.className = 'hunk-card' + (isReviewed ? ' reviewed' : '');
+  card.dataset.filePath = filePath;
+  card.dataset.hunkHash = hunk.hash;
+
+  // ── Header bar ──────────────────────────────────────
+  const bar = document.createElement('div');
+  bar.className = 'hunk-header-bar';
+
+  const headerText = document.createElement('span');
+  headerText.className = 'hunk-header-text';
+  headerText.textContent = hunk.header;
+
+  const label = document.createElement('label');
+  label.className = 'review-label';
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = isReviewed;
+  cb.addEventListener('change', onCheckboxChange);
+
+  label.appendChild(cb);
+  label.appendChild(document.createTextNode(' レビュー済み'));
+  bar.appendChild(headerText);
+  bar.appendChild(label);
+  card.appendChild(bar);
+
+  // ── Diff table ──────────────────────────────────────
+  const table = document.createElement('table');
+  table.className = 'diff-table';
+  const tbody = document.createElement('tbody');
+
+  const { oldStart, newStart } = parseHunkHeader(hunk.header);
+  let oldN = oldStart, newN = newStart;
+
+  for (const line of hunk.lines) {
+    const tr = document.createElement('tr');
+
+    // "\ No newline at end of file"
+    if (line.startsWith('\\')) {
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'line-content line-no-newline';
+      td.textContent = line;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      continue;
+    }
+
+    const type    = line[0];
+    const content = line.length > 1 ? line.slice(1) : '';
+
+    let cls, oldLabel = '', newLabel = '';
+    if (type === '+') {
+      cls = 'line-add';
+      newLabel = newN++;
+    } else if (type === '-') {
+      cls = 'line-del';
+      oldLabel = oldN++;
+    } else {
+      cls = 'line-context';
+      oldLabel = oldN++;
+      newLabel = newN++;
+    }
+
+    tr.className = cls;
+
+    const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(oldLabel);
+    const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(newLabel);
+    const tdCon = document.createElement('td'); tdCon.className = 'line-content';
+
+    const pfx = document.createElement('span'); pfx.className = 'line-prefix'; pfx.textContent = type;
+    tdCon.appendChild(pfx);
+    tdCon.appendChild(document.createTextNode(content));
+
+    tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  card.appendChild(table);
+  return card;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkbox change handler
+// ─────────────────────────────────────────────────────────────────────────────
+function onCheckboxChange(e) {
+  const cb       = e.target;
+  const card     = cb.closest('.hunk-card');
+  const filePath = card.dataset.filePath;
+  const hash     = card.dataset.hunkHash;
+
+  const allReviews = loadAllReviews();
+  if (!allReviews[app.currentProjectId])           allReviews[app.currentProjectId] = Object.create(null);
+  if (!allReviews[app.currentProjectId][filePath]) allReviews[app.currentProjectId][filePath] = Object.create(null);
+
+  if (cb.checked) {
+    allReviews[app.currentProjectId][filePath][hash] = true;
+    card.classList.add('reviewed');
+  } else {
+    delete allReviews[app.currentProjectId][filePath][hash];
+    card.classList.remove('reviewed');
+  }
+
+  saveAllReviews(allReviews);
+  refreshProgress();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Refresh progress badges without re-rendering the whole diff
+// ─────────────────────────────────────────────────────────────────────────────
+function refreshProgress() {
+  if (!app.parsedDiff || !app.currentProjectId) return;
+
+  const projectReviews = (loadAllReviews()[app.currentProjectId]) || Object.create(null);
+  let totalHunks = 0, totalReviewed = 0;
+
+  for (const file of app.parsedDiff) {
+    const fileReviews = projectReviews[file.filePath] || Object.create(null);
+    const rev   = file.hunks.filter(h => fileReviews[h.hash]).length;
+    const total = file.hunks.length;
+    totalHunks    += total;
+    totalReviewed += rev;
+
+    const el = app.fileProgressEls.get(file.filePath);
+    if (el) {
+      el.textContent = `${rev} / ${total} hunk レビュー済み`;
+      el.className   = 'file-progress' + (rev === total ? ' complete' : '');
+    }
+  }
+
+  setOverallProgress(totalReviewed, totalHunks);
+}
+
+function setOverallProgress(reviewed, total) {
+  const el = document.getElementById('overall-progress');
+  el.textContent = `全体: ${reviewed} / ${total} hunk レビュー済み`;
+  el.classList.toggle('has-progress', reviewed > 0);
+}
+
+function clearOverallProgress() {
+  const el = document.getElementById('overall-progress');
+  el.textContent = '';
+  el.classList.remove('has-progress');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Empty state helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function showEmptyState(html) {
+  document.getElementById('diff-container').innerHTML = '';
+  app.fileProgressEls.clear();
+  const el = document.getElementById('empty-state');
+  el.innerHTML = html;
+  el.style.display = 'block';
+  clearOverallProgress();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Project actions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Switch active project selection in the sidebar (diff must be reloaded) */
+function activateProject(projectId) {
+  if (app.currentProjectId === projectId) return;
+  const proj = loadProjects().find(p => p.id === projectId);
+  if (!proj) return;
+
+  app.currentProjectId = projectId;
+  app.parsedDiff = null;
+  localStorage.setItem(SK_CURRENT, projectId);
+
+  renderProjectList();
+  showEmptyState(`
+    <span class="icon" aria-hidden="true">📂</span>
+    プロジェクト「${esc(proj.fileName)}」を選択中<br>
+    同じdiffファイルを再度読み込むと、レビュー済み状態が復元されます
+  `);
+}
+
+/** Reset all review checkboxes for a project */
+function resetProject(projectId) {
+  const proj = loadProjects().find(p => p.id === projectId);
+  if (!confirm(`プロジェクト「${proj ? proj.id : projectId}」のチェック状態をリセットしますか？`)) return;
+
+  const allReviews = loadAllReviews();
+  delete allReviews[projectId];
+  saveAllReviews(allReviews);
+
+  if (app.currentProjectId === projectId && app.parsedDiff) renderDiff();
+  renderProjectList();
+}
+
+/** Permanently delete a project */
+function deleteProject(projectId) {
+  const proj = loadProjects().find(p => p.id === projectId);
+  if (!confirm(`プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nチェック状態も合わせて削除されます。`)) return;
+
+  const allReviews = loadAllReviews();
+  delete allReviews[projectId];
+  saveAllReviews(allReviews);
+
+  saveProjects(loadProjects().filter(p => p.id !== projectId));
+
+  if (app.currentProjectId === projectId) {
+    app.currentProjectId = null;
+    app.parsedDiff = null;
+    localStorage.removeItem(SK_CURRENT);
+    showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
+  }
+
+  renderProjectList();
+}
+
+/** Create a brand-new project and display its diff */
+function createNewProject(fileName, parsed) {
+  const id  = generateProjectId(fileName);
+  const now = Date.now();
+  const projects = loadProjects();
+  projects.push({ id, fileName, createdAt: now, lastUpdated: now });
+  saveProjects(projects);
+
+  app.currentProjectId = id;
+  app.parsedDiff = parsed;
+  localStorage.setItem(SK_CURRENT, id);
+
+  renderProjectList();
+  renderDiff();
+}
+
+/** Update an existing project's metadata and display its (new) diff */
+function updateExistingProject(projectId, parsed) {
+  const projects = loadProjects();
+  const proj = projects.find(p => p.id === projectId);
+  if (proj) { proj.lastUpdated = Date.now(); saveProjects(projects); }
+
+  app.currentProjectId = projectId;
+  app.parsedDiff = parsed;
+  localStorage.setItem(SK_CURRENT, projectId);
+
+  renderProjectList();
+  renderDiff();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conflict modal (same filename detected)
+// ─────────────────────────────────────────────────────────────────────────────
+function showConflictModal(fileName, existingProjects, parsed) {
+  modalFileName   = fileName;
+  modalParsedDiff = parsed;
+
+  document.getElementById('modal-desc').textContent =
+    `ファイル名「${fileName}」の既存プロジェクトが ${existingProjects.length} 件あります。` +
+    `更新するプロジェクトを選択するか、新規プロジェクトとして作成してください。`;
+
+  const listEl = document.getElementById('modal-proj-list');
+  listEl.innerHTML = '';
+
+  // Pre-select the most recently updated project
+  const sorted = [...existingProjects].sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
+  modalSelectedId = sorted[0]?.id ?? null;
+
+  for (const proj of sorted) {
+    const div = document.createElement('div');
+    div.className = 'proj-option' + (proj.id === modalSelectedId ? ' selected' : '');
+    div.tabIndex = 0;
+
+    const updated = new Date(proj.lastUpdated || proj.createdAt).toLocaleString('ja-JP', {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+
+    const idEl   = document.createElement('div'); idEl.className = 'opt-id';   idEl.textContent = proj.id;
+    const metaEl = document.createElement('div'); metaEl.className = 'opt-meta'; metaEl.textContent = `更新: ${updated}`;
+    div.appendChild(idEl);
+    div.appendChild(metaEl);
+
+    div.addEventListener('click', () => {
+      listEl.querySelectorAll('.proj-option').forEach(el => el.classList.remove('selected'));
+      div.classList.add('selected');
+      modalSelectedId = proj.id;
+    });
+
+    div.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        div.click();
+      }
+    });
+
+    listEl.appendChild(div);
+  }
+
+  document.getElementById('modal-overlay').classList.add('active');
+  
+  // Focus on the primary button for keyboard/screen-reader accessibility.
+  // Timeout ensures the modal is fully rendered before focusing.
+  setTimeout(() => {
+    document.getElementById('modal-btn-update').focus();
+  }, 100);
+}
+
+function hideModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+  modalFileName   = '';
+  modalParsedDiff = null;
+  modalSelectedId = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File loading
+// ─────────────────────────────────────────────────────────────────────────────
+async function loadDiffFile(file) {
+  let text;
+  try {
+    text = await file.text();
+  } catch (err) {
+    alert(`ファイルの読み込みに失敗しました:\n${err.message}`);
+    return;
+  }
+
+  const parsed = parseDiff(text);
+  if (parsed.length === 0) {
+    alert(
+      '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+      'git diff または git show の出力を保存したファイルをご利用ください。'
+    );
+    return;
+  }
+
+  // Compute SHA-256 hashes for all hunks (async, uses Web Crypto API)
+  await computeAllHashes(parsed);
+
+  const fileName = file.name;
+  const existing = projectsByFileName(fileName);
+
+  if (existing.length > 0) {
+    showConflictModal(fileName, existing, parsed);
+  } else {
+    createNewProject(fileName, parsed);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Event listeners
+// ─────────────────────────────────────────────────────────────────────────────
+document.getElementById('load-btn').addEventListener('click', () => {
+  document.getElementById('file-input').click();
+});
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = ''; // allow re-selecting the same file
+  await loadDiffFile(file);
+});
+
+document.getElementById('modal-btn-new').addEventListener('click', () => {
+  const fn     = modalFileName;
+  const parsed = modalParsedDiff;
+  hideModal();
+  createNewProject(fn, parsed);
+});
+
+document.getElementById('modal-btn-update').addEventListener('click', () => {
+  if (!modalSelectedId) { alert('更新するプロジェクトを選択してください。'); return; }
+  const id     = modalSelectedId;
+  const parsed = modalParsedDiff;
+  hideModal();
+  updateExistingProject(id, parsed);
+});
+
+// Close modal by clicking the backdrop
+const modalOverlay = document.getElementById('modal-overlay');
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) hideModal();
+});
+
+// Close modal with ESC key for keyboard accessibility
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
+    hideModal();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Initialise
+// ─────────────────────────────────────────────────────────────────────────────
+(function init() {
+  renderProjectList();
+
+  // Restore the last active project selection.
+  // The diff itself cannot be stored (potentially large), so we just show a
+  // prompt to reload the file.
+  const lastId = localStorage.getItem(SK_CURRENT);
+  if (lastId) {
+    const proj = loadProjects().find(p => p.id === lastId);
+    if (proj) {
+      app.currentProjectId = lastId;
+      renderProjectList();
+      showEmptyState(`
+        <span class="icon" aria-hidden="true">📂</span>
+        プロジェクト「${esc(proj.fileName)}」を選択中<br>
+        同じdiffファイルを再度読み込むと、レビュー済み状態が復元されます
+      `);
+    }
+  } else {
+    showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
+  }
+})();
+</script>
+</body>
+</html>
