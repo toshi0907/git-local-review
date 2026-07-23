@@ -738,7 +738,12 @@ function loadFileContent(projectId) {
 
 function saveFileContent(projectId, text) {
   const files = loadAllFiles();
-  files[projectId] = text;
+  if (typeof text === 'string') {
+    files[projectId] = text;
+  } else {
+    console.error('saveFileContent called with non-string content; clearing saved copy for', projectId);
+    delete files[projectId];
+  }
   saveAllFiles(files);
 }
 
@@ -1382,15 +1387,21 @@ async function activateProject(projectId) {
 async function restoreProjectDiff(proj) {
   const savedText = loadFileContent(proj.id);
   if (savedText != null) {
-    const parsed = parseDiff(savedText);
-    if (parsed.length > 0) {
-      await computeAllHashes(parsed);
-      // If the user switched to a different project while hashing was in
-      // flight, don't clobber whatever is now on screen with stale results.
-      if (app.currentProjectId !== proj.id) return;
-      app.parsedDiff = parsed;
-      renderDiff();
-      return;
+    try {
+      const parsed = parseDiff(savedText);
+      if (parsed.length > 0) {
+        await computeAllHashes(parsed);
+        // If the user switched to a different project while hashing was in
+        // flight, don't clobber whatever is now on screen with stale results.
+        if (app.currentProjectId !== proj.id) return;
+        app.parsedDiff = parsed;
+        renderDiff();
+        return;
+      }
+    } catch (e) {
+      // Corrupted saved content or a hashing failure shouldn't leave the UI
+      // stuck on the "読み込み中…" state; fall through to the reload prompt.
+      console.error('Failed to restore saved diff content for project', proj.id, e);
     }
   }
 
