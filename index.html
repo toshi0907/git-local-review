@@ -692,8 +692,11 @@ async function computeAllHashes(files) {
   const promises = [];
   for (const file of files) {
     for (const hunk of file.hunks) {
+      const text = hunk.lines.join('\n');
       promises.push(
-        sha256hex(hunk.lines.join('\n')).then(hash => { hunk.hash = hash; })
+        (async () => {
+          hunk.hash = await sha256hex(text);
+        })()
       );
     }
   }
@@ -1121,7 +1124,8 @@ function showConflictModal(fileName, existingProjects, parsed) {
 
   document.getElementById('modal-overlay').classList.add('active');
   
-  // Focus on the primary button for keyboard/screen-reader accessibility
+  // Focus on the primary button for keyboard/screen-reader accessibility.
+  // Timeout ensures the modal is fully rendered before focusing.
   setTimeout(() => {
     document.getElementById('modal-btn-update').focus();
   }, 100);
@@ -1198,13 +1202,14 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
 });
 
 // Close modal by clicking the backdrop
-document.getElementById('modal-overlay').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('modal-overlay')) hideModal();
+const modalOverlay = document.getElementById('modal-overlay');
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) hideModal();
 });
 
 // Close modal with ESC key for keyboard accessibility
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.getElementById('modal-overlay').classList.contains('active')) {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
   }
 });
