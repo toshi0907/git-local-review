@@ -1543,7 +1543,7 @@ function deleteProject(projectId) {
   delete allReviews[projectId];
   saveAllReviews(allReviews);
   deleteFileContent(projectId);
-  deleteFileHandleRecord(projectId).then(renderProjectList);
+  deleteFileHandleRecord(projectId);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
 
@@ -1799,7 +1799,12 @@ async function reloadProjectFile(projectId) {
       permission = await handle.requestPermission({ mode: 'read' });
     }
     if (permission !== 'granted') {
-      alert('ファイルへのアクセスが許可されませんでした。');
+      alert(
+        'ファイルへのアクセスが許可されなかったため、保存していたファイル参照を破棄しました。\n' +
+        '「📂 Diffファイルを開く」から選び直してください。'
+      );
+      await deleteFileHandleRecord(projectId);
+      renderProjectList();
       return;
     }
 
