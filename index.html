@@ -234,6 +234,13 @@
     }
     .btn-delete:hover { background: #f6f8fa; }
 
+    .btn-reload {
+      color: #0a5c36;
+      border-color: #7ee2a8;
+      background: #eafff2;
+    }
+    .btn-reload:hover { background: #ccffdf; }
+
     /* ===== Main content ===== */
     .main {
       flex: 1;
@@ -634,6 +641,7 @@ let modalFileName    = '';
 let modalParsedDiff  = null;
 let modalRawText     = null;
 let modalSelectedId  = null;
+let modalFileHandle  = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // localStorage helpers
@@ -751,6 +759,96 @@ function deleteFileContent(projectId) {
   const files = loadAllFiles();
   delete files[projectId];
   saveAllFiles(files);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File System Access API — remembered file handles (IndexedDB)
+//
+// FileSystemFileHandle objects are structured-cloneable but not JSON-
+// serializable, so they can't live in localStorage alongside the rest of
+// the app state. IndexedDB is used instead, keyed by project ID. When a
+// handle is available for a project, the "reload" button can re-read the
+// file straight from disk instead of asking the user to pick it again.
+// ─────────────────────────────────────────────────────────────────────────────
+const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function';
+const HANDLE_DB_NAME = 'gitLocalReview_handles';
+const HANDLE_STORE   = 'fileHandles';
+
+/** IDs of projects that currently have a stored file handle (kept in sync via refreshHandleIndex). */
+let projectIdsWithHandles = new Set();
+
+function openHandleDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(HANDLE_STORE)) {
+        req.result.createObjectStore(HANDLE_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveFileHandle(projectId, handle) {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).put(handle, projectId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    projectIdsWithHandles.add(projectId);
+  } catch (e) {
+    console.error('Failed to save file handle for', projectId, e);
+  }
+}
+
+async function loadFileHandle(projectId) {
+  try {
+    const db = await openHandleDB();
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).get(projectId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('Failed to load file handle for', projectId, e);
+    return null;
+  }
+}
+
+async function deleteFileHandleRecord(projectId) {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HANDLE_STORE, 'readwrite');
+      tx.objectStore(HANDLE_STORE).delete(projectId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Failed to delete file handle for', projectId, e);
+  } finally {
+    projectIdsWithHandles.delete(projectId);
+  }
+}
+
+/** Repopulate projectIdsWithHandles from IndexedDB (called once at init). */
+async function refreshHandleIndex() {
+  if (!supportsFileSystemAccess) return;
+  try {
+    const db = await openHandleDB();
+    const keys = await new Promise((resolve, reject) => {
+      const req = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    projectIdsWithHandles = new Set(keys);
+  } catch (e) {
+    console.error('Failed to refresh file handle index', e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1072,6 +1170,15 @@ function renderProjectList() {
     delBtn.textContent = '🗑 削除';
     delBtn.title = 'プロジェクトを削除';
     delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
+
+    if (projectIdsWithHandles.has(proj.id)) {
+      const reloadBtn = document.createElement('button');
+      reloadBtn.className = 'btn btn-reload';
+      reloadBtn.textContent = '🔃 再読み込み';
+      reloadBtn.title = '同じファイルをディスクから再読み込み';
+      reloadBtn.addEventListener('click', e => { e.stopPropagation(); reloadProjectFile(proj.id); });
+      actEl.appendChild(reloadBtn);
+    }
 
     actEl.appendChild(resetBtn);
     actEl.appendChild(delBtn);
@@ -1436,6 +1543,7 @@ function deleteProject(projectId) {
   delete allReviews[projectId];
   saveAllReviews(allReviews);
   deleteFileContent(projectId);
+  deleteFileHandleRecord(projectId).then(renderProjectList);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
 
@@ -1450,13 +1558,14 @@ function deleteProject(projectId) {
 }
 
 /** Create a brand-new project and display its diff */
-function createNewProject(fileName, parsed, rawText) {
+function createNewProject(fileName, parsed, rawText, fileHandle = null) {
   const id  = generateProjectId(fileName);
   const now = Date.now();
   const projects = loadProjects();
   projects.push({ id, fileName, createdAt: now, lastUpdated: now });
   saveProjects(projects);
   saveFileContent(id, rawText);
+  if (fileHandle) saveFileHandle(id, fileHandle).then(renderProjectList);
 
   app.currentProjectId = id;
   app.parsedDiff = parsed;
@@ -1467,11 +1576,12 @@ function createNewProject(fileName, parsed, rawText) {
 }
 
 /** Update an existing project's metadata and display its (new) diff */
-function updateExistingProject(projectId, parsed, rawText) {
+function updateExistingProject(projectId, parsed, rawText, fileHandle = null) {
   const projects = loadProjects();
   const proj = projects.find(p => p.id === projectId);
   if (proj) { proj.lastUpdated = Date.now(); saveProjects(projects); }
   saveFileContent(projectId, rawText);
+  if (fileHandle) saveFileHandle(projectId, fileHandle).then(renderProjectList);
 
   app.currentProjectId = projectId;
   app.parsedDiff = parsed;
@@ -1566,10 +1676,11 @@ async function importAppData(file) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Conflict modal (same filename detected)
 // ─────────────────────────────────────────────────────────────────────────────
-function showConflictModal(fileName, existingProjects, parsed, rawText) {
+function showConflictModal(fileName, existingProjects, parsed, rawText, fileHandle = null) {
   modalFileName   = fileName;
   modalParsedDiff = parsed;
   modalRawText    = rawText;
+  modalFileHandle = fileHandle;
 
   document.getElementById('modal-desc').textContent =
     `ファイル名「${fileName}」の既存プロジェクトが ${existingProjects.length} 件あります。` +
@@ -1627,12 +1738,13 @@ function hideModal() {
   modalParsedDiff = null;
   modalRawText    = null;
   modalSelectedId = null;
+  modalFileHandle = null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // File loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadDiffFile(file) {
+async function loadDiffFile(file, fileHandle = null) {
   let text;
   try {
     text = await file.text();
@@ -1657,17 +1769,91 @@ async function loadDiffFile(file) {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed, text);
+    showConflictModal(fileName, existing, parsed, text, fileHandle);
   } else {
-    createNewProject(fileName, parsed, text);
+    createNewProject(fileName, parsed, text, fileHandle);
+  }
+}
+
+/**
+ * Re-read a project's remembered file straight from disk via its stored
+ * FileSystemFileHandle (File System Access API) and refresh its diff/review
+ * state in place, without going through the file picker again.
+ */
+async function reloadProjectFile(projectId) {
+  const proj = loadProjects().find(p => p.id === projectId);
+  if (!proj) return;
+
+  const handle = await loadFileHandle(projectId);
+  if (!handle) {
+    alert(
+      'このプロジェクトには再読み込み用のファイル参照が保存されていません。\n' +
+      '「📂 Diffファイルを開く」から選び直してください。'
+    );
+    return;
+  }
+
+  try {
+    let permission = await handle.queryPermission({ mode: 'read' });
+    if (permission !== 'granted') {
+      permission = await handle.requestPermission({ mode: 'read' });
+    }
+    if (permission !== 'granted') {
+      alert('ファイルへのアクセスが許可されませんでした。');
+      return;
+    }
+
+    const file = await handle.getFile();
+    const text = await file.text();
+    const parsed = parseDiff(text);
+    if (parsed.length === 0) {
+      alert(
+        '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+        'ファイルの内容を確認してください。'
+      );
+      return;
+    }
+    await computeAllHashes(parsed);
+    updateExistingProject(projectId, parsed, text, handle);
+  } catch (err) {
+    console.error('Failed to reload file for project', projectId, err);
+    alert(
+      `ファイルの再読み込みに失敗しました:\n${err.message}\n\n` +
+      'ファイルが移動または削除された可能性があります。「📂 Diffファイルを開く」から選び直してください。'
+    );
+    if (err.name === 'NotFoundError') {
+      await deleteFileHandleRecord(projectId);
+      renderProjectList();
+    }
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Event listeners
 // ─────────────────────────────────────────────────────────────────────────────
-document.getElementById('load-btn').addEventListener('click', () => {
-  document.getElementById('file-input').click();
+document.getElementById('load-btn').addEventListener('click', async () => {
+  if (!supportsFileSystemAccess) {
+    document.getElementById('file-input').click();
+    return;
+  }
+
+  let handle;
+  try {
+    [handle] = await window.showOpenFilePicker({
+      types: [{
+        description: 'Diff files',
+        accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
+      }],
+      excludeAcceptAllOption: false,
+      multiple: false,
+    });
+  } catch (err) {
+    if (err.name !== 'AbortError') console.error('showOpenFilePicker failed', err);
+    return;
+  }
+
+  const file = await handle.getFile();
+  await loadDiffFile(file, handle);
 });
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
@@ -1694,8 +1880,9 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const fn      = modalFileName;
   const parsed  = modalParsedDiff;
   const rawText = modalRawText;
+  const handle  = modalFileHandle;
   hideModal();
-  createNewProject(fn, parsed, rawText);
+  createNewProject(fn, parsed, rawText, handle);
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
@@ -1703,8 +1890,9 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const id      = modalSelectedId;
   const parsed  = modalParsedDiff;
   const rawText = modalRawText;
+  const handle  = modalFileHandle;
   hideModal();
-  updateExistingProject(id, parsed, rawText);
+  updateExistingProject(id, parsed, rawText, handle);
 });
 
 // Close modal by clicking the backdrop
@@ -1724,6 +1912,7 @@ document.addEventListener('keydown', (e) => {
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
+  await refreshHandleIndex();
   renderProjectList();
 
   // Restore the last active project selection, and its diff if a copy of the
