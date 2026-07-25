@@ -701,7 +701,12 @@ const app = {
 
 /** Read the "未レビューのみ表示" preference from localStorage (defaults to off). */
 function loadUnreviewedOnlyPref() {
-  return localStorage.getItem(SK_UNREVIEWED_ONLY) === '1';
+  try {
+    return localStorage.getItem(SK_UNREVIEWED_ONLY) === '1';
+  } catch (e) {
+    console.error('Failed to load unreviewed-only filter preference:', e);
+    return false;
+  }
 }
 
 /** Persist the "未レビューのみ表示" preference. */
