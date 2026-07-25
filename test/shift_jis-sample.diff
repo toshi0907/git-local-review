@@ -1,0 +1,15 @@
+diff --git a/src/greeting.js b/src/greeting.js
+index 3a1b2c4..7f8d9e0 100644
+--- a/src/greeting.js
++++ b/src/greeting.js
+@@ -1,7 +1,9 @@
++// 挨拶メッセージを生成するユーティリティ
+ function greet(name) {
+-  return "こんにちは、" + name + "さん";
++  if (!name) {
++    throw new Error("名前を指定してください");
++  }
++  return "こんにちは、" + name + "さん。今日もよろしくお願いします。";
+ }
+
+ module.exports = { greet };

@@ -136,6 +136,29 @@
 
     #import-input { display: none; }
 
+    .encoding-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #57606a;
+    }
+
+    .encoding-row label { flex-shrink: 0; }
+
+    .encoding-row select,
+    .proj-encoding select {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 4px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+    }
+
     .sidebar-section-title {
       padding: 10px 16px;
       font-size: 11px;
@@ -195,6 +218,15 @@
     }
 
     .proj-meta {
+      font-size: 11px;
+      color: #8b949e;
+      margin-bottom: 6px;
+    }
+
+    .proj-encoding {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       font-size: 11px;
       color: #8b949e;
       margin-bottom: 6px;
@@ -584,6 +616,15 @@
           <span aria-hidden="true">📥</span> インポート
         </button>
       </div>
+      <div class="encoding-row">
+        <label for="encoding-select">文字コード</label>
+        <select id="encoding-select" title="読み込むdiffファイルの文字コード">
+          <option value="auto">自動判定</option>
+          <option value="utf-8">UTF-8</option>
+          <option value="shift_jis">Shift_JIS</option>
+          <option value="euc-jp">EUC-JP</option>
+        </select>
+      </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
     <div class="project-list" id="project-list"></div>
@@ -642,6 +683,109 @@ let modalParsedDiff  = null;
 let modalRawText     = null;
 let modalSelectedId  = null;
 let modalFileHandle  = null;
+let modalEncoding    = 'auto';
+let modalResolvedEncoding = 'utf-8';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Character encoding detection / decoding
+//
+// diff ファイルは UTF-8 以外に Shift_JIS / EUC-JP で保存されることがあるため、
+// バイト列から自動判定して読み込む。判定を誤った場合に備え、プロジェクトごとに
+// 明示的な文字コードを指定して読み込み直せるようにしてある（proj.encoding）。
+// ─────────────────────────────────────────────────────────────────────────────
+const ENCODING_LABELS = {
+  auto:       '自動判定',
+  'utf-8':    'UTF-8',
+  shift_jis:  'Shift_JIS',
+  'euc-jp':   'EUC-JP',
+};
+
+/** Score how well `bytes` parses as Shift_JIS 2-byte sequences (higher = more plausible). */
+function scoreShiftJis(bytes) {
+  let score = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if ((b >= 0x81 && b <= 0x9f) || (b >= 0xe0 && b <= 0xfc)) {
+      const next = bytes[i + 1];
+      if (next !== undefined && next >= 0x40 && next <= 0xfc && next !== 0x7f) {
+        score += 2;
+        i++;
+      } else {
+        score -= 3;
+      }
+    } else if ((b >= 0x80 && b <= 0xa0 && b !== 0x80) || b >= 0xfd) {
+      score -= 3; // byte with no valid role as a Shift_JIS lead byte
+    }
+  }
+  return score;
+}
+
+/** Score how well `bytes` parses as EUC-JP 2/3-byte sequences (higher = more plausible). */
+function scoreEucJp(bytes) {
+  let score = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b === 0x8e) { // half-width kana lead byte
+      const next = bytes[i + 1];
+      if (next !== undefined && next >= 0xa1 && next <= 0xdf) { score += 2; i++; }
+      else score -= 3;
+    } else if (b === 0x8f) { // JIS X 0212 lead byte
+      const n1 = bytes[i + 1], n2 = bytes[i + 2];
+      if (n1 !== undefined && n1 >= 0xa1 && n1 <= 0xfe && n2 !== undefined && n2 >= 0xa1 && n2 <= 0xfe) { score += 3; i += 2; }
+      else score -= 3;
+    } else if (b >= 0xa1 && b <= 0xfe) {
+      const next = bytes[i + 1];
+      if (next !== undefined && next >= 0xa1 && next <= 0xfe) { score += 2; i++; }
+      else score -= 3;
+    } else if (b >= 0x80 && b <= 0xa0) {
+      score -= 3;
+    }
+  }
+  return score;
+}
+
+/**
+ * Auto-detect a diff file's text encoding from its raw bytes.
+ * Strict (fatal) UTF-8 decoding is tried first since real Shift_JIS/EUC-JP
+ * text essentially never happens to be valid UTF-8 beyond a few bytes; if
+ * that fails, the bytes are scored against both legacy Japanese encodings
+ * and the higher scorer wins.
+ * @returns {'utf-8'|'shift_jis'|'euc-jp'}
+ */
+function detectEncoding(buffer) {
+  const bytes = new Uint8Array(buffer);
+
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return 'utf-8';
+  }
+
+  try {
+    new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return 'utf-8';
+  } catch (e) {
+    // Not valid UTF-8 - fall through to legacy Japanese encoding detection.
+  }
+
+  const sjisScore = scoreShiftJis(bytes);
+  const eucScore  = scoreEucJp(bytes);
+  return eucScore > sjisScore ? 'euc-jp' : 'shift_jis';
+}
+
+/**
+ * Decode `buffer` (an ArrayBuffer) into a string.
+ * `encoding` may be 'auto' (or omitted) to auto-detect, or an explicit
+ * 'utf-8' | 'shift_jis' | 'euc-jp' override.
+ * @returns {{text: string, encoding: string}} the decoded text and the encoding actually used
+ */
+function decodeBytes(buffer, encoding) {
+  const enc = (!encoding || encoding === 'auto') ? detectEncoding(buffer) : encoding;
+  try {
+    return { text: new TextDecoder(enc).decode(buffer), encoding: enc };
+  } catch (e) {
+    console.error(`Unsupported encoding "${enc}", falling back to UTF-8`, e);
+    return { text: new TextDecoder('utf-8').decode(buffer), encoding: 'utf-8' };
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // localStorage helpers
@@ -1159,6 +1303,29 @@ function renderProjectList() {
     const metaEl   = document.createElement('div'); metaEl.className = 'proj-meta'; metaEl.textContent = `更新: ${updated}`;
     const actEl    = document.createElement('div'); actEl.className = 'proj-actions';
 
+    const encEl = document.createElement('div');
+    encEl.className = 'proj-encoding';
+    const encLabel = document.createElement('span');
+    encLabel.textContent = '文字コード:';
+    const encSelect = document.createElement('select');
+    encSelect.title = 'このプロジェクトのdiffファイルの文字コードを指定（自動判定を誤った場合の上書き用）';
+    for (const val of ['auto', 'utf-8', 'shift_jis', 'euc-jp']) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = (val === 'auto' && proj.resolvedEncoding)
+        ? `${ENCODING_LABELS.auto}（${ENCODING_LABELS[proj.resolvedEncoding] || proj.resolvedEncoding}）`
+        : ENCODING_LABELS[val];
+      encSelect.appendChild(opt);
+    }
+    encSelect.value = proj.encoding || 'auto';
+    encSelect.addEventListener('click', e => e.stopPropagation());
+    encSelect.addEventListener('change', e => {
+      e.stopPropagation();
+      changeProjectEncoding(proj.id, e.target.value);
+    });
+    encEl.appendChild(encLabel);
+    encEl.appendChild(encSelect);
+
     const resetBtn = document.createElement('button');
     resetBtn.className = 'btn btn-reset';
     resetBtn.textContent = '🔄 リセット';
@@ -1185,6 +1352,7 @@ function renderProjectList() {
     item.appendChild(nameEl);
     item.appendChild(idEl);
     item.appendChild(metaEl);
+    item.appendChild(encEl);
     item.appendChild(actEl);
 
     item.addEventListener('click', () => activateProject(proj.id));
@@ -1557,12 +1725,17 @@ function deleteProject(projectId) {
   renderProjectList();
 }
 
-/** Create a brand-new project and display its diff */
-function createNewProject(fileName, parsed, rawText, fileHandle = null) {
+/**
+ * Create a brand-new project and display its diff.
+ * `encodingPref` is the user's encoding choice ('auto' or an explicit
+ * override) persisted for future loads/reloads; `resolvedEncoding` is the
+ * concrete encoding actually used to decode this file, shown in the UI.
+ */
+function createNewProject(fileName, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8') {
   const id  = generateProjectId(fileName);
   const now = Date.now();
   const projects = loadProjects();
-  projects.push({ id, fileName, createdAt: now, lastUpdated: now });
+  projects.push({ id, fileName, createdAt: now, lastUpdated: now, encoding: encodingPref, resolvedEncoding });
   saveProjects(projects);
   saveFileContent(id, rawText);
   if (fileHandle) saveFileHandle(id, fileHandle).then(renderProjectList);
@@ -1576,10 +1749,15 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null) {
 }
 
 /** Update an existing project's metadata and display its (new) diff */
-function updateExistingProject(projectId, parsed, rawText, fileHandle = null) {
+function updateExistingProject(projectId, parsed, rawText, fileHandle = null, encodingPref = undefined, resolvedEncoding = undefined) {
   const projects = loadProjects();
   const proj = projects.find(p => p.id === projectId);
-  if (proj) { proj.lastUpdated = Date.now(); saveProjects(projects); }
+  if (proj) {
+    proj.lastUpdated = Date.now();
+    if (encodingPref !== undefined) proj.encoding = encodingPref;
+    if (resolvedEncoding !== undefined) proj.resolvedEncoding = resolvedEncoding;
+    saveProjects(projects);
+  }
   saveFileContent(projectId, rawText);
   if (fileHandle) saveFileHandle(projectId, fileHandle).then(renderProjectList);
 
@@ -1591,9 +1769,35 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null) {
   renderDiff();
 }
 
+/**
+ * Change a project's encoding preference and, if possible, immediately
+ * re-decode its file with the new setting. Requires a remembered
+ * FileSystemFileHandle (File System Access API); otherwise the preference
+ * is saved and applied the next time the file is (re-)selected.
+ */
+async function changeProjectEncoding(projectId, newEncoding) {
+  const projects = loadProjects();
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj) return;
+  proj.encoding = newEncoding;
+  saveProjects(projects);
+
+  if (projectIdsWithHandles.has(projectId)) {
+    await reloadProjectFile(projectId);
+  } else {
+    renderProjectList();
+    alert(
+      '文字コードの設定を保存しました。\n' +
+      '「📂 Diffファイルを開く」から同じファイルを選び直すと、新しい設定で再読み込みされます。'
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Export / Import
 // ─────────────────────────────────────────────────────────────────────────────
+
+const VALID_ENCODINGS = ['auto', 'utf-8', 'shift_jis', 'euc-jp'];
 
 /** Keep only well-formed project entries; drop anything with an unexpected shape. */
 function sanitizeImportedProjects(rawProjects) {
@@ -1604,7 +1808,9 @@ function sanitizeImportedProjects(rawProjects) {
     if (typeof p.id !== 'string' || typeof p.fileName !== 'string') continue;
     const createdAt = typeof p.createdAt === 'number' ? p.createdAt : Date.now();
     const lastUpdated = typeof p.lastUpdated === 'number' ? p.lastUpdated : createdAt;
-    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated });
+    const encoding = VALID_ENCODINGS.includes(p.encoding) ? p.encoding : 'auto';
+    const resolvedEncoding = ['utf-8', 'shift_jis', 'euc-jp'].includes(p.resolvedEncoding) ? p.resolvedEncoding : undefined;
+    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding });
   }
   return result;
 }
@@ -1676,11 +1882,13 @@ async function importAppData(file) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Conflict modal (same filename detected)
 // ─────────────────────────────────────────────────────────────────────────────
-function showConflictModal(fileName, existingProjects, parsed, rawText, fileHandle = null) {
+function showConflictModal(fileName, existingProjects, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8') {
   modalFileName   = fileName;
   modalParsedDiff = parsed;
   modalRawText    = rawText;
   modalFileHandle = fileHandle;
+  modalEncoding   = encodingPref;
+  modalResolvedEncoding = resolvedEncoding;
 
   document.getElementById('modal-desc').textContent =
     `ファイル名「${fileName}」の既存プロジェクトが ${existingProjects.length} 件あります。` +
@@ -1739,25 +1947,30 @@ function hideModal() {
   modalRawText    = null;
   modalSelectedId = null;
   modalFileHandle = null;
+  modalEncoding   = 'auto';
+  modalResolvedEncoding = 'utf-8';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // File loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadDiffFile(file, fileHandle = null) {
-  let text;
+async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
+  let buffer;
   try {
-    text = await file.text();
+    buffer = await file.arrayBuffer();
   } catch (err) {
     alert(`ファイルの読み込みに失敗しました:\n${err.message}`);
     return;
   }
 
+  const { text, encoding } = decodeBytes(buffer, encodingPref);
+
   const parsed = parseDiff(text);
   if (parsed.length === 0) {
     alert(
       '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
-      'git diff または git show の出力を保存したファイルをご利用ください。'
+      'git diff または git show の出力を保存したファイルをご利用ください。\n' +
+      '文字コードの判定・指定が誤っている可能性もあります。'
     );
     return;
   }
@@ -1769,9 +1982,9 @@ async function loadDiffFile(file, fileHandle = null) {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed, text, fileHandle);
+    showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
   } else {
-    createNewProject(fileName, parsed, text, fileHandle);
+    createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
   }
 }
 
@@ -1809,17 +2022,19 @@ async function reloadProjectFile(projectId) {
     }
 
     const file = await handle.getFile();
-    const text = await file.text();
+    const buffer = await file.arrayBuffer();
+    const { text, encoding } = decodeBytes(buffer, proj.encoding);
     const parsed = parseDiff(text);
     if (parsed.length === 0) {
       alert(
         '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
-        'ファイルの内容を確認してください。'
+        'ファイルの内容を確認してください。\n' +
+        '文字コードの判定・指定が誤っている可能性もあります。'
       );
       return;
     }
     await computeAllHashes(parsed);
-    updateExistingProject(projectId, parsed, text, handle);
+    updateExistingProject(projectId, parsed, text, handle, proj.encoding, encoding);
   } catch (err) {
     console.error('Failed to reload file for project', projectId, err);
     alert(
@@ -1837,6 +2052,8 @@ async function reloadProjectFile(projectId) {
 // Event listeners
 // ─────────────────────────────────────────────────────────────────────────────
 document.getElementById('load-btn').addEventListener('click', async () => {
+  const encodingPref = document.getElementById('encoding-select').value;
+
   if (!supportsFileSystemAccess) {
     document.getElementById('file-input').click();
     return;
@@ -1858,14 +2075,15 @@ document.getElementById('load-btn').addEventListener('click', async () => {
   }
 
   const file = await handle.getFile();
-  await loadDiffFile(file, handle);
+  await loadDiffFile(file, handle, encodingPref);
 });
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  const encodingPref = document.getElementById('encoding-select').value;
   e.target.value = ''; // allow re-selecting the same file
-  await loadDiffFile(file);
+  await loadDiffFile(file, null, encodingPref);
 });
 
 document.getElementById('export-btn').addEventListener('click', exportAppData);
@@ -1886,8 +2104,10 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const parsed  = modalParsedDiff;
   const rawText = modalRawText;
   const handle  = modalFileHandle;
+  const encPref = modalEncoding;
+  const encResolved = modalResolvedEncoding;
   hideModal();
-  createNewProject(fn, parsed, rawText, handle);
+  createNewProject(fn, parsed, rawText, handle, encPref, encResolved);
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
@@ -1896,8 +2116,10 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const parsed  = modalParsedDiff;
   const rawText = modalRawText;
   const handle  = modalFileHandle;
+  const encPref = modalEncoding;
+  const encResolved = modalResolvedEncoding;
   hideModal();
-  updateExistingProject(id, parsed, rawText, handle);
+  updateExistingProject(id, parsed, rawText, handle, encPref, encResolved);
 });
 
 // Close modal by clicking the backdrop
