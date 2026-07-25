@@ -159,6 +159,29 @@
       font-size: 11px;
     }
 
+    .sort-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-size: 12px;
+      color: #57606a;
+      border-bottom: 1px solid #e1e4e8;
+    }
+
+    .sort-row label { flex-shrink: 0; }
+
+    .sort-row select {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 4px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+    }
+
     .sidebar-section-title {
       padding: 10px 16px;
       font-size: 11px;
@@ -627,6 +650,15 @@
       </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
+    <div class="sort-row">
+      <label for="project-sort-select">並び順</label>
+      <select id="project-sort-select" title="プロジェクト一覧の並び順">
+        <option value="updated-desc">更新日（新しい順）</option>
+        <option value="updated-asc">更新日（古い順）</option>
+        <option value="name-asc">ファイル名（A→Z）</option>
+        <option value="name-desc">ファイル名（Z→A）</option>
+      </select>
+    </div>
     <div class="project-list" id="project-list"></div>
   </div>
 
@@ -660,10 +692,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage keys
 // ─────────────────────────────────────────────────────────────────────────────
-const SK_PROJECTS = 'gitLocalReview_projects';
-const SK_REVIEWS  = 'gitLocalReview_reviews';
-const SK_CURRENT  = 'gitLocalReview_currentProject';
-const SK_FILES    = 'gitLocalReview_files';
+const SK_PROJECTS    = 'gitLocalReview_projects';
+const SK_REVIEWS     = 'gitLocalReview_reviews';
+const SK_CURRENT     = 'gitLocalReview_currentProject';
+const SK_FILES       = 'gitLocalReview_files';
+const SK_PROJECT_SORT = 'gitLocalReview_projectSort';
+
+const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
+const DEFAULT_PROJECT_SORT = 'updated-desc';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -824,6 +860,41 @@ function saveProjects(projects) {
   } catch (e) {
     console.error('Failed to save projects to localStorage:', e);
     alert('プロジェクトの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function loadProjectSort() {
+  try {
+    const val = localStorage.getItem(SK_PROJECT_SORT);
+    return VALID_PROJECT_SORTS.includes(val) ? val : DEFAULT_PROJECT_SORT;
+  } catch (e) {
+    console.error('Failed to load project sort preference from localStorage:', e);
+    return DEFAULT_PROJECT_SORT;
+  }
+}
+
+function saveProjectSort(sortKey) {
+  try {
+    localStorage.setItem(SK_PROJECT_SORT, sortKey);
+  } catch (e) {
+    console.error('Failed to save project sort preference to localStorage:', e);
+  }
+}
+
+// Sort a copy of the projects array according to the given sort key.
+// Falls back to the default (newest updated first) for unknown keys.
+function sortProjects(projects, sortKey) {
+  const list = [...projects];
+  switch (sortKey) {
+    case 'updated-asc':
+      return list.sort((a, b) => (a.lastUpdated || a.createdAt) - (b.lastUpdated || b.createdAt));
+    case 'name-asc':
+      return list.sort((a, b) => a.fileName.localeCompare(b.fileName, 'ja', { numeric: true, sensitivity: 'base' }));
+    case 'name-desc':
+      return list.sort((a, b) => b.fileName.localeCompare(a.fileName, 'ja', { numeric: true, sensitivity: 'base' }));
+    case 'updated-desc':
+    default:
+      return list.sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
   }
 }
 
@@ -1306,7 +1377,7 @@ function renderProjectList() {
   }
 
   listEl.innerHTML = '';
-  const sorted = [...projects].sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
+  const sorted = sortProjects(projects, loadProjectSort());
 
   for (const proj of sorted) {
     const isActive = proj.id === app.currentProjectId;
@@ -2120,6 +2191,11 @@ document.getElementById('import-input').addEventListener('change', async (e) => 
   await importAppData(file);
 });
 
+document.getElementById('project-sort-select').addEventListener('change', (e) => {
+  saveProjectSort(e.target.value);
+  renderProjectList();
+});
+
 document.getElementById('modal-btn-new').addEventListener('click', () => {
   const fn      = modalFileName;
   const parsed  = modalParsedDiff;
@@ -2160,6 +2236,7 @@ document.addEventListener('keydown', (e) => {
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
+  document.getElementById('project-sort-select').value = loadProjectSort();
   await refreshHandleIndex();
   renderProjectList();
 
