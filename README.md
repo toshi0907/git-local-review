@@ -2,6 +2,8 @@
 
 ブラウザで動作するローカル diff レビューツールです。サーバー不要・ビルド不要のシングル HTML ファイルで提供されます。
 
+🌐 GitHub Pages: https://toshi0907.github.io/git-local-review/
+
 ## 特徴
 
 - **シングルファイル** — `index.html` をブラウザで開くだけで動作（サーバー・ビルド不要）
