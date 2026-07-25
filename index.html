@@ -875,7 +875,7 @@ function loadProjectSort() {
 
 function saveProjectSort(sortKey) {
   try {
-    localStorage.setItem(SK_PROJECT_SORT, sortKey);
+    localStorage.setItem(SK_PROJECT_SORT, VALID_PROJECT_SORTS.includes(sortKey) ? sortKey : DEFAULT_PROJECT_SORT);
   } catch (e) {
     console.error('Failed to save project sort preference to localStorage:', e);
   }
@@ -885,13 +885,14 @@ function saveProjectSort(sortKey) {
 // Falls back to the default (newest updated first) for unknown keys.
 function sortProjects(projects, sortKey) {
   const list = [...projects];
+  const fileName = p => typeof p.fileName === 'string' ? p.fileName : '';
   switch (sortKey) {
     case 'updated-asc':
       return list.sort((a, b) => (a.lastUpdated || a.createdAt) - (b.lastUpdated || b.createdAt));
     case 'name-asc':
-      return list.sort((a, b) => a.fileName.localeCompare(b.fileName, 'ja', { numeric: true, sensitivity: 'base' }));
+      return list.sort((a, b) => fileName(a).localeCompare(fileName(b), 'ja', { numeric: true, sensitivity: 'base' }));
     case 'name-desc':
-      return list.sort((a, b) => b.fileName.localeCompare(a.fileName, 'ja', { numeric: true, sensitivity: 'base' }));
+      return list.sort((a, b) => fileName(b).localeCompare(fileName(a), 'ja', { numeric: true, sensitivity: 'base' }));
     case 'updated-desc':
     default:
       return list.sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
