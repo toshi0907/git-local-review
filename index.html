@@ -87,6 +87,21 @@
     .view-mode-btn:hover:not(.active) { background: #373e47; }
     .view-mode-btn.active { background: #58a6ff; color: #0b1116; }
 
+    .filter-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #c9d1d9;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .filter-toggle input[type="checkbox"] {
+      cursor: pointer;
+    }
+
     /* ===== Layout ===== */
     .layout {
       display: flex;
@@ -181,6 +196,56 @@
       background: #fff;
       color: #24292e;
       font-size: 11px;
+    }
+
+    .sort-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      font-size: 12px;
+      color: #57606a;
+      border-bottom: 1px solid #e1e4e8;
+    }
+
+    .sort-row label { flex-shrink: 0; }
+
+    .sort-row select {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 4px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+    }
+
+    .keyword-row {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #57606a;
+    }
+
+    .keyword-row label {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .keyword-row input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 6px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 12px;
+    }
+
+    .keyword-row input:focus {
+      outline: none;
+      border-color: #0969da;
     }
 
     .sidebar-section-title {
@@ -372,6 +437,19 @@
 
     .hunk-card.reviewed { background: #f0fff4; }
 
+    .hunk-card.focused {
+      outline: 2px solid #4c9aff;
+      outline-offset: -2px;
+    }
+
+    .hunk-card.focused .hunk-header-bar {
+      background: #dceaff;
+    }
+
+    .hunk-card.focused.reviewed .hunk-header-bar {
+      background: #d3f5df;
+    }
+
     .hunk-header-bar {
       display: flex;
       align-items: center;
@@ -478,6 +556,14 @@
     .diff-table .hljs-code,
     .diff-table .hljs-addition,
     .diff-table .hljs-deletion { background: transparent; padding: 0; }
+
+    /* Keyword highlight (issue #10): applied on top of syntax highlighting,
+       so it must win over the transparent background rules above. */
+    .keyword-hit {
+      background: #fff000;
+      color: #24292e;
+      border-radius: 2px;
+    }
 
     .line-prefix {
       display: inline-block;
@@ -646,6 +732,10 @@
     <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
     <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
   </div>
+  <label class="filter-toggle" title="レビュー済みのハンク・ファイルを非表示にして、未レビューの箇所だけを表示します">
+    <input type="checkbox" id="unreviewed-filter-toggle">
+    未レビューのみ表示
+  </label>
   <span id="overall-progress"></span>
 </div>
 
@@ -655,7 +745,7 @@
   <!-- Sidebar: file loader + project list -->
   <div class="sidebar">
     <div class="load-section">
-      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain">
+      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain" multiple>
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
@@ -677,8 +767,22 @@
           <option value="euc-jp">EUC-JP</option>
         </select>
       </div>
+      <div class="keyword-row">
+        <label for="keyword-input">キーワード（カンマ区切り）</label>
+        <input type="text" id="keyword-input" placeholder="例: TODO, FIXME, XXX"
+               title="差分中でこれらのキーワードを含む行を黄色でハイライトします（大文字小文字は区別しません）">
+      </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
+    <div class="sort-row">
+      <label for="project-sort-select">並び順</label>
+      <select id="project-sort-select" title="プロジェクト一覧の並び順">
+        <option value="updated-desc">更新日（新しい順）</option>
+        <option value="updated-asc">更新日（古い順）</option>
+        <option value="name-asc">ファイル名（A→Z）</option>
+        <option value="name-desc">ファイル名（Z→A）</option>
+      </select>
+    </div>
     <div class="project-list" id="project-list"></div>
   </div>
 
@@ -712,11 +816,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Storage keys
 // ─────────────────────────────────────────────────────────────────────────────
-const SK_PROJECTS  = 'gitLocalReview_projects';
-const SK_REVIEWS   = 'gitLocalReview_reviews';
-const SK_CURRENT   = 'gitLocalReview_currentProject';
-const SK_FILES     = 'gitLocalReview_files';
-const SK_VIEW_MODE = 'gitLocalReview_viewMode';
+const SK_PROJECTS         = 'gitLocalReview_projects';
+const SK_REVIEWS          = 'gitLocalReview_reviews';
+const SK_CURRENT          = 'gitLocalReview_currentProject';
+const SK_FILES            = 'gitLocalReview_files';
+const SK_VIEW_MODE        = 'gitLocalReview_viewMode';
+const SK_UNREVIEWED_ONLY  = 'gitLocalReview_unreviewedOnly';
+const SK_PROJECT_SORT     = 'gitLocalReview_projectSort';
+const SK_KEYWORDS         = 'gitLocalReview_keywords';
+
+const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
+const DEFAULT_PROJECT_SORT = 'updated-desc';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -730,7 +840,31 @@ const app = {
   fileProgressEls: new Map(),
   /** @type {'unified'|'split'} Current diff view mode ('split' = side-by-side) */
   viewMode: 'unified',
+  /** When true, renderDiff() hides fully-reviewed hunks/files so only remaining work is shown */
+  unreviewedOnly: loadUnreviewedOnlyPref(),
+  /** Index into the flat, document-order list of currently rendered hunk cards
+   *  that has keyboard focus (j/k to move, Space to toggle). -1 = none. */
+  focusedHunkIndex: -1,
 };
+
+/** Read the "未レビューのみ表示" preference from localStorage (defaults to off). */
+function loadUnreviewedOnlyPref() {
+  try {
+    return localStorage.getItem(SK_UNREVIEWED_ONLY) === '1';
+  } catch (e) {
+    console.error('Failed to load unreviewed-only filter preference:', e);
+    return false;
+  }
+}
+
+/** Persist the "未レビューのみ表示" preference. */
+function saveUnreviewedOnlyPref(enabled) {
+  try {
+    localStorage.setItem(SK_UNREVIEWED_ONLY, enabled ? '1' : '0');
+  } catch (e) {
+    console.error('Failed to save unreviewed-only filter preference:', e);
+  }
+}
 
 // Modal transient state
 let modalFileName    = '';
@@ -740,6 +874,8 @@ let modalSelectedId  = null;
 let modalFileHandle  = null;
 let modalEncoding    = 'auto';
 let modalResolvedEncoding = 'utf-8';
+/** Resolver for the Promise returned by showConflictModal(), so callers can await the user's choice. */
+let modalResolve     = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Character encoding detection / decoding
@@ -882,6 +1018,42 @@ function saveProjects(projects) {
   }
 }
 
+function loadProjectSort() {
+  try {
+    const val = localStorage.getItem(SK_PROJECT_SORT);
+    return VALID_PROJECT_SORTS.includes(val) ? val : DEFAULT_PROJECT_SORT;
+  } catch (e) {
+    console.error('Failed to load project sort preference from localStorage:', e);
+    return DEFAULT_PROJECT_SORT;
+  }
+}
+
+function saveProjectSort(sortKey) {
+  try {
+    localStorage.setItem(SK_PROJECT_SORT, VALID_PROJECT_SORTS.includes(sortKey) ? sortKey : DEFAULT_PROJECT_SORT);
+  } catch (e) {
+    console.error('Failed to save project sort preference to localStorage:', e);
+  }
+}
+
+// Sort a copy of the projects array according to the given sort key.
+// Falls back to the default (newest updated first) for unknown keys.
+function sortProjects(projects, sortKey) {
+  const list = [...projects];
+  const fileName = p => typeof p.fileName === 'string' ? p.fileName : '';
+  switch (sortKey) {
+    case 'updated-asc':
+      return list.sort((a, b) => (a.lastUpdated || a.createdAt) - (b.lastUpdated || b.createdAt));
+    case 'name-asc':
+      return list.sort((a, b) => fileName(a).localeCompare(fileName(b), 'ja', { numeric: true, sensitivity: 'base' }));
+    case 'name-desc':
+      return list.sort((a, b) => fileName(b).localeCompare(fileName(a), 'ja', { numeric: true, sensitivity: 'base' }));
+    case 'updated-desc':
+    default:
+      return list.sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
+  }
+}
+
 // Rebuild with null-prototype objects to prevent prototype pollution
 // from diff-derived (or imported) file paths used as object keys.
 function sanitizeReviewsData(parsed) {
@@ -955,6 +1127,118 @@ function sanitizeFilesData(parsed) {
     if (typeof parsed[pid] === 'string') safe[pid] = parsed[pid];
   }
   return safe;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword highlight (issue #10)
+//
+// Users can register arbitrary keywords (e.g. "TODO, FIXME") in the sidebar.
+// Any diff line whose content contains one of these keywords gets its
+// matching substring wrapped in <mark class="keyword-hit"> (yellow
+// background) so stray TODO-style comments are easy to spot while reviewing.
+// Matching is a plain case-insensitive substring search (no RegExp), so
+// there is no need to escape user input and no ReDoS risk.
+// ─────────────────────────────────────────────────────────────────────────────
+function loadKeywordsRaw() {
+  try {
+    return localStorage.getItem(SK_KEYWORDS) || '';
+  } catch (e) {
+    console.error('Failed to load keywords from localStorage:', e);
+    return '';
+  }
+}
+
+function saveKeywordsRaw(raw) {
+  try {
+    localStorage.setItem(SK_KEYWORDS, raw);
+  } catch (e) {
+    console.error('Failed to save keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// Parses the raw comma-separated input into a de-duplicated list of
+// non-empty, trimmed keywords. Whitespace-only entries are dropped, so an
+// empty/blank input yields an empty array (= no highlighting).
+function parseKeywords(raw) {
+  if (!raw) return [];
+  const seen = new Set();
+  const result = [];
+  for (const part of raw.split(',')) {
+    const kw = part.trim();
+    if (!kw || seen.has(kw.toLowerCase())) continue;
+    seen.add(kw.toLowerCase());
+    result.push(kw);
+  }
+  return result;
+}
+
+function getActiveKeywords() {
+  return parseKeywords(loadKeywordsRaw());
+}
+
+// Finds all (merged, non-overlapping) match ranges of any keyword within
+// `text`, case-insensitively. Plain substring search only — no RegExp.
+function findKeywordRanges(text, keywords) {
+  if (!keywords || keywords.length === 0 || !text) return [];
+  const lowerText = text.toLowerCase();
+  const ranges = [];
+  for (const kw of keywords) {
+    const lowerKw = kw.toLowerCase();
+    if (!lowerKw) continue;
+    let from = 0;
+    while (true) {
+      const idx = lowerText.indexOf(lowerKw, from);
+      if (idx === -1) break;
+      ranges.push({ start: idx, end: idx + lowerKw.length });
+      from = idx + lowerKw.length;
+    }
+  }
+  if (ranges.length === 0) return [];
+  ranges.sort((a, b) => a.start - b.start);
+  const merged = [ranges[0]];
+  for (let i = 1; i < ranges.length; i++) {
+    const last = merged[merged.length - 1];
+    const cur  = ranges[i];
+    if (cur.start <= last.end) {
+      last.end = Math.max(last.end, cur.end);
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged;
+}
+
+// Walks the text nodes under `root` and wraps any keyword match in
+// <mark class="keyword-hit">. Operates on the DOM directly (rather than via
+// string/HTML manipulation) so it cannot corrupt highlight.js's markup.
+function applyKeywordHighlight(root, keywords) {
+  if (!keywords || keywords.length === 0) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue;
+    const ranges = findKeywordRanges(text, keywords);
+    if (ranges.length === 0) continue;
+
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (const r of ranges) {
+      if (r.start > pos) frag.appendChild(document.createTextNode(text.slice(pos, r.start)));
+      const mark = document.createElement('mark');
+      mark.className = 'keyword-hit';
+      mark.textContent = text.slice(r.start, r.end);
+      frag.appendChild(mark);
+      pos = r.end;
+    }
+    if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
 }
 
 function loadAllFiles() {
@@ -1383,7 +1667,7 @@ function renderProjectList() {
   }
 
   listEl.innerHTML = '';
-  const sorted = [...projects].sort((a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt));
+  const sorted = sortProjects(projects, loadProjectSort());
 
   for (const proj of sorted) {
     const isActive = proj.id === app.currentProjectId;
@@ -1473,6 +1757,7 @@ function renderDiff() {
   if (!files || files.length === 0) {
     emptyState.style.display = 'block';
     clearOverallProgress();
+    app.focusedHunkIndex = -1;
     return;
   }
 
@@ -1481,13 +1766,18 @@ function renderDiff() {
   const allReviews     = loadAllReviews();
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
 
+  const filterActive = !!app.unreviewedOnly;
   let totalHunks = 0, totalReviewed = 0;
+  let renderedSections = 0;
 
   for (const file of files) {
     const fileReviews  = projectReviews[file.filePath] || Object.create(null);
     const reviewedCnt  = file.hunks.filter(h => fileReviews[h.hash]).length;
     totalHunks    += file.hunks.length;
     totalReviewed += reviewedCnt;
+
+    // In "未レビューのみ表示" mode, skip files where every hunk is already reviewed.
+    if (filterActive && reviewedCnt === file.hunks.length) continue;
 
     const section = document.createElement('div');
     section.className = 'file-section';
@@ -1509,16 +1799,32 @@ function renderDiff() {
     fileHeader.appendChild(progressEl);
     section.appendChild(fileHeader);
 
-    // Hunks
+    // Hunks (skip already-reviewed ones while the filter is active)
     const fileLanguage = detectLanguage(file.filePath);
     for (const hunk of file.hunks) {
-      section.appendChild(buildHunkCard(file.filePath, hunk, !!fileReviews[hunk.hash], fileLanguage));
+      const hunkReviewed = !!fileReviews[hunk.hash];
+      if (filterActive && hunkReviewed) continue;
+      section.appendChild(buildHunkCard(file.filePath, hunk, hunkReviewed, fileLanguage));
     }
 
     container.appendChild(section);
+    renderedSections++;
+  }
+
+  if (filterActive && renderedSections === 0) {
+    const msg = document.createElement('div');
+    msg.className = 'empty-state';
+    msg.innerHTML = totalHunks > 0
+      ? '<span class="icon" aria-hidden="true">🎉</span>すべてのハンクがレビュー済みです'
+      : '<span class="icon" aria-hidden="true">📄</span>表示できるハンクがありません';
+    container.appendChild(msg);
   }
 
   setOverallProgress(totalReviewed, totalHunks);
+
+  // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
+  // (the previous focus index may point at an element that no longer exists).
+  setFocusedHunk(0, { scroll: false });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1569,9 +1875,10 @@ function computeLineRecords(hunk) {
  * @param {{idx:number,type:string,content:string}|null} record
  * @param {string[]|null} hlLines
  * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
+ * @param {string[]} [keywords] - keywords to highlight within this cell's text (see applyKeywordHighlight)
  * @returns {HTMLTableCellElement}
  */
-function buildContentCell(record, hlLines, extraCls) {
+function buildContentCell(record, hlLines, extraCls, keywords) {
   const td = document.createElement('td');
   td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
   if (!record) return td;
@@ -1592,13 +1899,15 @@ function buildContentCell(record, hlLines, extraCls) {
     td.appendChild(document.createTextNode(record.content));
   }
 
+  if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+
   return td;
 }
 
 /**
  * Build the <tbody> for the current (single-column) unified diff view.
  */
-function buildUnifiedTbody(hunk, hlLines) {
+function buildUnifiedTbody(hunk, hlLines, keywords) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -1610,6 +1919,7 @@ function buildUnifiedTbody(hunk, hlLines) {
       td.colSpan = 3;
       td.className = 'line-content line-no-newline';
       td.textContent = record.content;
+      if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
       tr.appendChild(td);
       tbody.appendChild(tr);
       continue;
@@ -1620,7 +1930,7 @@ function buildUnifiedTbody(hunk, hlLines) {
 
     const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
     const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
-    const tdCon = buildContentCell(record, hlLines, null);
+    const tdCon = buildContentCell(record, hlLines, null, keywords);
 
     tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
     tbody.appendChild(tr);
@@ -1639,7 +1949,7 @@ function buildUnifiedTbody(hunk, hlLines) {
  * for side-by-side diff views and does not require a full realignment
  * (Myers-style) of old vs. new content.
  */
-function buildSplitTbody(hunk, hlLines) {
+function buildSplitTbody(hunk, hlLines, keywords) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -1657,13 +1967,13 @@ function buildSplitTbody(hunk, hlLines) {
     tdOldNum.className = 'line-num ' + oldCls;
     tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
 
-    const tdOldContent = buildContentCell(delRec, hlLines, oldCls);
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywords);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider ' + newCls;
     tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
 
-    const tdNewContent = buildContentCell(addRec, hlLines, newCls);
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywords);
 
     tr.appendChild(tdOldNum);
     tr.appendChild(tdOldContent);
@@ -1692,7 +2002,7 @@ function buildSplitTbody(hunk, hlLines) {
     // Context rows show identical content on both sides; build it once and
     // clone the node for the second column instead of re-parsing the same
     // highlighted HTML twice.
-    const tdOldContent = buildContentCell(record, hlLines, null);
+    const tdOldContent = buildContentCell(record, hlLines, null, keywords);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider';
@@ -1713,6 +2023,7 @@ function buildSplitTbody(hunk, hlLines) {
     td.colSpan = 4;
     td.className = 'line-content line-no-newline';
     td.textContent = record.content;
+    if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
     tr.appendChild(td);
     tbody.appendChild(tr);
   }
@@ -1789,6 +2100,11 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = highlightHunkLines(hunk.lines, language, filePath);
 
+  // Keywords are read once per hunk render; changing the keyword input
+  // re-renders the whole diff (see the keyword-input listener below), so
+  // this always reflects the latest configured list.
+  const keywords = getActiveKeywords();
+
   if (isSplit) {
     const thead = document.createElement('thead');
     const trHead = document.createElement('tr');
@@ -1797,9 +2113,9 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     trHead.appendChild(thOld); trHead.appendChild(thNew);
     thead.appendChild(trHead);
     table.appendChild(thead);
-    table.appendChild(buildSplitTbody(hunk, hlLines));
+    table.appendChild(buildSplitTbody(hunk, hlLines, keywords));
   } else {
-    table.appendChild(buildUnifiedTbody(hunk, hlLines));
+    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywords));
   }
 
   body.appendChild(table);
@@ -1845,7 +2161,14 @@ function onCheckboxChange(e) {
   }
 
   saveAllReviews(allReviews);
-  refreshProgress();
+
+  if (app.unreviewedOnly) {
+    // The "未レビューのみ表示" filter needs hunks/files to appear or disappear
+    // immediately, so re-run the full render rather than a lightweight update.
+    renderDiff();
+  } else {
+    refreshProgress();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1878,6 +2201,63 @@ function setOverallProgress(reviewed, total) {
   const el = document.getElementById('overall-progress');
   el.textContent = `全体: ${reviewed} / ${total} hunk レビュー済み`;
   el.classList.toggle('has-progress', reviewed > 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard navigation between hunks (j/k to move focus, Space to toggle
+// レビュー済み on the focused hunk). See keydown listener near the bottom of
+// this script for the key handling itself.
+// ─────────────────────────────────────────────────────────────────────────────
+function getHunkCards() {
+  return Array.from(document.querySelectorAll('#diff-container .hunk-card'));
+}
+
+function updateFocusedHunkVisual() {
+  const cards = getHunkCards();
+  cards.forEach((card, i) => {
+    card.classList.toggle('focused', i === app.focusedHunkIndex);
+  });
+}
+
+// Moves keyboard focus to the hunk at `index` (clamped to the valid range of
+// currently rendered hunks) and scrolls it into view unless `scroll: false`.
+function setFocusedHunk(index, { scroll = true } = {}) {
+  const cards = getHunkCards();
+  if (cards.length === 0) {
+    app.focusedHunkIndex = -1;
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(index, cards.length - 1));
+  app.focusedHunkIndex = clamped;
+  updateFocusedHunkVisual();
+
+  if (scroll) {
+    cards[clamped].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function moveHunkFocus(delta) {
+  const cards = getHunkCards();
+  if (cards.length === 0) return;
+  const current = app.focusedHunkIndex >= 0 ? app.focusedHunkIndex : 0;
+  setFocusedHunk(current + delta);
+}
+
+// Toggles the "レビュー済み" checkbox of the currently focused hunk by
+// flipping its checked state and dispatching a change event, so the
+// existing onCheckboxChange logic (state persistence, progress refresh,
+// collapsing) is reused rather than duplicated here. Flipping `checked`
+// directly (instead of calling .click()) avoids moving DOM focus onto the
+// checkbox, which would otherwise make the next keydown look like "typing"
+// and disable further j/k/Space shortcuts.
+function toggleFocusedHunkReviewed() {
+  const cards = getHunkCards();
+  if (app.focusedHunkIndex < 0 || app.focusedHunkIndex >= cards.length) return;
+  const cb = cards[app.focusedHunkIndex].querySelector('.review-label input[type="checkbox"]');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function clearOverallProgress() {
@@ -2227,12 +2607,28 @@ function showConflictModal(fileName, existingProjects, parsed, rawText, fileHand
   }
 
   document.getElementById('modal-overlay').classList.add('active');
-  
+
   // Focus on the primary button for keyboard/screen-reader accessibility.
   // Timeout ensures the modal is fully rendered before focusing.
   setTimeout(() => {
     document.getElementById('modal-btn-update').focus();
   }, 100);
+
+  // Resolved once the user makes a choice (or dismisses the modal), so
+  // callers such as loadDiffFile() can await the outcome before moving on
+  // to the next file in a batch.
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+  });
+}
+
+/** Settle the pending showConflictModal() promise, if any, then clear it. */
+function resolvePendingModal() {
+  if (modalResolve) {
+    const resolve = modalResolve;
+    modalResolve = null;
+    resolve();
+  }
 }
 
 function hideModal() {
@@ -2249,13 +2645,26 @@ function hideModal() {
 // ─────────────────────────────────────────────────────────────────────────────
 // File loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
+/**
+ * Load and parse a single diff File, then either create a new project or
+ * (when a same-named project already exists) resolve the conflict.
+ *
+ * In normal (interactive) mode a conflict opens the confirmation modal and
+ * waits for the user's choice. In batch mode (used when multiple files are
+ * uploaded at once) the modal is skipped and a new project is always
+ * created automatically, so a whole batch can be processed without
+ * blocking on per-file dialogs; the caller is told a conflict occurred so
+ * it can summarize this for the user afterwards.
+ *
+ * @returns {Promise<{conflict: boolean}>}
+ */
+async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { batchMode = false } = {}) {
   let buffer;
   try {
     buffer = await file.arrayBuffer();
   } catch (err) {
     alert(`ファイルの読み込みに失敗しました:\n${err.message}`);
-    return;
+    return { conflict: false };
   }
 
   const { text, encoding } = decodeBytes(buffer, encodingPref);
@@ -2263,11 +2672,11 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const parsed = parseDiff(text);
   if (parsed.length === 0) {
     alert(
-      '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+      `「${file.name}」: 有効なdiff（unified diff形式）が見つかりませんでした。\n` +
       'git diff または git show の出力を保存したファイルをご利用ください。\n' +
       '文字コードの判定・指定が誤っている可能性もあります。'
     );
-    return;
+    return { conflict: false };
   }
 
   // Compute SHA-256 hashes for all hunks (async, uses Web Crypto API)
@@ -2277,9 +2686,58 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    if (batchMode) {
+      // Don't block a multi-file upload on a per-file modal: always add as
+      // a new project, and let the caller inform the user afterwards.
+      createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+      return { conflict: true };
+    }
+    await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    return { conflict: true };
+  }
+
+  createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  return { conflict: false };
+}
+
+/**
+ * Load multiple diff files, one after another (never in parallel — project
+ * IDs are generated from a same-day sequence counter, so concurrent loads
+ * of same-named files could race and collide).
+ *
+ * A single file is delegated straight to loadDiffFile() in its normal
+ * interactive mode, leaving that existing single-file flow (including the
+ * conflict modal) completely untouched. For two or more files, conflicts
+ * are auto-resolved (see loadDiffFile's batchMode) and summarized in one
+ * alert at the end, so the user is always told what happened and no file
+ * is silently dropped.
+ */
+async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
+  if (files.length === 0) return;
+
+  if (files.length === 1) {
+    await loadDiffFile(files[0], fileHandles ? fileHandles[0] : null, encodingPref);
+    return;
+  }
+
+  const autoRenamed = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const handle = fileHandles ? fileHandles[i] : null;
+    const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true });
+    if (result && result.conflict) autoRenamed.push(file.name);
+  }
+
+  renderProjectList();
+
+  if (autoRenamed.length > 0) {
+    alert(
+      `${files.length} 件のファイルを読み込みました。\n` +
+      `うち ${autoRenamed.length} 件は同名の既存プロジェクトがあったため、新規プロジェクトとして追加しました:\n` +
+      autoRenamed.map(n => `・${n}`).join('\n')
+    );
   } else {
-    createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+    alert(`${files.length} 件のファイルをすべて新規プロジェクトとして読み込みました。`);
   }
 }
 
@@ -2354,31 +2812,31 @@ document.getElementById('load-btn').addEventListener('click', async () => {
     return;
   }
 
-  let handle;
+  let handles;
   try {
-    [handle] = await window.showOpenFilePicker({
+    handles = await window.showOpenFilePicker({
       types: [{
         description: 'Diff files',
         accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
       }],
       excludeAcceptAllOption: false,
-      multiple: false,
+      multiple: true,
     });
   } catch (err) {
     if (err.name !== 'AbortError') console.error('showOpenFilePicker failed', err);
     return;
   }
 
-  const file = await handle.getFile();
-  await loadDiffFile(file, handle, encodingPref);
+  const files = await Promise.all(handles.map(h => h.getFile()));
+  await loadDiffFiles(files, encodingPref, handles);
 });
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
   const encodingPref = document.getElementById('encoding-select').value;
-  e.target.value = ''; // allow re-selecting the same file
-  await loadDiffFile(file, null, encodingPref);
+  e.target.value = ''; // allow re-selecting the same file(s)
+  await loadDiffFiles(files, encodingPref);
 });
 
 document.getElementById('view-mode-unified').addEventListener('click', () => setViewMode('unified'));
@@ -2397,6 +2855,11 @@ document.getElementById('import-input').addEventListener('change', async (e) => 
   await importAppData(file);
 });
 
+document.getElementById('project-sort-select').addEventListener('change', (e) => {
+  saveProjectSort(e.target.value);
+  renderProjectList();
+});
+
 document.getElementById('modal-btn-new').addEventListener('click', () => {
   const fn      = modalFileName;
   const parsed  = modalParsedDiff;
@@ -2406,6 +2869,7 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   createNewProject(fn, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
@@ -2418,19 +2882,61 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   updateExistingProject(id, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 // Close modal by clicking the backdrop
 const modalOverlay = document.getElementById('modal-overlay');
 modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) hideModal();
+  if (e.target === modalOverlay) {
+    hideModal();
+    resolvePendingModal();
+  }
 });
 
-// Close modal with ESC key for keyboard accessibility
+// Close modal with ESC key for keyboard accessibility, and provide keyboard
+// shortcuts for hunk navigation: j/k move focus between hunks, Space toggles
+// レビュー済み on the focused hunk.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
+    resolvePendingModal();
+    return;
   }
+
+  // Don't hijack keys while the user is typing into a form field, or while
+  // the file-conflict modal is open.
+  const tag = e.target && e.target.tagName;
+  const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
+  if (isTyping || modalOverlay.classList.contains('active')) return;
+
+  if (e.key === 'j') {
+    e.preventDefault();
+    moveHunkFocus(1);
+  } else if (e.key === 'k') {
+    e.preventDefault();
+    moveHunkFocus(-1);
+  } else if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (e.repeat) return; // ignore key-repeat from holding Space down
+    toggleFocusedHunkReviewed();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword input (issue #10): persists across reloads/projects and re-renders
+// the currently displayed diff immediately (debounced) whenever it changes.
+// ─────────────────────────────────────────────────────────────────────────────
+const keywordInput = document.getElementById('keyword-input');
+keywordInput.value = loadKeywordsRaw();
+
+let keywordDebounceTimer = null;
+keywordInput.addEventListener('input', () => {
+  saveKeywordsRaw(keywordInput.value);
+  clearTimeout(keywordDebounceTimer);
+  keywordDebounceTimer = setTimeout(() => {
+    if (app.parsedDiff) renderDiff();
+  }, 200);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2440,6 +2946,15 @@ document.addEventListener('keydown', (e) => {
   app.viewMode = loadViewMode();
   updateViewModeButtons();
 
+  const unreviewedFilterToggle = document.getElementById('unreviewed-filter-toggle');
+  unreviewedFilterToggle.checked = app.unreviewedOnly;
+  unreviewedFilterToggle.addEventListener('change', () => {
+    app.unreviewedOnly = unreviewedFilterToggle.checked;
+    saveUnreviewedOnlyPref(app.unreviewedOnly);
+    renderDiff();
+  });
+
+  document.getElementById('project-sort-select').value = loadProjectSort();
   await refreshHandleIndex();
   renderProjectList();
 
