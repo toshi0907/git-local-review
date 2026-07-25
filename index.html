@@ -63,6 +63,21 @@
 
     #overall-progress.has-progress { color: #58a6ff; }
 
+    .filter-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #c9d1d9;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    .filter-toggle input[type="checkbox"] {
+      cursor: pointer;
+    }
+
     /* ===== Layout ===== */
     .layout {
       display: flex;
@@ -594,6 +609,10 @@
 <div class="topbar">
   <h1>🔍 Git Local Review</h1>
   <div class="spacer"></div>
+  <label class="filter-toggle" title="レビュー済みのハンク・ファイルを非表示にして、未レビューの箇所だけを表示します">
+    <input type="checkbox" id="unreviewed-filter-toggle">
+    未レビューのみ表示
+  </label>
   <span id="overall-progress"></span>
 </div>
 
@@ -664,6 +683,7 @@ const SK_PROJECTS = 'gitLocalReview_projects';
 const SK_REVIEWS  = 'gitLocalReview_reviews';
 const SK_CURRENT  = 'gitLocalReview_currentProject';
 const SK_FILES    = 'gitLocalReview_files';
+const SK_UNREVIEWED_ONLY = 'gitLocalReview_unreviewedOnly';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -675,7 +695,23 @@ const app = {
   parsedDiff: null,
   /** Holds progress badge elements keyed by filePath, populated during renderDiff */
   fileProgressEls: new Map(),
+  /** When true, renderDiff() hides fully-reviewed hunks/files so only remaining work is shown */
+  unreviewedOnly: loadUnreviewedOnlyPref(),
 };
+
+/** Read the "未レビューのみ表示" preference from localStorage (defaults to off). */
+function loadUnreviewedOnlyPref() {
+  return localStorage.getItem(SK_UNREVIEWED_ONLY) === '1';
+}
+
+/** Persist the "未レビューのみ表示" preference. */
+function saveUnreviewedOnlyPref(enabled) {
+  try {
+    localStorage.setItem(SK_UNREVIEWED_ONLY, enabled ? '1' : '0');
+  } catch (e) {
+    console.error('Failed to save unreviewed-only filter preference:', e);
+  }
+}
 
 // Modal transient state
 let modalFileName    = '';
@@ -1404,13 +1440,18 @@ function renderDiff() {
   const allReviews     = loadAllReviews();
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
 
+  const filterActive = !!app.unreviewedOnly;
   let totalHunks = 0, totalReviewed = 0;
+  let renderedSections = 0;
 
   for (const file of files) {
     const fileReviews  = projectReviews[file.filePath] || Object.create(null);
     const reviewedCnt  = file.hunks.filter(h => fileReviews[h.hash]).length;
     totalHunks    += file.hunks.length;
     totalReviewed += reviewedCnt;
+
+    // In "未レビューのみ表示" mode, skip files where every hunk is already reviewed.
+    if (filterActive && reviewedCnt === file.hunks.length) continue;
 
     const section = document.createElement('div');
     section.className = 'file-section';
@@ -1432,13 +1473,25 @@ function renderDiff() {
     fileHeader.appendChild(progressEl);
     section.appendChild(fileHeader);
 
-    // Hunks
+    // Hunks (skip already-reviewed ones while the filter is active)
     const fileLanguage = detectLanguage(file.filePath);
     for (const hunk of file.hunks) {
-      section.appendChild(buildHunkCard(file.filePath, hunk, !!fileReviews[hunk.hash], fileLanguage));
+      const hunkReviewed = !!fileReviews[hunk.hash];
+      if (filterActive && hunkReviewed) continue;
+      section.appendChild(buildHunkCard(file.filePath, hunk, hunkReviewed, fileLanguage));
     }
 
     container.appendChild(section);
+    renderedSections++;
+  }
+
+  if (filterActive && renderedSections === 0) {
+    const msg = document.createElement('div');
+    msg.className = 'empty-state';
+    msg.innerHTML = totalHunks > 0
+      ? '<span class="icon" aria-hidden="true">🎉</span>すべてのハンクがレビュー済みです'
+      : '<span class="icon" aria-hidden="true">📄</span>表示できるハンクがありません';
+    container.appendChild(msg);
   }
 
   setOverallProgress(totalReviewed, totalHunks);
@@ -1599,7 +1652,14 @@ function onCheckboxChange(e) {
   }
 
   saveAllReviews(allReviews);
-  refreshProgress();
+
+  if (app.unreviewedOnly) {
+    // The "未レビューのみ表示" filter needs hunks/files to appear or disappear
+    // immediately, so re-run the full render rather than a lightweight update.
+    renderDiff();
+  } else {
+    refreshProgress();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2160,6 +2220,14 @@ document.addEventListener('keydown', (e) => {
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
+  const unreviewedFilterToggle = document.getElementById('unreviewed-filter-toggle');
+  unreviewedFilterToggle.checked = app.unreviewedOnly;
+  unreviewedFilterToggle.addEventListener('change', () => {
+    app.unreviewedOnly = unreviewedFilterToggle.checked;
+    saveUnreviewedOnlyPref(app.unreviewedOnly);
+    renderDiff();
+  });
+
   await refreshHandleIndex();
   renderProjectList();
 
