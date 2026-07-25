@@ -945,6 +945,7 @@ function saveKeywordsRaw(raw) {
     localStorage.setItem(SK_KEYWORDS, raw);
   } catch (e) {
     console.error('Failed to save keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
   }
 }
 
