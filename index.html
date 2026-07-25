@@ -780,7 +780,14 @@ function decodeAuto(buffer) {
   const sjisScore = scoreShiftJis(bytes);
   const eucScore  = scoreEucJp(bytes);
   const enc = eucScore > sjisScore ? 'euc-jp' : 'shift_jis';
-  return { text: new TextDecoder(enc).decode(buffer), encoding: enc };
+  try {
+    return { text: new TextDecoder(enc).decode(buffer), encoding: enc };
+  } catch (e) {
+    // Browser lacks this legacy encoding's decoder - fall back to UTF-8
+    // rather than letting the RangeError abort the whole load.
+    console.error(`Encoding "${enc}" unsupported by this browser, falling back to UTF-8`, e);
+    return { text: new TextDecoder('utf-8').decode(buffer), encoding: 'utf-8' };
+  }
 }
 
 /**
