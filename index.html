@@ -638,7 +638,7 @@
   <!-- Sidebar: file loader + project list -->
   <div class="sidebar">
     <div class="load-section">
-      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain">
+      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain" multiple>
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
@@ -726,6 +726,8 @@ let modalSelectedId  = null;
 let modalFileHandle  = null;
 let modalEncoding    = 'auto';
 let modalResolvedEncoding = 'utf-8';
+/** Resolver for the Promise returned by showConflictModal(), so callers can await the user's choice. */
+let modalResolve     = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Character encoding detection / decoding
@@ -2113,12 +2115,28 @@ function showConflictModal(fileName, existingProjects, parsed, rawText, fileHand
   }
 
   document.getElementById('modal-overlay').classList.add('active');
-  
+
   // Focus on the primary button for keyboard/screen-reader accessibility.
   // Timeout ensures the modal is fully rendered before focusing.
   setTimeout(() => {
     document.getElementById('modal-btn-update').focus();
   }, 100);
+
+  // Resolved once the user makes a choice (or dismisses the modal), so
+  // callers such as loadDiffFile() can await the outcome before moving on
+  // to the next file in a batch.
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+  });
+}
+
+/** Settle the pending showConflictModal() promise, if any, then clear it. */
+function resolvePendingModal() {
+  if (modalResolve) {
+    const resolve = modalResolve;
+    modalResolve = null;
+    resolve();
+  }
 }
 
 function hideModal() {
@@ -2135,13 +2153,26 @@ function hideModal() {
 // ─────────────────────────────────────────────────────────────────────────────
 // File loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
+/**
+ * Load and parse a single diff File, then either create a new project or
+ * (when a same-named project already exists) resolve the conflict.
+ *
+ * In normal (interactive) mode a conflict opens the confirmation modal and
+ * waits for the user's choice. In batch mode (used when multiple files are
+ * uploaded at once) the modal is skipped and a new project is always
+ * created automatically, so a whole batch can be processed without
+ * blocking on per-file dialogs; the caller is told a conflict occurred so
+ * it can summarize this for the user afterwards.
+ *
+ * @returns {Promise<{conflict: boolean}>}
+ */
+async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { batchMode = false } = {}) {
   let buffer;
   try {
     buffer = await file.arrayBuffer();
   } catch (err) {
     alert(`ファイルの読み込みに失敗しました:\n${err.message}`);
-    return;
+    return { conflict: false };
   }
 
   const { text, encoding } = decodeBytes(buffer, encodingPref);
@@ -2149,11 +2180,11 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const parsed = parseDiff(text);
   if (parsed.length === 0) {
     alert(
-      '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+      `「${file.name}」: 有効なdiff（unified diff形式）が見つかりませんでした。\n` +
       'git diff または git show の出力を保存したファイルをご利用ください。\n' +
       '文字コードの判定・指定が誤っている可能性もあります。'
     );
-    return;
+    return { conflict: false };
   }
 
   // Compute SHA-256 hashes for all hunks (async, uses Web Crypto API)
@@ -2163,9 +2194,58 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    if (batchMode) {
+      // Don't block a multi-file upload on a per-file modal: always add as
+      // a new project, and let the caller inform the user afterwards.
+      createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+      return { conflict: true };
+    }
+    await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    return { conflict: true };
+  }
+
+  createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  return { conflict: false };
+}
+
+/**
+ * Load multiple diff files, one after another (never in parallel — project
+ * IDs are generated from a same-day sequence counter, so concurrent loads
+ * of same-named files could race and collide).
+ *
+ * A single file is delegated straight to loadDiffFile() in its normal
+ * interactive mode, leaving that existing single-file flow (including the
+ * conflict modal) completely untouched. For two or more files, conflicts
+ * are auto-resolved (see loadDiffFile's batchMode) and summarized in one
+ * alert at the end, so the user is always told what happened and no file
+ * is silently dropped.
+ */
+async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
+  if (files.length === 0) return;
+
+  if (files.length === 1) {
+    await loadDiffFile(files[0], fileHandles ? fileHandles[0] : null, encodingPref);
+    return;
+  }
+
+  const autoRenamed = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const handle = fileHandles ? fileHandles[i] : null;
+    const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true });
+    if (result && result.conflict) autoRenamed.push(file.name);
+  }
+
+  renderProjectList();
+
+  if (autoRenamed.length > 0) {
+    alert(
+      `${files.length} 件のファイルを読み込みました。\n` +
+      `うち ${autoRenamed.length} 件は同名の既存プロジェクトがあったため、新規プロジェクトとして追加しました:\n` +
+      autoRenamed.map(n => `・${n}`).join('\n')
+    );
   } else {
-    createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+    alert(`${files.length} 件のファイルをすべて新規プロジェクトとして読み込みました。`);
   }
 }
 
@@ -2240,31 +2320,31 @@ document.getElementById('load-btn').addEventListener('click', async () => {
     return;
   }
 
-  let handle;
+  let handles;
   try {
-    [handle] = await window.showOpenFilePicker({
+    handles = await window.showOpenFilePicker({
       types: [{
         description: 'Diff files',
         accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
       }],
       excludeAcceptAllOption: false,
-      multiple: false,
+      multiple: true,
     });
   } catch (err) {
     if (err.name !== 'AbortError') console.error('showOpenFilePicker failed', err);
     return;
   }
 
-  const file = await handle.getFile();
-  await loadDiffFile(file, handle, encodingPref);
+  const files = await Promise.all(handles.map(h => h.getFile()));
+  await loadDiffFiles(files, encodingPref, handles);
 });
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
   const encodingPref = document.getElementById('encoding-select').value;
-  e.target.value = ''; // allow re-selecting the same file
-  await loadDiffFile(file, null, encodingPref);
+  e.target.value = ''; // allow re-selecting the same file(s)
+  await loadDiffFiles(files, encodingPref);
 });
 
 document.getElementById('export-btn').addEventListener('click', exportAppData);
@@ -2289,6 +2369,7 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   createNewProject(fn, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
@@ -2301,18 +2382,23 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   updateExistingProject(id, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 // Close modal by clicking the backdrop
 const modalOverlay = document.getElementById('modal-overlay');
 modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) hideModal();
+  if (e.target === modalOverlay) {
+    hideModal();
+    resolvePendingModal();
+  }
 });
 
 // Close modal with ESC key for keyboard accessibility
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
+    resolvePendingModal();
   }
 });
 
