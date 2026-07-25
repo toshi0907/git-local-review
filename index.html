@@ -492,6 +492,12 @@
     .line-del .line-num { background: #ffd7d5; }
     .line-del .line-prefix { color: #cf222e; font-weight: bold; }
 
+    /* Split (side-by-side) view applies .line-add/.line-del directly to the
+       .line-num cell itself rather than to an ancestor <tr>, so the above
+       descendant rules don't match there — add same-element equivalents. */
+    td.line-num.line-add { background: #ccffd8; }
+    td.line-num.line-del { background: #ffd7d5; }
+
     .line-context { background: #fff; }
     .line-context .line-prefix { color: #8b949e; }
 
@@ -637,8 +643,8 @@
   <h1>🔍 Git Local Review</h1>
   <div class="spacer"></div>
   <div class="view-mode-toggle" id="view-mode-toggle" role="group" aria-label="差分の表示切り替え">
-    <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified">Unified</button>
-    <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split">左右表示</button>
+    <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
+    <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
   </div>
   <span id="overall-progress"></span>
 </div>
@@ -1883,8 +1889,14 @@ function clearOverallProgress() {
 function updateViewModeButtons() {
   const unifiedBtn = document.getElementById('view-mode-unified');
   const splitBtn   = document.getElementById('view-mode-split');
-  if (unifiedBtn) unifiedBtn.classList.toggle('active', app.viewMode === 'unified');
-  if (splitBtn)   splitBtn.classList.toggle('active', app.viewMode === 'split');
+  if (unifiedBtn) {
+    unifiedBtn.classList.toggle('active', app.viewMode === 'unified');
+    unifiedBtn.setAttribute('aria-pressed', String(app.viewMode === 'unified'));
+  }
+  if (splitBtn) {
+    splitBtn.classList.toggle('active', app.viewMode === 'split');
+    splitBtn.setAttribute('aria-pressed', String(app.viewMode === 'split'));
+  }
 }
 
 function setViewMode(mode) {
