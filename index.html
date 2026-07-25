@@ -174,6 +174,33 @@
       font-size: 11px;
     }
 
+    .keyword-row {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #57606a;
+    }
+
+    .keyword-row label {
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .keyword-row input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 6px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 12px;
+    }
+
+    .keyword-row input:focus {
+      outline: none;
+      border-color: #0969da;
+    }
+
     .sidebar-section-title {
       padding: 10px 16px;
       font-size: 11px;
@@ -470,6 +497,14 @@
     .diff-table .hljs-addition,
     .diff-table .hljs-deletion { background: transparent; padding: 0; }
 
+    /* Keyword highlight (issue #10): applied on top of syntax highlighting,
+       so it must win over the transparent background rules above. */
+    .keyword-hit {
+      background: #fff000;
+      color: #24292e;
+      border-radius: 2px;
+    }
+
     .line-prefix {
       display: inline-block;
       width: 14px;
@@ -622,7 +657,7 @@
   <!-- Sidebar: file loader + project list -->
   <div class="sidebar">
     <div class="load-section">
-      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain">
+      <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain" multiple>
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
@@ -643,6 +678,11 @@
           <option value="shift_jis">Shift_JIS</option>
           <option value="euc-jp">EUC-JP</option>
         </select>
+      </div>
+      <div class="keyword-row">
+        <label for="keyword-input">キーワード（カンマ区切り）</label>
+        <input type="text" id="keyword-input" placeholder="例: TODO, FIXME, XXX"
+               title="差分中でこれらのキーワードを含む行を黄色でハイライトします（大文字小文字は区別しません）">
       </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
@@ -684,6 +724,7 @@ const SK_REVIEWS  = 'gitLocalReview_reviews';
 const SK_CURRENT  = 'gitLocalReview_currentProject';
 const SK_FILES    = 'gitLocalReview_files';
 const SK_UNREVIEWED_ONLY = 'gitLocalReview_unreviewedOnly';
+const SK_KEYWORDS = 'gitLocalReview_keywords';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -726,6 +767,8 @@ let modalSelectedId  = null;
 let modalFileHandle  = null;
 let modalEncoding    = 'auto';
 let modalResolvedEncoding = 'utf-8';
+/** Resolver for the Promise returned by showConflictModal(), so callers can await the user's choice. */
+let modalResolve     = null;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Character encoding detection / decoding
@@ -919,6 +962,118 @@ function sanitizeFilesData(parsed) {
     if (typeof parsed[pid] === 'string') safe[pid] = parsed[pid];
   }
   return safe;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword highlight (issue #10)
+//
+// Users can register arbitrary keywords (e.g. "TODO, FIXME") in the sidebar.
+// Any diff line whose content contains one of these keywords gets its
+// matching substring wrapped in <mark class="keyword-hit"> (yellow
+// background) so stray TODO-style comments are easy to spot while reviewing.
+// Matching is a plain case-insensitive substring search (no RegExp), so
+// there is no need to escape user input and no ReDoS risk.
+// ─────────────────────────────────────────────────────────────────────────────
+function loadKeywordsRaw() {
+  try {
+    return localStorage.getItem(SK_KEYWORDS) || '';
+  } catch (e) {
+    console.error('Failed to load keywords from localStorage:', e);
+    return '';
+  }
+}
+
+function saveKeywordsRaw(raw) {
+  try {
+    localStorage.setItem(SK_KEYWORDS, raw);
+  } catch (e) {
+    console.error('Failed to save keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// Parses the raw comma-separated input into a de-duplicated list of
+// non-empty, trimmed keywords. Whitespace-only entries are dropped, so an
+// empty/blank input yields an empty array (= no highlighting).
+function parseKeywords(raw) {
+  if (!raw) return [];
+  const seen = new Set();
+  const result = [];
+  for (const part of raw.split(',')) {
+    const kw = part.trim();
+    if (!kw || seen.has(kw.toLowerCase())) continue;
+    seen.add(kw.toLowerCase());
+    result.push(kw);
+  }
+  return result;
+}
+
+function getActiveKeywords() {
+  return parseKeywords(loadKeywordsRaw());
+}
+
+// Finds all (merged, non-overlapping) match ranges of any keyword within
+// `text`, case-insensitively. Plain substring search only — no RegExp.
+function findKeywordRanges(text, keywords) {
+  if (!keywords || keywords.length === 0 || !text) return [];
+  const lowerText = text.toLowerCase();
+  const ranges = [];
+  for (const kw of keywords) {
+    const lowerKw = kw.toLowerCase();
+    if (!lowerKw) continue;
+    let from = 0;
+    while (true) {
+      const idx = lowerText.indexOf(lowerKw, from);
+      if (idx === -1) break;
+      ranges.push({ start: idx, end: idx + lowerKw.length });
+      from = idx + lowerKw.length;
+    }
+  }
+  if (ranges.length === 0) return [];
+  ranges.sort((a, b) => a.start - b.start);
+  const merged = [ranges[0]];
+  for (let i = 1; i < ranges.length; i++) {
+    const last = merged[merged.length - 1];
+    const cur  = ranges[i];
+    if (cur.start <= last.end) {
+      last.end = Math.max(last.end, cur.end);
+    } else {
+      merged.push(cur);
+    }
+  }
+  return merged;
+}
+
+// Walks the text nodes under `root` and wraps any keyword match in
+// <mark class="keyword-hit">. Operates on the DOM directly (rather than via
+// string/HTML manipulation) so it cannot corrupt highlight.js's markup.
+function applyKeywordHighlight(root, keywords) {
+  if (!keywords || keywords.length === 0) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue;
+    const ranges = findKeywordRanges(text, keywords);
+    if (ranges.length === 0) continue;
+
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (const r of ranges) {
+      if (r.start > pos) frag.appendChild(document.createTextNode(text.slice(pos, r.start)));
+      const mark = document.createElement('mark');
+      mark.className = 'keyword-hit';
+      mark.textContent = text.slice(r.start, r.end);
+      frag.appendChild(mark);
+      pos = r.end;
+    }
+    if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
+
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
 }
 
 function loadAllFiles() {
@@ -1556,6 +1711,10 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   // Pre-compute highlighted lines for this hunk (may be null if unavailable).
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = highlightHunkLines(hunk.lines, language, filePath);
+  // Keywords are read once per hunk render; changing the keyword input
+  // re-renders the whole diff (see the keyword-input listener below), so
+  // this always reflects the latest configured list.
+  const keywords = getActiveKeywords();
   let lineIdx = 0;
 
   for (const line of hunk.lines) {
@@ -1568,6 +1727,7 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
       td.colSpan = 3;
       td.className = 'line-content line-no-newline';
       td.textContent = line;
+      if (keywords.length) applyKeywordHighlight(td, keywords);
       tr.appendChild(td);
       tbody.appendChild(tr);
       continue;
@@ -1608,6 +1768,8 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     } else {
       tdCon.appendChild(document.createTextNode(content));
     }
+
+    if (keywords.length) applyKeywordHighlight(tdCon, keywords);
 
     tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
     tbody.appendChild(tr);
@@ -2018,12 +2180,28 @@ function showConflictModal(fileName, existingProjects, parsed, rawText, fileHand
   }
 
   document.getElementById('modal-overlay').classList.add('active');
-  
+
   // Focus on the primary button for keyboard/screen-reader accessibility.
   // Timeout ensures the modal is fully rendered before focusing.
   setTimeout(() => {
     document.getElementById('modal-btn-update').focus();
   }, 100);
+
+  // Resolved once the user makes a choice (or dismisses the modal), so
+  // callers such as loadDiffFile() can await the outcome before moving on
+  // to the next file in a batch.
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+  });
+}
+
+/** Settle the pending showConflictModal() promise, if any, then clear it. */
+function resolvePendingModal() {
+  if (modalResolve) {
+    const resolve = modalResolve;
+    modalResolve = null;
+    resolve();
+  }
 }
 
 function hideModal() {
@@ -2040,13 +2218,26 @@ function hideModal() {
 // ─────────────────────────────────────────────────────────────────────────────
 // File loading
 // ─────────────────────────────────────────────────────────────────────────────
-async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
+/**
+ * Load and parse a single diff File, then either create a new project or
+ * (when a same-named project already exists) resolve the conflict.
+ *
+ * In normal (interactive) mode a conflict opens the confirmation modal and
+ * waits for the user's choice. In batch mode (used when multiple files are
+ * uploaded at once) the modal is skipped and a new project is always
+ * created automatically, so a whole batch can be processed without
+ * blocking on per-file dialogs; the caller is told a conflict occurred so
+ * it can summarize this for the user afterwards.
+ *
+ * @returns {Promise<{conflict: boolean}>}
+ */
+async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { batchMode = false } = {}) {
   let buffer;
   try {
     buffer = await file.arrayBuffer();
   } catch (err) {
     alert(`ファイルの読み込みに失敗しました:\n${err.message}`);
-    return;
+    return { conflict: false };
   }
 
   const { text, encoding } = decodeBytes(buffer, encodingPref);
@@ -2054,11 +2245,11 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const parsed = parseDiff(text);
   if (parsed.length === 0) {
     alert(
-      '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+      `「${file.name}」: 有効なdiff（unified diff形式）が見つかりませんでした。\n` +
       'git diff または git show の出力を保存したファイルをご利用ください。\n' +
       '文字コードの判定・指定が誤っている可能性もあります。'
     );
-    return;
+    return { conflict: false };
   }
 
   // Compute SHA-256 hashes for all hunks (async, uses Web Crypto API)
@@ -2068,9 +2259,58 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto') {
   const existing = projectsByFileName(fileName);
 
   if (existing.length > 0) {
-    showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    if (batchMode) {
+      // Don't block a multi-file upload on a per-file modal: always add as
+      // a new project, and let the caller inform the user afterwards.
+      createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+      return { conflict: true };
+    }
+    await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+    return { conflict: true };
+  }
+
+  createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  return { conflict: false };
+}
+
+/**
+ * Load multiple diff files, one after another (never in parallel — project
+ * IDs are generated from a same-day sequence counter, so concurrent loads
+ * of same-named files could race and collide).
+ *
+ * A single file is delegated straight to loadDiffFile() in its normal
+ * interactive mode, leaving that existing single-file flow (including the
+ * conflict modal) completely untouched. For two or more files, conflicts
+ * are auto-resolved (see loadDiffFile's batchMode) and summarized in one
+ * alert at the end, so the user is always told what happened and no file
+ * is silently dropped.
+ */
+async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
+  if (files.length === 0) return;
+
+  if (files.length === 1) {
+    await loadDiffFile(files[0], fileHandles ? fileHandles[0] : null, encodingPref);
+    return;
+  }
+
+  const autoRenamed = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const handle = fileHandles ? fileHandles[i] : null;
+    const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true });
+    if (result && result.conflict) autoRenamed.push(file.name);
+  }
+
+  renderProjectList();
+
+  if (autoRenamed.length > 0) {
+    alert(
+      `${files.length} 件のファイルを読み込みました。\n` +
+      `うち ${autoRenamed.length} 件は同名の既存プロジェクトがあったため、新規プロジェクトとして追加しました:\n` +
+      autoRenamed.map(n => `・${n}`).join('\n')
+    );
   } else {
-    createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+    alert(`${files.length} 件のファイルをすべて新規プロジェクトとして読み込みました。`);
   }
 }
 
@@ -2145,31 +2385,31 @@ document.getElementById('load-btn').addEventListener('click', async () => {
     return;
   }
 
-  let handle;
+  let handles;
   try {
-    [handle] = await window.showOpenFilePicker({
+    handles = await window.showOpenFilePicker({
       types: [{
         description: 'Diff files',
         accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
       }],
       excludeAcceptAllOption: false,
-      multiple: false,
+      multiple: true,
     });
   } catch (err) {
     if (err.name !== 'AbortError') console.error('showOpenFilePicker failed', err);
     return;
   }
 
-  const file = await handle.getFile();
-  await loadDiffFile(file, handle, encodingPref);
+  const files = await Promise.all(handles.map(h => h.getFile()));
+  await loadDiffFiles(files, encodingPref, handles);
 });
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
   const encodingPref = document.getElementById('encoding-select').value;
-  e.target.value = ''; // allow re-selecting the same file
-  await loadDiffFile(file, null, encodingPref);
+  e.target.value = ''; // allow re-selecting the same file(s)
+  await loadDiffFiles(files, encodingPref);
 });
 
 document.getElementById('export-btn').addEventListener('click', exportAppData);
@@ -2194,6 +2434,7 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   createNewProject(fn, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 document.getElementById('modal-btn-update').addEventListener('click', () => {
@@ -2206,19 +2447,40 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const encResolved = modalResolvedEncoding;
   hideModal();
   updateExistingProject(id, parsed, rawText, handle, encPref, encResolved);
+  resolvePendingModal();
 });
 
 // Close modal by clicking the backdrop
 const modalOverlay = document.getElementById('modal-overlay');
 modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) hideModal();
+  if (e.target === modalOverlay) {
+    hideModal();
+    resolvePendingModal();
+  }
 });
 
 // Close modal with ESC key for keyboard accessibility
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
+    resolvePendingModal();
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword input (issue #10): persists across reloads/projects and re-renders
+// the currently displayed diff immediately (debounced) whenever it changes.
+// ─────────────────────────────────────────────────────────────────────────────
+const keywordInput = document.getElementById('keyword-input');
+keywordInput.value = loadKeywordsRaw();
+
+let keywordDebounceTimer = null;
+keywordInput.addEventListener('input', () => {
+  saveKeywordsRaw(keywordInput.value);
+  clearTimeout(keywordDebounceTimer);
+  keywordDebounceTimer = setTimeout(() => {
+    if (app.parsedDiff) renderDiff();
+  }, 200);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
