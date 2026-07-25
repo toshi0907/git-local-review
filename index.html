@@ -2084,6 +2084,8 @@ async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
       `うち ${autoRenamed.length} 件は同名の既存プロジェクトがあったため、新規プロジェクトとして追加しました:\n` +
       autoRenamed.map(n => `・${n}`).join('\n')
     );
+  } else {
+    alert(`${files.length} 件のファイルをすべて新規プロジェクトとして読み込みました。`);
   }
 }
 
