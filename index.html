@@ -1328,6 +1328,7 @@ function renderProjectList() {
     encLabel.textContent = '文字コード:';
     const encSelect = document.createElement('select');
     encSelect.title = 'このプロジェクトのdiffファイルの文字コードを指定（自動判定を誤った場合の上書き用）';
+    encSelect.setAttribute('aria-label', `${proj.fileName} の文字コード`);
     for (const val of VALID_ENCODINGS) {
       const opt = document.createElement('option');
       opt.value = val;
