@@ -375,6 +375,19 @@
 
     .hunk-card.reviewed { background: #f0fff4; }
 
+    .hunk-card.focused {
+      outline: 2px solid #4c9aff;
+      outline-offset: -2px;
+    }
+
+    .hunk-card.focused .hunk-header-bar {
+      background: #dceaff;
+    }
+
+    .hunk-card.focused.reviewed .hunk-header-bar {
+      background: #d3f5df;
+    }
+
     .hunk-header-bar {
       display: flex;
       align-items: center;
@@ -716,6 +729,9 @@ const app = {
   parsedDiff: null,
   /** Holds progress badge elements keyed by filePath, populated during renderDiff */
   fileProgressEls: new Map(),
+  /** Index into the flat, document-order list of currently rendered hunk cards
+   *  that has keyboard focus (j/k to move, Space to toggle). -1 = none. */
+  focusedHunkIndex: -1,
 };
 
 // Modal transient state
@@ -1551,6 +1567,7 @@ function renderDiff() {
   if (!files || files.length === 0) {
     emptyState.style.display = 'block';
     clearOverallProgress();
+    app.focusedHunkIndex = -1;
     return;
   }
 
@@ -1597,6 +1614,10 @@ function renderDiff() {
   }
 
   setOverallProgress(totalReviewed, totalHunks);
+
+  // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
+  // (the previous focus index may point at an element that no longer exists).
+  setFocusedHunk(0, { scroll: false });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1794,6 +1815,63 @@ function setOverallProgress(reviewed, total) {
   const el = document.getElementById('overall-progress');
   el.textContent = `全体: ${reviewed} / ${total} hunk レビュー済み`;
   el.classList.toggle('has-progress', reviewed > 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard navigation between hunks (j/k to move focus, Space to toggle
+// レビュー済み on the focused hunk). See keydown listener near the bottom of
+// this script for the key handling itself.
+// ─────────────────────────────────────────────────────────────────────────────
+function getHunkCards() {
+  return Array.from(document.querySelectorAll('#diff-container .hunk-card'));
+}
+
+function updateFocusedHunkVisual() {
+  const cards = getHunkCards();
+  cards.forEach((card, i) => {
+    card.classList.toggle('focused', i === app.focusedHunkIndex);
+  });
+}
+
+// Moves keyboard focus to the hunk at `index` (clamped to the valid range of
+// currently rendered hunks) and scrolls it into view unless `scroll: false`.
+function setFocusedHunk(index, { scroll = true } = {}) {
+  const cards = getHunkCards();
+  if (cards.length === 0) {
+    app.focusedHunkIndex = -1;
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(index, cards.length - 1));
+  app.focusedHunkIndex = clamped;
+  updateFocusedHunkVisual();
+
+  if (scroll) {
+    cards[clamped].scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function moveHunkFocus(delta) {
+  const cards = getHunkCards();
+  if (cards.length === 0) return;
+  const current = app.focusedHunkIndex >= 0 ? app.focusedHunkIndex : 0;
+  setFocusedHunk(current + delta);
+}
+
+// Toggles the "レビュー済み" checkbox of the currently focused hunk by
+// flipping its checked state and dispatching a change event, so the
+// existing onCheckboxChange logic (state persistence, progress refresh,
+// collapsing) is reused rather than duplicated here. Flipping `checked`
+// directly (instead of calling .click()) avoids moving DOM focus onto the
+// checkbox, which would otherwise make the next keydown look like "typing"
+// and disable further j/k/Space shortcuts.
+function toggleFocusedHunkReviewed() {
+  const cards = getHunkCards();
+  if (app.focusedHunkIndex < 0 || app.focusedHunkIndex >= cards.length) return;
+  const cb = cards[app.focusedHunkIndex].querySelector('.review-label input[type="checkbox"]');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 function clearOverallProgress() {
@@ -2394,11 +2472,32 @@ modalOverlay.addEventListener('click', (e) => {
   }
 });
 
-// Close modal with ESC key for keyboard accessibility
+// Close modal with ESC key for keyboard accessibility, and provide keyboard
+// shortcuts for hunk navigation: j/k move focus between hunks, Space toggles
+// レビュー済み on the focused hunk.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
     resolvePendingModal();
+    return;
+  }
+
+  // Don't hijack keys while the user is typing into a form field, or while
+  // the file-conflict modal is open.
+  const tag = e.target && e.target.tagName;
+  const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
+  if (isTyping || modalOverlay.classList.contains('active')) return;
+
+  if (e.key === 'j') {
+    e.preventDefault();
+    moveHunkFocus(1);
+  } else if (e.key === 'k') {
+    e.preventDefault();
+    moveHunkFocus(-1);
+  } else if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (e.repeat) return; // ignore key-repeat from holding Space down
+    toggleFocusedHunkReviewed();
   }
 });
 
