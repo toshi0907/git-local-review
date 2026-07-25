@@ -1568,7 +1568,7 @@ function computeLineRecords(hunk) {
  * reusing the pre-computed highlight.js output when available.
  * @param {{idx:number,type:string,content:string}|null} record
  * @param {string[]|null} hlLines
- * @param {string} extraCls - additional CSS class(es) for this cell
+ * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
  * @returns {HTMLTableCellElement}
  */
 function buildContentCell(record, hlLines, extraCls) {
@@ -1689,13 +1689,16 @@ function buildSplitTbody(hunk, hlLines) {
     tdOldNum.className = 'line-num';
     tdOldNum.textContent = String(record.oldLabel);
 
+    // Context rows show identical content on both sides; build it once and
+    // clone the node for the second column instead of re-parsing the same
+    // highlighted HTML twice.
     const tdOldContent = buildContentCell(record, hlLines, null);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider';
     tdNewNum.textContent = String(record.newLabel);
 
-    const tdNewContent = buildContentCell(record, hlLines, null);
+    const tdNewContent = tdOldContent.cloneNode(true);
 
     tr.appendChild(tdOldNum);
     tr.appendChild(tdOldContent);
