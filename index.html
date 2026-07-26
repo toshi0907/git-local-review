@@ -63,6 +63,30 @@
 
     #overall-progress.has-progress { color: #58a6ff; }
 
+    .view-mode-toggle {
+      display: flex;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-right: 16px;
+      flex-shrink: 0;
+    }
+
+    .view-mode-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      background: #2d333b;
+      color: #adbac7;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .view-mode-btn + .view-mode-btn { border-left: 1px solid #444c56; }
+    .view-mode-btn:hover:not(.active) { background: #373e47; }
+    .view-mode-btn.active { background: #58a6ff; color: #0b1116; }
+
     .filter-toggle {
       display: flex;
       align-items: center;
@@ -554,6 +578,12 @@
     .line-del .line-num { background: #ffd7d5; }
     .line-del .line-prefix { color: #cf222e; font-weight: bold; }
 
+    /* Split (side-by-side) view applies .line-add/.line-del directly to the
+       .line-num cell itself rather than to an ancestor <tr>, so the above
+       descendant rules don't match there — add same-element equivalents. */
+    td.line-num.line-add { background: #ccffd8; }
+    td.line-num.line-del { background: #ffd7d5; }
+
     .line-context { background: #fff; }
     .line-context .line-prefix { color: #8b949e; }
 
@@ -565,6 +595,24 @@
       font-size: 12px;
       padding: 2px 8px;
     }
+
+    /* ===== Diff table: side-by-side (split) mode ===== */
+    .diff-table-split .col-divider { border-left: 2px solid #d0d7de; }
+
+    .diff-table-split thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: #57606a;
+      background: #f6f8fa;
+      padding: 4px 8px;
+      border-bottom: 1px solid #e1e4e8;
+    }
+
+    .diff-table-split thead th.col-divider { border-left: 2px solid #d0d7de; }
+
+    .line-empty { background: #f6f8fa; }
+    .line-empty.line-num { color: transparent; }
 
     /* ===== Modal ===== */
     .modal-overlay {
@@ -680,6 +728,10 @@
 <div class="topbar">
   <h1>🔍 Git Local Review</h1>
   <div class="spacer"></div>
+  <div class="view-mode-toggle" id="view-mode-toggle" role="group" aria-label="差分の表示切り替え">
+    <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
+    <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
+  </div>
   <label class="filter-toggle" title="レビュー済みのハンク・ファイルを非表示にして、未レビューの箇所だけを表示します">
     <input type="checkbox" id="unreviewed-filter-toggle">
     未レビューのみ表示
@@ -768,6 +820,7 @@ const SK_PROJECTS         = 'gitLocalReview_projects';
 const SK_REVIEWS          = 'gitLocalReview_reviews';
 const SK_CURRENT          = 'gitLocalReview_currentProject';
 const SK_FILES            = 'gitLocalReview_files';
+const SK_VIEW_MODE        = 'gitLocalReview_viewMode';
 const SK_UNREVIEWED_ONLY  = 'gitLocalReview_unreviewedOnly';
 const SK_PROJECT_SORT     = 'gitLocalReview_projectSort';
 const SK_KEYWORDS         = 'gitLocalReview_keywords';
@@ -785,6 +838,8 @@ const app = {
   parsedDiff: null,
   /** Holds progress badge elements keyed by filePath, populated during renderDiff */
   fileProgressEls: new Map(),
+  /** @type {'unified'|'split'} Current diff view mode ('split' = side-by-side) */
+  viewMode: 'unified',
   /** When true, renderDiff() hides fully-reviewed hunks/files so only remaining work is shown */
   unreviewedOnly: loadUnreviewedOnlyPref(),
   /** Index into the flat, document-order list of currently rendered hunk cards
@@ -1038,6 +1093,28 @@ function saveAllReviews(reviews) {
   } catch (e) {
     console.error('Failed to save reviews to localStorage:', e);
     alert('レビュー状態の保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Diff view mode (unified / side-by-side) — persisted so the choice survives
+// page reloads. Falls back to 'unified' for any missing/corrupted value.
+// ─────────────────────────────────────────────────────────────────────────────
+function loadViewMode() {
+  try {
+    const v = localStorage.getItem(SK_VIEW_MODE);
+    return v === 'split' ? 'split' : 'unified';
+  } catch (e) {
+    console.error('Failed to load view mode from localStorage:', e);
+    return 'unified';
+  }
+}
+
+function saveViewMode(mode) {
+  try {
+    localStorage.setItem(SK_VIEW_MODE, mode);
+  } catch (e) {
+    console.error('Failed to save view mode to localStorage:', e);
   }
 }
 
@@ -1753,6 +1830,227 @@ function renderDiff() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Build a single hunk card element
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Walk a hunk's raw diff lines once and compute, for every line, its type
+ * ('+' / '-' / ' ' / '\\' for "no newline at end of file"), stripped content,
+ * and old/new file line numbers. Both the unified and side-by-side renderers
+ * are built on top of this shared list so line numbering is identical (and
+ * reviewed/hash identity, which is derived from hunk.lines directly, is
+ * completely unaffected by which renderer is used).
+ * @param {{header:string, lines:string[]}} hunk
+ * @returns {Array<{idx:number, type:string, content:string, oldLabel:(number|''), newLabel:(number|'')}>}
+ */
+function computeLineRecords(hunk) {
+  const { oldStart, newStart } = parseHunkHeader(hunk.header);
+  let oldN = oldStart, newN = newStart;
+  const records = [];
+
+  hunk.lines.forEach((line, idx) => {
+    if (line.startsWith('\\')) {
+      records.push({ idx, type: '\\', content: line, oldLabel: '', newLabel: '' });
+      return;
+    }
+
+    const type    = line[0];
+    const content = line.length > 1 ? line.slice(1) : '';
+    let oldLabel = '', newLabel = '';
+    if (type === '+') {
+      newLabel = newN++;
+    } else if (type === '-') {
+      oldLabel = oldN++;
+    } else {
+      oldLabel = oldN++;
+      newLabel = newN++;
+    }
+
+    records.push({ idx, type, content, oldLabel, newLabel });
+  });
+
+  return records;
+}
+
+/**
+ * Build a <td class="line-content"> cell for a single diff line record,
+ * reusing the pre-computed highlight.js output when available.
+ * @param {{idx:number,type:string,content:string}|null} record
+ * @param {string[]|null} hlLines
+ * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
+ * @param {string[]} [keywords] - keywords to highlight within this cell's text (see applyKeywordHighlight)
+ * @returns {HTMLTableCellElement}
+ */
+function buildContentCell(record, hlLines, extraCls, keywords) {
+  const td = document.createElement('td');
+  td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
+  if (!record) return td;
+
+  const pfx = document.createElement('span');
+  pfx.className = 'line-prefix';
+  pfx.textContent = record.type === '\\' ? '' : record.type;
+  td.appendChild(pfx);
+
+  if (hlLines && record.idx < hlLines.length && domParser) {
+    // Use the shared DOMParser to safely convert highlighted HTML into DOM
+    // nodes, avoiding direct innerHTML assignment.
+    const codeSpan = document.createElement('span');
+    const parsed = domParser.parseFromString(hlLines[record.idx], 'text/html');
+    parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
+    td.appendChild(codeSpan);
+  } else {
+    td.appendChild(document.createTextNode(record.content));
+  }
+
+  if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+
+  return td;
+}
+
+/**
+ * Build the <tbody> for the current (single-column) unified diff view.
+ */
+function buildUnifiedTbody(hunk, hlLines, keywords) {
+  const tbody = document.createElement('tbody');
+  const records = computeLineRecords(hunk);
+
+  for (const record of records) {
+    const tr = document.createElement('tr');
+
+    if (record.type === '\\') {
+      const td = document.createElement('td');
+      td.colSpan = 3;
+      td.className = 'line-content line-no-newline';
+      td.textContent = record.content;
+      if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      continue;
+    }
+
+    const cls = record.type === '+' ? 'line-add' : record.type === '-' ? 'line-del' : 'line-context';
+    tr.className = cls;
+
+    const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
+    const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
+    const tdCon = buildContentCell(record, hlLines, null, keywords);
+
+    tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
+    tbody.appendChild(tr);
+  }
+
+  return tbody;
+}
+
+/**
+ * Build the <tbody> for the side-by-side (split) diff view: removed lines on
+ * the left, added lines on the right, context lines spanning both sides.
+ *
+ * Pairing strategy: consecutive runs of '-' lines and consecutive runs of
+ * '+' lines within a hunk are grouped and paired row-by-row (the shorter
+ * side is padded with an empty cell). This is a simple, standard approach
+ * for side-by-side diff views and does not require a full realignment
+ * (Myers-style) of old vs. new content.
+ */
+function buildSplitTbody(hunk, hlLines, keywords) {
+  const tbody = document.createElement('tbody');
+  const records = computeLineRecords(hunk);
+
+  let pendingDel = [];
+  let pendingAdd = [];
+
+  function emitPairedRow(delRec, addRec) {
+    const tr = document.createElement('tr');
+    tr.className = 'line-split-row';
+
+    const oldCls = delRec ? 'line-del' : 'line-empty';
+    const newCls = addRec ? 'line-add' : 'line-empty';
+
+    const tdOldNum = document.createElement('td');
+    tdOldNum.className = 'line-num ' + oldCls;
+    tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
+
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywords);
+
+    const tdNewNum = document.createElement('td');
+    tdNewNum.className = 'line-num col-divider ' + newCls;
+    tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
+
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywords);
+
+    tr.appendChild(tdOldNum);
+    tr.appendChild(tdOldContent);
+    tr.appendChild(tdNewNum);
+    tr.appendChild(tdNewContent);
+    tbody.appendChild(tr);
+  }
+
+  function flushPending() {
+    const rows = Math.max(pendingDel.length, pendingAdd.length);
+    for (let i = 0; i < rows; i++) {
+      emitPairedRow(pendingDel[i] || null, pendingAdd[i] || null);
+    }
+    pendingDel = [];
+    pendingAdd = [];
+  }
+
+  function emitContextRow(record) {
+    const tr = document.createElement('tr');
+    tr.className = 'line-context';
+
+    const tdOldNum = document.createElement('td');
+    tdOldNum.className = 'line-num';
+    tdOldNum.textContent = String(record.oldLabel);
+
+    // Context rows show identical content on both sides; build it once and
+    // clone the node for the second column instead of re-parsing the same
+    // highlighted HTML twice.
+    const tdOldContent = buildContentCell(record, hlLines, null, keywords);
+
+    const tdNewNum = document.createElement('td');
+    tdNewNum.className = 'line-num col-divider';
+    tdNewNum.textContent = String(record.newLabel);
+
+    const tdNewContent = tdOldContent.cloneNode(true);
+
+    tr.appendChild(tdOldNum);
+    tr.appendChild(tdOldContent);
+    tr.appendChild(tdNewNum);
+    tr.appendChild(tdNewContent);
+    tbody.appendChild(tr);
+  }
+
+  function emitMarkerRow(record) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 4;
+    td.className = 'line-content line-no-newline';
+    td.textContent = record.content;
+    if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+
+  for (const record of records) {
+    if (record.type === '-') {
+      // A new deletion block starting after an already-collected addition
+      // block (i.e. a second replace within the same hunk) — flush first so
+      // the two blocks don't get paired against each other.
+      if (pendingAdd.length > 0) flushPending();
+      pendingDel.push(record);
+    } else if (record.type === '+') {
+      pendingAdd.push(record);
+    } else {
+      flushPending();
+      if (record.type === '\\') {
+        emitMarkerRow(record);
+      } else {
+        emitContextRow(record);
+      }
+    }
+  }
+  flushPending();
+
+  return tbody;
+}
+
 function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   const card = document.createElement('div');
   card.className = 'hunk-card' + (isReviewed ? ' reviewed collapsed' : '');
@@ -1795,80 +2093,31 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   body.className = 'hunk-body';
 
   const table = document.createElement('table');
-  table.className = 'diff-table';
-  const tbody = document.createElement('tbody');
-
-  const { oldStart, newStart } = parseHunkHeader(hunk.header);
-  let oldN = oldStart, newN = newStart;
+  const isSplit = app.viewMode === 'split';
+  table.className = 'diff-table' + (isSplit ? ' diff-table-split' : '');
 
   // Pre-compute highlighted lines for this hunk (may be null if unavailable).
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = highlightHunkLines(hunk.lines, language, filePath);
+
   // Keywords are read once per hunk render; changing the keyword input
   // re-renders the whole diff (see the keyword-input listener below), so
   // this always reflects the latest configured list.
   const keywords = getActiveKeywords();
-  let lineIdx = 0;
 
-  for (const line of hunk.lines) {
-    const tr = document.createElement('tr');
-    const currentIdx = lineIdx++;
-
-    // "\ No newline at end of file"
-    if (line.startsWith('\\')) {
-      const td = document.createElement('td');
-      td.colSpan = 3;
-      td.className = 'line-content line-no-newline';
-      td.textContent = line;
-      if (keywords.length) applyKeywordHighlight(td, keywords);
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      continue;
-    }
-
-    const type    = line[0];
-    const content = line.length > 1 ? line.slice(1) : '';
-
-    let cls, oldLabel = '', newLabel = '';
-    if (type === '+') {
-      cls = 'line-add';
-      newLabel = newN++;
-    } else if (type === '-') {
-      cls = 'line-del';
-      oldLabel = oldN++;
-    } else {
-      cls = 'line-context';
-      oldLabel = oldN++;
-      newLabel = newN++;
-    }
-
-    tr.className = cls;
-
-    const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(oldLabel);
-    const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(newLabel);
-    const tdCon = document.createElement('td'); tdCon.className = 'line-content';
-
-    const pfx = document.createElement('span'); pfx.className = 'line-prefix'; pfx.textContent = type;
-    tdCon.appendChild(pfx);
-
-    if (hlLines && currentIdx < hlLines.length && domParser) {
-      // Use the shared DOMParser to safely convert highlighted HTML into DOM
-      // nodes, avoiding direct innerHTML assignment.
-      const codeSpan = document.createElement('span');
-      const parsed = domParser.parseFromString(hlLines[currentIdx], 'text/html');
-      parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
-      tdCon.appendChild(codeSpan);
-    } else {
-      tdCon.appendChild(document.createTextNode(content));
-    }
-
-    if (keywords.length) applyKeywordHighlight(tdCon, keywords);
-
-    tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
-    tbody.appendChild(tr);
+  if (isSplit) {
+    const thead = document.createElement('thead');
+    const trHead = document.createElement('tr');
+    const thOld = document.createElement('th'); thOld.colSpan = 2; thOld.textContent = '変更前';
+    const thNew = document.createElement('th'); thNew.colSpan = 2; thNew.className = 'col-divider'; thNew.textContent = '変更後';
+    trHead.appendChild(thOld); trHead.appendChild(thNew);
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+    table.appendChild(buildSplitTbody(hunk, hlLines, keywords));
+  } else {
+    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywords));
   }
 
-  table.appendChild(tbody);
   body.appendChild(table);
   card.appendChild(body);
   return card;
@@ -2015,6 +2264,34 @@ function clearOverallProgress() {
   const el = document.getElementById('overall-progress');
   el.textContent = '';
   el.classList.remove('has-progress');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View mode toggle (unified <-> side-by-side)
+// ─────────────────────────────────────────────────────────────────────────────
+function updateViewModeButtons() {
+  const unifiedBtn = document.getElementById('view-mode-unified');
+  const splitBtn   = document.getElementById('view-mode-split');
+  if (unifiedBtn) {
+    unifiedBtn.classList.toggle('active', app.viewMode === 'unified');
+    unifiedBtn.setAttribute('aria-pressed', String(app.viewMode === 'unified'));
+  }
+  if (splitBtn) {
+    splitBtn.classList.toggle('active', app.viewMode === 'split');
+    splitBtn.setAttribute('aria-pressed', String(app.viewMode === 'split'));
+  }
+}
+
+function setViewMode(mode) {
+  if (mode !== 'unified' && mode !== 'split') return;
+  if (app.viewMode === mode) return;
+  app.viewMode = mode;
+  saveViewMode(mode);
+  updateViewModeButtons();
+  // Re-render immediately so the change is visible without reloading the file.
+  // The reviewed/collapsed state lives in localStorage keyed by hunk hash, not
+  // by DOM state, so it is unaffected by which renderer builds the markup.
+  renderDiff();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2562,6 +2839,9 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   await loadDiffFiles(files, encodingPref);
 });
 
+document.getElementById('view-mode-unified').addEventListener('click', () => setViewMode('unified'));
+document.getElementById('view-mode-split').addEventListener('click', () => setViewMode('split'));
+
 document.getElementById('export-btn').addEventListener('click', exportAppData);
 
 document.getElementById('import-btn').addEventListener('click', () => {
@@ -2663,6 +2943,9 @@ keywordInput.addEventListener('input', () => {
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
+  app.viewMode = loadViewMode();
+  updateViewModeButtons();
+
   const unreviewedFilterToggle = document.getElementById('unreviewed-filter-toggle');
   unreviewedFilterToggle.checked = app.unreviewedOnly;
   unreviewedFilterToggle.addEventListener('change', () => {
