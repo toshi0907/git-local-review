@@ -175,6 +175,58 @@
 
     #import-input { display: none; }
 
+    .folder-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #57606a;
+    }
+
+    .folder-label { flex-shrink: 0; }
+
+    .folder-name {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #24292e;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+    }
+
+    .folder-btn {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      background: #f6f8fa;
+      color: #24292e;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .folder-btn:hover { background: #e7eaef; }
+
+    .settings-save-section {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e1e4e8;
+    }
+
+    .settings-save-section .folder-row { margin-top: 0; }
+
+    .settings-save-btn { width: 100%; margin-top: 8px; }
+
+    .folder-status-msg {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #57606a;
+      min-height: 14px;
+    }
+
     .encoding-row {
       display: flex;
       align-items: center;
@@ -749,6 +801,12 @@
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
+      <div class="folder-row" id="open-folder-row">
+        <span class="folder-label">既定のフォルダ:</span>
+        <span class="folder-name" id="open-folder-name">未設定</span>
+        <button type="button" class="folder-btn" id="open-folder-set-btn" title="Diffファイルを開く際の既定のフォルダを設定">選択</button>
+        <button type="button" class="folder-btn" id="open-folder-clear-btn" title="既定のフォルダ設定を解除">解除</button>
+      </div>
       <div class="io-btn-row">
         <input type="file" id="import-input" accept="application/json,.json">
         <button class="io-btn" id="export-btn" title="プロジェクトとレビュー状態をJSONファイルに保存">
@@ -757,6 +815,18 @@
         <button class="io-btn" id="import-btn" title="エクスポートしたJSONファイルから復元">
           <span aria-hidden="true">📥</span> インポート
         </button>
+      </div>
+      <div class="settings-save-section" id="settings-save-section">
+        <div class="folder-row" id="settings-folder-row">
+          <span class="folder-label">保存先フォルダ:</span>
+          <span class="folder-name" id="settings-folder-name">未設定</span>
+          <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
+          <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
+        </div>
+        <button class="io-btn settings-save-btn" id="settings-save-btn" title="現在のプロジェクト一覧とレビュー状態を指定フォルダに保存">
+          <span aria-hidden="true">💾</span> 設定を保存
+        </button>
+        <div class="folder-status-msg" id="settings-save-status"></div>
       </div>
       <div class="encoding-row">
         <label for="encoding-select">文字コード</label>
@@ -1297,16 +1367,20 @@ function deleteFileContent(projectId) {
 const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function';
 const HANDLE_DB_NAME = 'gitLocalReview_handles';
 const HANDLE_STORE   = 'fileHandles';
+const FOLDER_STORE   = 'folderHandles';
 
 /** IDs of projects that currently have a stored file handle (kept in sync via refreshHandleIndex). */
 let projectIdsWithHandles = new Set();
 
 function openHandleDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HANDLE_DB_NAME, 1);
+    const req = indexedDB.open(HANDLE_DB_NAME, 2);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(HANDLE_STORE)) {
         req.result.createObjectStore(HANDLE_STORE);
+      }
+      if (!req.result.objectStoreNames.contains(FOLDER_STORE)) {
+        req.result.createObjectStore(FOLDER_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -1373,6 +1447,85 @@ async function refreshHandleIndex() {
   } catch (e) {
     console.error('Failed to refresh file handle index', e);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// File System Access API — remembered directory handles (IndexedDB)
+//
+// Used for two independent features, each keyed by a fixed string in the
+// same object store: a default folder to start the diff-file picker in,
+// and a folder to save/auto-load the app's settings (projects + review
+// state) to/from disk, outside of the manual export/import flow.
+// ─────────────────────────────────────────────────────────────────────────────
+const FOLDER_KEY_OPEN     = 'defaultOpenFolder';
+const FOLDER_KEY_SETTINGS = 'settingsFolder';
+const SETTINGS_FILE_NAME  = 'git-local-review-settings.json';
+
+async function saveFolderHandle(key, handle) {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(FOLDER_STORE, 'readwrite');
+      tx.objectStore(FOLDER_STORE).put(handle, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Failed to save folder handle for', key, e);
+  }
+}
+
+async function loadFolderHandle(key) {
+  try {
+    const db = await openHandleDB();
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(FOLDER_STORE, 'readonly').objectStore(FOLDER_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('Failed to load folder handle for', key, e);
+    return null;
+  }
+}
+
+async function deleteFolderHandleRecord(key) {
+  try {
+    const db = await openHandleDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(FOLDER_STORE, 'readwrite');
+      tx.objectStore(FOLDER_STORE).delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Failed to delete folder handle for', key, e);
+  }
+}
+
+/**
+ * Check (and, if needed, request) permission on a stored handle. Requesting
+ * permission requires a user gesture, so callers running outside of one
+ * (e.g. page-load auto-restore) should pass requestIfNeeded=false and treat
+ * a non-granted result as "skip silently".
+ */
+async function verifyHandlePermission(handle, mode, requestIfNeeded = true) {
+  const opts = { mode };
+  try {
+    if ((await handle.queryPermission(opts)) === 'granted') return true;
+    if (requestIfNeeded && (await handle.requestPermission(opts)) === 'granted') return true;
+  } catch (e) {
+    console.error('Permission check failed', e);
+  }
+  return false;
+}
+
+/** Refresh the default-open-folder name shown in the sidebar. */
+async function refreshOpenFolderUI() {
+  const nameEl = document.getElementById('open-folder-name');
+  if (!nameEl) return;
+  const handle = await loadFolderHandle(FOLDER_KEY_OPEN);
+  nameEl.textContent = handle ? handle.name : '未設定';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2490,14 +2643,43 @@ function sanitizeImportedProjects(rawProjects) {
   return result;
 }
 
-/** Download all projects + review state as a single JSON file. */
-function exportAppData() {
-  const data = {
+/** Build the app-data payload shared by manual export and folder-based settings save. */
+function buildExportData() {
+  return {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
   };
+}
+
+/**
+ * Merge parsed app-data (projects + reviews) into localStorage: same-ID
+ * projects are overwritten, other existing projects are kept. Shared by
+ * importAppData() and the settings-folder load flow.
+ * @returns {number} number of projects merged in
+ */
+function mergeImportedData(data) {
+  const importedProjects = sanitizeImportedProjects(data.projects);
+  const importedReviews  = sanitizeReviewsData(data.reviews);
+  if (importedProjects.length === 0) return 0;
+
+  const byId = new Map(loadProjects().map(p => [p.id, p]));
+  for (const p of importedProjects) byId.set(p.id, p);
+  saveProjects([...byId.values()]);
+
+  const reviews = loadAllReviews();
+  for (const pid of Object.keys(importedReviews)) {
+    reviews[pid] = importedReviews[pid];
+  }
+  saveAllReviews(reviews);
+
+  return importedProjects.length;
+}
+
+/** Download all projects + review state as a single JSON file. */
+function exportAppData() {
+  const data = buildExportData();
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
@@ -2527,31 +2709,120 @@ async function importAppData(file) {
     return;
   }
 
-  const importedProjects = sanitizeImportedProjects(data.projects);
-  const importedReviews  = sanitizeReviewsData(data.reviews);
-
-  if (importedProjects.length === 0) {
+  const importedCount = sanitizeImportedProjects(data.projects).length;
+  if (importedCount === 0) {
     alert('インポート可能なプロジェクトが見つかりませんでした。');
     return;
   }
 
   if (!confirm(
-    `${importedProjects.length} 件のプロジェクトをインポートします。\n` +
+    `${importedCount} 件のプロジェクトをインポートします。\n` +
     `同じIDの既存プロジェクトは上書きされます。よろしいですか？`
   )) return;
 
-  const byId = new Map(loadProjects().map(p => [p.id, p]));
-  for (const p of importedProjects) byId.set(p.id, p);
-  saveProjects([...byId.values()]);
-
-  const reviews = loadAllReviews();
-  for (const pid of Object.keys(importedReviews)) {
-    reviews[pid] = importedReviews[pid];
-  }
-  saveAllReviews(reviews);
-
+  mergeImportedData(data);
   renderProjectList();
-  alert(`${importedProjects.length} 件のプロジェクトをインポートしました。`);
+  alert(`${importedCount} 件のプロジェクトをインポートしました。`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings folder — save/auto-load projects + review state to/from a
+// user-chosen local folder (File System Access API), independent of the
+// manual export/import flow above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Refresh the settings-folder name shown in the sidebar. */
+async function refreshSettingsFolderUI() {
+  const nameEl = document.getElementById('settings-folder-name');
+  if (!nameEl) return;
+  const handle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  nameEl.textContent = handle ? handle.name : '未設定';
+}
+
+/** Write current projects + review state to the settings file in the chosen folder. */
+async function saveSettingsToFolder() {
+  const statusEl = document.getElementById('settings-save-status');
+  const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  if (!dirHandle) {
+    alert('先に設定の保存先フォルダを選択してください。');
+    return;
+  }
+
+  if (!(await verifyHandlePermission(dirHandle, 'readwrite'))) {
+    alert('フォルダへの書き込みアクセスが許可されませんでした。');
+    return;
+  }
+
+  try {
+    const fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(buildExportData(), null, 2));
+    await writable.close();
+    if (statusEl) {
+      const stamp = new Date().toLocaleString('ja-JP', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+      statusEl.textContent = `${stamp} に保存しました`;
+    }
+  } catch (err) {
+    console.error('Failed to save settings to folder', err);
+    alert(`設定の保存に失敗しました:\n${err.message}`);
+  }
+}
+
+/**
+ * If the chosen settings folder already contains a settings file, offer to
+ * load it right away. Called right after the user picks a folder, so
+ * permission is already granted from that same gesture.
+ */
+async function maybeLoadExistingSettingsAfterFolderPick(dirHandle) {
+  let fileHandle;
+  try {
+    fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME);
+  } catch (err) {
+    return; // no existing settings file in this folder
+  }
+
+  try {
+    const file = await fileHandle.getFile();
+    const data = JSON.parse(await file.text());
+    if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) return;
+    if (!confirm('選択したフォルダに既存の設定ファイルが見つかりました。読み込みますか？')) return;
+    const count = mergeImportedData(data);
+    renderProjectList();
+    alert(`${count} 件のプロジェクトを読み込みました。`);
+  } catch (err) {
+    console.error('Failed to load existing settings file', err);
+  }
+}
+
+/**
+ * On page load, silently restore projects + review state from the settings
+ * folder if one is configured and permission is already granted (no user
+ * gesture is available yet, so a not-yet-granted permission is skipped
+ * rather than prompted for).
+ */
+async function loadSettingsFromFolderOnStartup() {
+  const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  if (!dirHandle) return;
+  if (!(await verifyHandlePermission(dirHandle, 'read', /* requestIfNeeded */ false))) return;
+
+  let fileHandle;
+  try {
+    fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME);
+  } catch (err) {
+    if (err.name !== 'NotFoundError') console.error('Failed to look up settings file', err);
+    return;
+  }
+
+  try {
+    const file = await fileHandle.getFile();
+    const data = JSON.parse(await file.text());
+    if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) return;
+    mergeImportedData(data);
+  } catch (err) {
+    console.error('Failed to load settings from folder', err);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2812,24 +3083,77 @@ document.getElementById('load-btn').addEventListener('click', async () => {
     return;
   }
 
+  const pickerOptions = {
+    types: [{
+      description: 'Diff files',
+      accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
+    }],
+    excludeAcceptAllOption: false,
+    multiple: true,
+  };
+
+  const openFolderHandle = await loadFolderHandle(FOLDER_KEY_OPEN);
+  if (openFolderHandle) pickerOptions.startIn = openFolderHandle;
+
   let handles;
   try {
-    handles = await window.showOpenFilePicker({
-      types: [{
-        description: 'Diff files',
-        accept: { 'text/plain': ['.diff', '.patch', '.txt'] },
-      }],
-      excludeAcceptAllOption: false,
-      multiple: true,
-    });
+    handles = await window.showOpenFilePicker(pickerOptions);
   } catch (err) {
-    if (err.name !== 'AbortError') console.error('showOpenFilePicker failed', err);
-    return;
+    if (err.name === 'AbortError') return;
+    if (openFolderHandle) {
+      // The remembered default folder may be stale (moved/deleted/revoked
+      // permission); retry once without it rather than blocking file loading.
+      delete pickerOptions.startIn;
+      try {
+        handles = await window.showOpenFilePicker(pickerOptions);
+      } catch (err2) {
+        if (err2.name !== 'AbortError') console.error('showOpenFilePicker failed', err2);
+        return;
+      }
+    } else {
+      console.error('showOpenFilePicker failed', err);
+      return;
+    }
   }
 
   const files = await Promise.all(handles.map(h => h.getFile()));
   await loadDiffFiles(files, encodingPref, handles);
 });
+
+document.getElementById('open-folder-set-btn').addEventListener('click', async () => {
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'gitLocalReviewOpenFolder' });
+    await saveFolderHandle(FOLDER_KEY_OPEN, handle);
+    await refreshOpenFolderUI();
+  } catch (err) {
+    if (err.name !== 'AbortError') console.error('showDirectoryPicker failed', err);
+  }
+});
+
+document.getElementById('open-folder-clear-btn').addEventListener('click', async () => {
+  await deleteFolderHandleRecord(FOLDER_KEY_OPEN);
+  await refreshOpenFolderUI();
+});
+
+document.getElementById('settings-folder-set-btn').addEventListener('click', async () => {
+  try {
+    const handle = await window.showDirectoryPicker({ id: 'gitLocalReviewSettingsFolder', mode: 'readwrite' });
+    await saveFolderHandle(FOLDER_KEY_SETTINGS, handle);
+    await refreshSettingsFolderUI();
+    await maybeLoadExistingSettingsAfterFolderPick(handle);
+  } catch (err) {
+    if (err.name !== 'AbortError') console.error('showDirectoryPicker failed', err);
+  }
+});
+
+document.getElementById('settings-folder-clear-btn').addEventListener('click', async () => {
+  await deleteFolderHandleRecord(FOLDER_KEY_SETTINGS);
+  await refreshSettingsFolderUI();
+  const statusEl = document.getElementById('settings-save-status');
+  if (statusEl) statusEl.textContent = '';
+});
+
+document.getElementById('settings-save-btn').addEventListener('click', saveSettingsToFolder);
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
@@ -2956,6 +3280,16 @@ keywordInput.addEventListener('input', () => {
 
   document.getElementById('project-sort-select').value = loadProjectSort();
   await refreshHandleIndex();
+
+  if (supportsFileSystemAccess) {
+    await refreshOpenFolderUI();
+    await refreshSettingsFolderUI();
+    await loadSettingsFromFolderOnStartup();
+  } else {
+    document.getElementById('open-folder-row').style.display = 'none';
+    document.getElementById('settings-save-section').style.display = 'none';
+  }
+
   renderProjectList();
 
   // Restore the last active project selection, and its diff if a copy of the
