@@ -666,6 +666,32 @@
     .line-empty { background: #f6f8fa; }
     .line-empty.line-num { color: transparent; }
 
+    /* ===== Drag & drop overlay ===== */
+    .drop-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(9, 105, 218, 0.10);
+      border: 4px dashed #0969da;
+      z-index: 400;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .drop-overlay.active { display: flex; }
+
+    .drop-overlay-msg {
+      padding: 16px 28px;
+      background: #fff;
+      border: 1px solid #0969da;
+      border-radius: 10px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+      font-size: 16px;
+      font-weight: 600;
+      color: #0969da;
+    }
+
     /* ===== Modal ===== */
     .modal-overlay {
       display: none;
@@ -865,6 +891,13 @@
     <div id="diff-container"></div>
   </div>
 
+</div>
+
+<!-- Drag & drop overlay, shown while a file is being dragged over the window -->
+<div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+  <div class="drop-overlay-msg">
+    <span aria-hidden="true">📥</span> ここに diff ファイルをドロップして読み込む
+  </div>
 </div>
 
 <!-- Conflict modal (same filename loaded again) -->
@@ -3245,6 +3278,79 @@ document.addEventListener('keydown', (e) => {
     if (e.repeat) return; // ignore key-repeat from holding Space down
     toggleFocusedHunkReviewed();
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Drag & drop file upload — dropping one or more diff files anywhere on the
+// window loads them the same way as picking them via "📂 Diffファイルを開く"
+// (including the same-filename conflict modal and batch-upload summary).
+// ─────────────────────────────────────────────────────────────────────────────
+function dragEventHasFiles(e) {
+  return !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files'));
+}
+
+/**
+ * Extract File objects from a drop event's DataTransfer, and — where the
+ * browser supports it (Chromium) — the matching FileSystemFileHandles too,
+ * so dropped files get the same "🔃 再読み込み" support as files opened via
+ * the file picker. Falls back to plain File objects (no handles) elsewhere.
+ */
+async function filesFromDataTransfer(dataTransfer) {
+  const items = dataTransfer.items;
+  if (supportsFileSystemAccess && items && items.length && typeof items[0].getAsFileSystemHandle === 'function') {
+    const fileItems = Array.from(items).filter(item => item.kind === 'file');
+    const files = [];
+    const handles = [];
+    for (const item of fileItems) {
+      try {
+        const handle = await item.getAsFileSystemHandle();
+        if (!handle || handle.kind !== 'file') continue; // skip dropped folders
+        handles.push(handle);
+        files.push(await handle.getFile());
+      } catch (err) {
+        console.error('getAsFileSystemHandle failed for dropped item', err);
+      }
+    }
+    if (files.length > 0) return { files, handles };
+  }
+  return { files: Array.from(dataTransfer.files), handles: null };
+}
+
+let dragCounter = 0;
+const dropOverlay = document.getElementById('drop-overlay');
+
+window.addEventListener('dragenter', (e) => {
+  if (!dragEventHasFiles(e)) return;
+  e.preventDefault();
+  dragCounter++;
+  dropOverlay.classList.add('active');
+});
+
+window.addEventListener('dragover', (e) => {
+  // preventDefault() is required here too — without it the browser rejects the drop.
+  if (dragEventHasFiles(e)) e.preventDefault();
+});
+
+window.addEventListener('dragleave', (e) => {
+  if (!dragEventHasFiles(e)) return;
+  dragCounter = Math.max(0, dragCounter - 1);
+  if (dragCounter === 0) dropOverlay.classList.remove('active');
+});
+
+window.addEventListener('drop', async (e) => {
+  if (!dragEventHasFiles(e)) return;
+  e.preventDefault(); // without this the browser navigates to the dropped file
+  dragCounter = 0;
+  dropOverlay.classList.remove('active');
+
+  // Avoid stacking a new load on top of an already-open conflict modal.
+  if (modalOverlay.classList.contains('active')) return;
+
+  const { files, handles } = await filesFromDataTransfer(e.dataTransfer);
+  if (files.length === 0) return;
+
+  const encodingPref = document.getElementById('encoding-select').value;
+  await loadDiffFiles(files, encodingPref, handles);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
