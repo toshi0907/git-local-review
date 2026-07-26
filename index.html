@@ -1741,8 +1741,22 @@ function splitHighlightedLines(html) {
   return result;
 }
 
-/** Reusable DOMParser instance for converting highlighted HTML to DOM nodes. */
-const domParser = (typeof DOMParser !== 'undefined') ? new DOMParser() : null;
+/**
+ * Reusable Range used to convert per-line highlight.js HTML strings into DOM
+ * nodes via createContextualFragment (see buildContentCell). Fragment parsing
+ * starts directly in the "in body" insertion mode, unlike
+ * `DOMParser#parseFromString(html, 'text/html')`, which parses the string as
+ * a full document and — per the HTML5 parsing algorithm's "initial"/"before
+ * html"/"before head" insertion modes — silently drops any whitespace
+ * (spaces/tabs) occurring before the first tag. Diff lines that are
+ * highlighted (e.g. a line consisting solely of leading indentation before a
+ * keyword span) start with exactly that kind of leading whitespace, so using
+ * DOMParser here was silently stripping code indentation from highlighted
+ * diff lines.
+ */
+const htmlFragmentRange = (typeof document !== 'undefined' && document.createRange)
+  ? (() => { const r = document.createRange(); r.selectNodeContents(document.body); return r; })()
+  : null;
 
 /**
  * Highlight all lines of a hunk using highlight.js.
@@ -2074,12 +2088,12 @@ function buildContentCell(record, hlLines, extraCls, keywords) {
   pfx.textContent = record.type === '\\' ? '' : record.type;
   td.appendChild(pfx);
 
-  if (hlLines && record.idx < hlLines.length && domParser) {
-    // Use the shared DOMParser to safely convert highlighted HTML into DOM
-    // nodes, avoiding direct innerHTML assignment.
+  if (hlLines && record.idx < hlLines.length && htmlFragmentRange) {
+    // Use a Range-based fragment parse to safely convert highlighted HTML
+    // into DOM nodes (avoiding direct innerHTML assignment) without losing
+    // leading indentation whitespace — see htmlFragmentRange's doc comment.
     const codeSpan = document.createElement('span');
-    const parsed = domParser.parseFromString(hlLines[record.idx], 'text/html');
-    parsed.body.childNodes.forEach(node => codeSpan.appendChild(document.importNode(node, true)));
+    codeSpan.appendChild(htmlFragmentRange.createContextualFragment(hlLines[record.idx]));
     td.appendChild(codeSpan);
   } else {
     td.appendChild(document.createTextNode(record.content));
