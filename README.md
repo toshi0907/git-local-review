@@ -69,9 +69,24 @@ diff ファイルのバイト列から文字コードを自動判定します（
 
 同じファイル名を同じ日に複数回ロードする場合、モーダルで既存プロジェクトへの上書きか新規作成かを選択できます。プロジェクト ID は `sample.diff__proj_20260723_001` の形式で自動生成されます。
 
-### データの保存先
+### ブラウザに保存される情報一覧
 
-レビュー状態はブラウザの `localStorage` に以下の構造で保存されます。
+このツールはサーバーを持たず、外部通信も一切行いません。すべてのデータはブラウザの `localStorage` と `IndexedDB` にのみ保存されます。
+
+#### localStorage
+
+| キー | 内容 |
+| --- | --- |
+| `gitLocalReview_projects` | プロジェクト一覧（ID・ファイル名・作成日時・更新日時・文字コード設定など） |
+| `gitLocalReview_reviews` | プロジェクトごとのレビュー済みハンク状態（後述の構造） |
+| `gitLocalReview_files` | 各プロジェクトの最終読み込みファイルの内容（プロジェクト ID をキーに保存） |
+| `gitLocalReview_currentProject` | 直前に開いていたプロジェクトの ID |
+| `gitLocalReview_viewMode` | diff の表示モード（`unified` / `split`） |
+| `gitLocalReview_unreviewedOnly` | 「未レビューのみ表示」フィルタの ON/OFF |
+| `gitLocalReview_projectSort` | プロジェクト一覧の並び順 |
+| `gitLocalReview_keywords` | キーワードハイライト用に登録したキーワード（カンマ区切り文字列） |
+
+`gitLocalReview_reviews` は以下の構造で保存されます。
 
 ```json
 {
@@ -85,7 +100,19 @@ diff ファイルのバイト列から文字コードを自動判定します（
 
 ハンクの同一性は diff の内容行（`@@` ヘッダを除く）の SHA-256 ハッシュで判定されるため、行番号がずれても同じ内容のハンクは「レビュー済み」状態が引き継がれます。
 
-各プロジェクトの最終読み込みファイルの内容も `localStorage`（プロジェクト ID をキーとした別領域）に保存され、再読み込みやプロジェクト切り替え後も表示が復元されます。ストレージの空き容量が不足している場合は保存失敗のアラートが表示され、次回開いたときに手動での再読み込みが必要になります。
+各プロジェクトの最終読み込みファイルの内容（`gitLocalReview_files`）により、再読み込みやプロジェクト切り替え後も表示が復元されます。ストレージの空き容量が不足している場合は保存失敗のアラートが表示され、次回開いたときに手動での再読み込みが必要になります。
+
+#### IndexedDB（File System Access API 対応ブラウザのみ）
+
+`FileSystemFileHandle` / `FileSystemDirectoryHandle` は JSON 化できないオブジェクトのため、`gitLocalReview_handles` という名前の IndexedDB データベースに保存されます。
+
+| オブジェクトストア | キー | 内容 |
+| --- | --- | --- |
+| `fileHandles` | プロジェクト ID | 「🔃 再読み込み」用に記憶した diff ファイルの参照 |
+| `folderHandles` | `defaultOpenFolder` | 「📂 Diffファイルを開く」の既定フォルダの参照 |
+| `folderHandles` | `settingsFolder` | 「💾 設定を保存」の自動保存先フォルダの参照 |
+
+保存されるのはファイル・フォルダへの「参照」のみで、内容そのものは含まれません。参照先が移動・削除された場合は再選択が必要です。
 
 ### エクスポート / インポート
 
