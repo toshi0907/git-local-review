@@ -227,6 +227,13 @@
       min-height: 14px;
     }
 
+    .folder-external-update-msg {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #9a6700;
+    }
+
     .encoding-row {
       display: flex;
       align-items: center;
@@ -849,10 +856,14 @@
           <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
           <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
         </div>
-        <button class="io-btn settings-save-btn" id="settings-save-btn" title="現在のプロジェクト一覧とレビュー状態を指定フォルダに保存">
+        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
           <span aria-hidden="true">💾</span> 設定を保存
         </button>
         <div class="folder-status-msg" id="settings-save-status"></div>
+        <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
+          ⚠️ 保存先フォルダのデータが他の環境で更新されています。
+          <button type="button" class="folder-btn" id="settings-reload-btn">読み込む</button>
+        </div>
       </div>
       <div class="encoding-row">
         <label for="encoding-select">文字コード</label>
@@ -1493,6 +1504,20 @@ async function refreshHandleIndex() {
 const FOLDER_KEY_OPEN     = 'defaultOpenFolder';
 const FOLDER_KEY_SETTINGS = 'settingsFolder';
 const SETTINGS_FILE_NAME  = 'git-local-review-settings.json';
+
+/** Quiet period after a project/review change before auto-saving to the settings folder. */
+const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 1500;
+/** How often to poll the settings file for edits made from another environment. */
+const SETTINGS_EXTERNAL_CHECK_INTERVAL_MS = 60000;
+
+/**
+ * mtime (ms) of the settings file as last seen by this tab, because we
+ * wrote it ourselves or read/inspected it. Compared against the file's
+ * current mtime to detect edits made from another browser/environment.
+ */
+let settingsFileKnownModified = null;
+let settingsAutoSaveTimer = null;
+let settingsExternalCheckTimer = null;
 
 async function saveFolderHandle(key, handle) {
   try {
@@ -2444,6 +2469,7 @@ function onCheckboxChange(e) {
   }
 
   saveAllReviews(allReviews);
+  scheduleSettingsAutoSave();
 
   if (app.unreviewedOnly) {
     // The "未レビューのみ表示" filter needs hunks/files to appear or disappear
@@ -2657,6 +2683,7 @@ function resetProject(projectId) {
   const allReviews = loadAllReviews();
   delete allReviews[projectId];
   saveAllReviews(allReviews);
+  scheduleSettingsAutoSave();
 
   if (app.currentProjectId === projectId && app.parsedDiff) renderDiff();
   renderProjectList();
@@ -2674,6 +2701,7 @@ function deleteProject(projectId) {
   deleteFileHandleRecord(projectId);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
+  scheduleSettingsAutoSave();
 
   if (app.currentProjectId === projectId) {
     app.currentProjectId = null;
@@ -2697,6 +2725,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   const projects = loadProjects();
   projects.push({ id, fileName, createdAt: now, lastUpdated: now, encoding: encodingPref, resolvedEncoding });
   saveProjects(projects);
+  scheduleSettingsAutoSave();
   saveFileContent(id, rawText);
   if (fileHandle) saveFileHandle(id, fileHandle).then(renderProjectList);
 
@@ -2717,6 +2746,7 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
     if (encodingPref !== undefined) proj.encoding = encodingPref;
     if (resolvedEncoding !== undefined) proj.resolvedEncoding = resolvedEncoding;
     saveProjects(projects);
+    scheduleSettingsAutoSave();
   }
   saveFileContent(projectId, rawText);
   if (fileHandle) saveFileHandle(projectId, fileHandle).then(renderProjectList);
@@ -2870,6 +2900,28 @@ async function refreshSettingsFolderUI() {
   nameEl.title = handle ? handle.name : '';
 }
 
+/** mtime (ms) of the settings file in `dirHandle`, or null if it doesn't exist. */
+async function statSettingsFile(dirHandle) {
+  try {
+    const fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME);
+    const file = await fileHandle.getFile();
+    return file.lastModified;
+  } catch (err) {
+    if (err.name !== 'NotFoundError') console.error('Failed to stat settings file', err);
+    return null;
+  }
+}
+
+function showSettingsExternalUpdateNotice() {
+  const el = document.getElementById('settings-external-update-notice');
+  if (el) el.style.display = '';
+}
+
+function hideSettingsExternalUpdateNotice() {
+  const el = document.getElementById('settings-external-update-notice');
+  if (el) el.style.display = 'none';
+}
+
 /** Write current projects + review state to the settings file in the chosen folder. */
 async function saveSettingsToFolder() {
   const statusEl = document.getElementById('settings-save-status');
@@ -2884,11 +2936,16 @@ async function saveSettingsToFolder() {
     return;
   }
 
+  clearTimeout(settingsAutoSaveTimer);
+  settingsAutoSaveTimer = null;
+
   try {
     const fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(buildExportData(), null, 2));
     await writable.close();
+    settingsFileKnownModified = (await fileHandle.getFile()).lastModified;
+    hideSettingsExternalUpdateNotice();
     if (statusEl) {
       const stamp = new Date().toLocaleString('ja-JP', {
         year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -2899,6 +2956,82 @@ async function saveSettingsToFolder() {
     console.error('Failed to save settings to folder', err);
     alert(`設定の保存に失敗しました:\n${err.message}`);
   }
+}
+
+/**
+ * Debounced auto-save, called after a project/review change. Waits for a
+ * quiet moment so rapid successive changes (e.g. toggling many checkboxes)
+ * result in one write rather than one per change.
+ */
+function scheduleSettingsAutoSave() {
+  if (!supportsFileSystemAccess) return;
+  clearTimeout(settingsAutoSaveTimer);
+  settingsAutoSaveTimer = setTimeout(() => {
+    settingsAutoSaveTimer = null;
+    autoSaveSettingsToFolder();
+  }, SETTINGS_AUTO_SAVE_DEBOUNCE_MS);
+}
+
+/**
+ * Silently write current state to the settings folder, if one is configured
+ * and write permission is already granted (no user gesture is available
+ * here, so a not-yet-granted permission is skipped rather than prompted
+ * for). Bails out without writing if the on-disk file changed since we last
+ * saved/loaded it — that means another environment wrote data we haven't
+ * seen yet, and auto-saving would silently discard it.
+ */
+async function autoSaveSettingsToFolder() {
+  const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  if (!dirHandle) return;
+  if (!(await verifyHandlePermission(dirHandle, 'readwrite', /* requestIfNeeded */ false))) return;
+
+  const currentModified = await statSettingsFile(dirHandle);
+  if (currentModified !== settingsFileKnownModified) {
+    // Covers both "changed since we last saw it" and "we've never seen it
+    // but it now exists" (e.g. another environment created it first).
+    showSettingsExternalUpdateNotice();
+    return;
+  }
+
+  try {
+    const fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(JSON.stringify(buildExportData(), null, 2));
+    await writable.close();
+    settingsFileKnownModified = (await fileHandle.getFile()).lastModified;
+    hideSettingsExternalUpdateNotice();
+    const statusEl = document.getElementById('settings-save-status');
+    if (statusEl) {
+      const stamp = new Date().toLocaleString('ja-JP', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+      statusEl.textContent = `${stamp} に自動保存しました`;
+    }
+  } catch (err) {
+    console.error('Failed to auto-save settings to folder', err);
+  }
+}
+
+/**
+ * Poll the settings file so edits made from another browser/environment are
+ * noticed even without a local change triggering autoSaveSettingsToFolder.
+ * Only ever shows a notice — never loads automatically.
+ */
+async function checkSettingsFileExternalChange() {
+  const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  if (!dirHandle) return;
+  if (!(await verifyHandlePermission(dirHandle, 'read', /* requestIfNeeded */ false))) return;
+
+  const currentModified = await statSettingsFile(dirHandle);
+  if (currentModified === null) return;
+  if (currentModified !== settingsFileKnownModified) {
+    showSettingsExternalUpdateNotice();
+  }
+}
+
+function startSettingsExternalChangeWatcher() {
+  clearInterval(settingsExternalCheckTimer);
+  settingsExternalCheckTimer = setInterval(checkSettingsFileExternalChange, SETTINGS_EXTERNAL_CHECK_INTERVAL_MS);
 }
 
 /**
@@ -2916,10 +3049,12 @@ async function maybeLoadExistingSettingsAfterFolderPick(dirHandle) {
 
   try {
     const file = await fileHandle.getFile();
+    settingsFileKnownModified = file.lastModified;
     const data = JSON.parse(await file.text());
     if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) return;
     if (!confirm('選択したフォルダに既存の設定ファイルが見つかりました。読み込みますか？')) return;
     const count = mergeImportedData(data);
+    hideSettingsExternalUpdateNotice();
     renderProjectList();
     alert(`${count} 件のプロジェクトを読み込みました。`);
   } catch (err) {
@@ -2948,11 +3083,57 @@ async function loadSettingsFromFolderOnStartup() {
 
   try {
     const file = await fileHandle.getFile();
+    settingsFileKnownModified = file.lastModified;
     const data = JSON.parse(await file.text());
     if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) return;
     mergeImportedData(data);
   } catch (err) {
     console.error('Failed to load settings from folder', err);
+  }
+}
+
+/**
+ * Manually reload from the settings folder on demand — the counterpart to
+ * the auto-save skip/notice in autoSaveSettingsToFolder(): loading itself
+ * always stays an explicit user action, never automatic.
+ */
+async function reloadSettingsFromFolderManually() {
+  const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
+  if (!dirHandle) return;
+
+  if (!(await verifyHandlePermission(dirHandle, 'read'))) {
+    alert('フォルダへの読み取りアクセスが許可されませんでした。');
+    return;
+  }
+
+  let fileHandle;
+  try {
+    fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME);
+  } catch (err) {
+    // Nothing to load; reset the baseline so a future auto-save is free to
+    // create the file, instead of being skipped forever as "conflicting".
+    settingsFileKnownModified = null;
+    hideSettingsExternalUpdateNotice();
+    alert('保存先フォルダに設定ファイルが見つかりませんでした。');
+    return;
+  }
+
+  try {
+    const file = await fileHandle.getFile();
+    const data = JSON.parse(await file.text());
+    if (!data || typeof data !== 'object' || !Array.isArray(data.projects)) {
+      alert('設定ファイルの形式が正しくありません。');
+      return;
+    }
+    const count = mergeImportedData(data);
+    settingsFileKnownModified = file.lastModified;
+    hideSettingsExternalUpdateNotice();
+    renderProjectList();
+    if (app.currentProjectId && app.parsedDiff) renderDiff();
+    alert(`${count} 件のプロジェクトを読み込みました。`);
+  } catch (err) {
+    console.error('Failed to reload settings from folder', err);
+    alert(`設定の読み込みに失敗しました:\n${err.message}`);
   }
 }
 
@@ -3269,6 +3450,8 @@ document.getElementById('open-folder-clear-btn').addEventListener('click', async
 document.getElementById('settings-folder-set-btn').addEventListener('click', async () => {
   try {
     const handle = await window.showDirectoryPicker({ id: 'gitLocalReviewSettingsFolder', mode: 'readwrite' });
+    settingsFileKnownModified = null; // new folder: drop any baseline from the previous one
+    hideSettingsExternalUpdateNotice();
     await saveFolderHandle(FOLDER_KEY_SETTINGS, handle);
     await refreshSettingsFolderUI();
     await maybeLoadExistingSettingsAfterFolderPick(handle);
@@ -3280,11 +3463,16 @@ document.getElementById('settings-folder-set-btn').addEventListener('click', asy
 document.getElementById('settings-folder-clear-btn').addEventListener('click', async () => {
   await deleteFolderHandleRecord(FOLDER_KEY_SETTINGS);
   await refreshSettingsFolderUI();
+  clearTimeout(settingsAutoSaveTimer);
+  settingsAutoSaveTimer = null;
+  settingsFileKnownModified = null;
+  hideSettingsExternalUpdateNotice();
   const statusEl = document.getElementById('settings-save-status');
   if (statusEl) statusEl.textContent = '';
 });
 
 document.getElementById('settings-save-btn').addEventListener('click', saveSettingsToFolder);
+document.getElementById('settings-reload-btn').addEventListener('click', reloadSettingsFromFolderManually);
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
@@ -3489,6 +3677,7 @@ keywordInput.addEventListener('input', () => {
     await refreshOpenFolderUI();
     await refreshSettingsFolderUI();
     await loadSettingsFromFolderOnStartup();
+    startSettingsExternalChangeWatcher();
   } else {
     document.getElementById('open-folder-row').style.display = 'none';
     document.getElementById('settings-save-section').style.display = 'none';
