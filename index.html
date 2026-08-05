@@ -2986,7 +2986,9 @@ async function autoSaveSettingsToFolder() {
   if (!(await verifyHandlePermission(dirHandle, 'readwrite', /* requestIfNeeded */ false))) return;
 
   const currentModified = await statSettingsFile(dirHandle);
-  if (settingsFileKnownModified !== null && currentModified !== settingsFileKnownModified) {
+  if (currentModified !== settingsFileKnownModified) {
+    // Covers both "changed since we last saw it" and "we've never seen it
+    // but it now exists" (e.g. another environment created it first).
     showSettingsExternalUpdateNotice();
     return;
   }
@@ -3022,7 +3024,7 @@ async function checkSettingsFileExternalChange() {
 
   const currentModified = await statSettingsFile(dirHandle);
   if (currentModified === null) return;
-  if (settingsFileKnownModified !== null && currentModified !== settingsFileKnownModified) {
+  if (currentModified !== settingsFileKnownModified) {
     showSettingsExternalUpdateNotice();
   }
 }
@@ -3108,6 +3110,10 @@ async function reloadSettingsFromFolderManually() {
   try {
     fileHandle = await dirHandle.getFileHandle(SETTINGS_FILE_NAME);
   } catch (err) {
+    // Nothing to load; reset the baseline so a future auto-save is free to
+    // create the file, instead of being skipped forever as "conflicting".
+    settingsFileKnownModified = null;
+    hideSettingsExternalUpdateNotice();
     alert('保存先フォルダに設定ファイルが見つかりませんでした。');
     return;
   }
