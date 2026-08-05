@@ -1559,6 +1559,7 @@ async function refreshOpenFolderUI() {
   if (!nameEl) return;
   const handle = await loadFolderHandle(FOLDER_KEY_OPEN);
   nameEl.textContent = handle ? handle.name : '未設定';
+  nameEl.title = handle ? handle.name : '';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2866,6 +2867,7 @@ async function refreshSettingsFolderUI() {
   if (!nameEl) return;
   const handle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
   nameEl.textContent = handle ? handle.name : '未設定';
+  nameEl.title = handle ? handle.name : '';
 }
 
 /** Write current projects + review state to the settings file in the chosen folder. */
