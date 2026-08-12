@@ -95,7 +95,8 @@ test/                ← テスト用 .diff サンプルファイル
 | ~2227 | **HTML escaping** | `esc()` ユーティリティ |
 | ~2236 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
 | ~2244 | **Render: sidebar project list** | `renderProjectList()` |
-| ~2334 | **Render: full diff view** | `renderDiff()` |
+| ~2334 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
+| ~2421 | **Render: full diff view** | `renderDiff()` |
 | ~2417 | **Build a single hunk card** | `buildHunkCard()` |
 | ~2730 | **Set collapsed state** | ハンクの折りたたみ |
 | ~2744 | **Checkbox change handler** | レビュー済みチェック処理 |

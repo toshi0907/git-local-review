@@ -477,6 +477,92 @@
       margin-bottom: 12px;
     }
 
+    /* ===== Stat summary panel ===== */
+    .stat-summary {
+      margin-bottom: 20px;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .stat-summary-header {
+      padding: 8px 16px;
+      background: #f6f8fa;
+      border-bottom: 1px solid #d0d7de;
+      font-size: 12px;
+      font-weight: 700;
+      color: #57606a;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .stat-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 16px;
+      border-bottom: 1px solid #f0f2f5;
+      font-size: 12px;
+    }
+
+    .stat-row:last-child { border-bottom: none; }
+
+    .stat-row.stat-total {
+      background: #f6f8fa;
+      border-top: 1px solid #d0d7de;
+      font-weight: 600;
+      font-size: 12px;
+      color: #24292e;
+    }
+
+    .stat-filename {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      color: #0969da;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      flex: 1;
+      text-decoration: none;
+    }
+
+    .stat-filename:hover { text-decoration: underline; }
+
+    .stat-counts {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .stat-add { color: #1a7f37; }
+    .stat-del { color: #cf222e; }
+
+    .stat-bar {
+      display: flex;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+
+    .stat-bar-add {
+      display: inline-block;
+      width: 8px;
+      height: 10px;
+      background: #2da44e;
+      border-radius: 1px;
+    }
+
+    .stat-bar-del {
+      display: inline-block;
+      width: 8px;
+      height: 10px;
+      background: #cf222e;
+      border-radius: 1px;
+    }
+
     /* ===== File sections ===== */
     .file-section {
       margin-bottom: 28px;
@@ -1121,6 +1207,7 @@
       <span class="icon" aria-hidden="true">📄</span>
       Diffファイルを読み込んでください
     </div>
+    <div id="stat-summary" style="display:none;"></div>
     <div id="diff-container"></div>
   </div>
 
@@ -2332,6 +2419,102 @@ function renderProjectList() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Render: stat summary (git diff --stat style)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Build and display a `git diff --stat`-like summary above the diff cards.
+ * Each file row shows the filename (clickable to scroll to the section),
+ * +additions / -deletions counts, and a visual bar of coloured squares.
+ * @param {Array<{filePath:string, hunks:Array<{lines:string[]}>}>} files
+ */
+function renderStatSummary(files) {
+  const panel = document.getElementById('stat-summary');
+  panel.innerHTML = '';
+
+  if (!files || files.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  // Compute per-file add/del counts
+  const stats = files.map(file => {
+    let add = 0, del = 0;
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.startsWith('+')) add++;
+        else if (line.startsWith('-')) del++;
+      }
+    }
+    return { filePath: file.filePath, add, del };
+  });
+
+  const totalAdd = stats.reduce((s, r) => s + r.add, 0);
+  const totalDel = stats.reduce((s, r) => s + r.del, 0);
+  const maxChange = Math.max(...stats.map(r => r.add + r.del), 1);
+  const BAR_MAX = 10; // maximum squares per file
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'stat-summary-header';
+  header.textContent = `${files.length} ファイル変更`;
+  panel.appendChild(header);
+
+  // Per-file rows
+  for (const stat of stats) {
+    const row = document.createElement('div');
+    row.className = 'stat-row';
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'stat-filename';
+    nameEl.textContent = stat.filePath;
+    nameEl.title = stat.filePath;
+    nameEl.addEventListener('click', () => {
+      // Find the corresponding file-section by matching its file-path text
+      const sections = document.querySelectorAll('#diff-container .file-section');
+      for (const sec of sections) {
+        const pathEl = sec.querySelector('.file-path');
+        if (pathEl && pathEl.textContent === stat.filePath) {
+          sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          break;
+        }
+      }
+    });
+
+    const countEl = document.createElement('span');
+    countEl.className = 'stat-counts';
+    countEl.innerHTML =
+      `<span class="stat-add">+${stat.add}</span>` +
+      `<span class="stat-del">-${stat.del}</span>`;
+
+    const addBars = Math.round((stat.add / maxChange) * BAR_MAX);
+    const delBars = Math.round((stat.del / maxChange) * BAR_MAX);
+    const barEl = document.createElement('span');
+    barEl.className = 'stat-bar';
+    barEl.innerHTML =
+      '<span class="stat-bar-add"></span>'.repeat(addBars) +
+      '<span class="stat-bar-del"></span>'.repeat(delBars);
+
+    row.appendChild(nameEl);
+    row.appendChild(countEl);
+    row.appendChild(barEl);
+    panel.appendChild(row);
+  }
+
+  // Total row
+  const totalRow = document.createElement('div');
+  totalRow.className = 'stat-row stat-total';
+  totalRow.innerHTML =
+    `<span style="flex:1">合計</span>` +
+    `<span class="stat-counts">` +
+    `<span class="stat-add">+${totalAdd}</span>` +
+    `<span class="stat-del">-${totalDel}</span>` +
+    `</span>`;
+  panel.appendChild(totalRow);
+
+  panel.style.display = '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Render: full diff view
 // ─────────────────────────────────────────────────────────────────────────────
 function renderDiff() {
@@ -2345,10 +2528,12 @@ function renderDiff() {
     emptyState.style.display = 'block';
     clearOverallProgress();
     app.focusedHunkIndex = -1;
+    renderStatSummary(null);
     return;
   }
 
   emptyState.style.display = 'none';
+  renderStatSummary(files);
 
   const allReviews     = loadAllReviews();
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
