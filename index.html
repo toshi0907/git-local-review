@@ -321,13 +321,58 @@
       color: #57606a;
     }
 
-    .keyword-row label {
-      display: block;
-      margin-bottom: 4px;
+    .keyword-row-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
     }
 
-    .keyword-row input {
-      width: 100%;
+    .keyword-category-add-btn {
+      flex-shrink: 0;
+      padding: 2px 8px;
+      background: none;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #0969da;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .keyword-category-add-btn:hover { background: #ddf4ff; }
+
+    .keyword-categories {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .keyword-categories-empty {
+      font-size: 11px;
+      color: #8b949e;
+      padding: 4px 0;
+    }
+
+    .keyword-category-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .keyword-category-color {
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .keyword-category-keywords {
+      flex: 1;
+      min-width: 0;
       box-sizing: border-box;
       padding: 5px 6px;
       border: 1px solid #d0d7de;
@@ -337,10 +382,23 @@
       font-size: 12px;
     }
 
-    .keyword-row input:focus {
+    .keyword-category-keywords:focus {
       outline: none;
       border-color: #0969da;
     }
+
+    .keyword-category-remove-btn {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .keyword-category-remove-btn:hover { background: #ffeef0; color: #cf222e; }
 
     .sidebar-section-title {
       padding: 10px 16px;
@@ -739,7 +797,10 @@
     .diff-table .hljs-deletion { background: transparent; padding: 0; }
 
     /* Keyword highlight (issue #10): applied on top of syntax highlighting,
-       so it must win over the transparent background rules above. */
+       so it must win over the transparent background rules above. Background
+       and text color are set inline per match (see applyKeywordHighlight),
+       reflecting that match's category color; the values below are only a
+       fallback. */
     .keyword-hit {
       background: #fff000;
       color: #24292e;
@@ -1183,9 +1244,11 @@
         </select>
       </div>
       <div class="keyword-row">
-        <label for="keyword-input">キーワード（カンマ区切り）</label>
-        <input type="text" id="keyword-input" placeholder="例: TODO, FIXME, XXX"
-               title="差分中でこれらのキーワードを含む行を黄色でハイライトします（大文字小文字は区別しません）">
+        <div class="keyword-row-header">
+          <label>キーワード（カテゴリ別）</label>
+          <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
+        </div>
+        <div id="keyword-categories" class="keyword-categories"></div>
       </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
@@ -1610,34 +1673,73 @@ function sanitizeFilesData(parsed) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Keyword highlight (issue #10)
+// Keyword highlight (issue #10, categorised in issue #50)
 //
-// Users can register arbitrary keywords (e.g. "TODO, FIXME") in the sidebar.
-// Any diff line whose content contains one of these keywords gets its
-// matching substring wrapped in <mark class="keyword-hit"> (yellow
-// background) so stray TODO-style comments are easy to spot while reviewing.
-// Matching is a plain case-insensitive substring search (no RegExp), so
-// there is no need to escape user input and no ReDoS risk.
+// Users can register any number of keyword categories in the sidebar, each
+// with its own comma-separated keyword list and background color. Any diff
+// line whose content contains one of a category's keywords gets its
+// matching substring wrapped in <mark class="keyword-hit"> using that
+// category's color, so keywords of different intent (e.g. TODO vs SECURITY)
+// stay visually distinct while reviewing. Matching is a plain
+// case-insensitive substring search (no RegExp), so there is no need to
+// escape user input and no ReDoS risk.
+//
+// Storage: SK_KEYWORDS holds a JSON-encoded array of
+// { id, keywords, color } category objects. Older data was a bare
+// comma-separated keyword string (pre-#50); loadKeywordCategories()
+// transparently migrates that into a single yellow category on read.
 // ─────────────────────────────────────────────────────────────────────────────
-function loadKeywordsRaw() {
-  try {
-    return localStorage.getItem(SK_KEYWORDS) || '';
-  } catch (e) {
-    console.error('Failed to load keywords from localStorage:', e);
-    return '';
-  }
+const DEFAULT_KEYWORD_COLOR = '#fff000';
+const KEYWORD_CATEGORY_COLOR_PALETTE = ['#fff000', '#ffadad', '#a0c4ff', '#caffbf', '#ffd6a5', '#bdb2ff'];
+
+function generateKeywordCategoryId() {
+  return `kwcat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function saveKeywordsRaw(raw) {
+/** Keep only well-formed category entries; drop anything with an unexpected shape. */
+function sanitizeKeywordCategories(rawCategories) {
+  if (!Array.isArray(rawCategories)) return [];
+  const result = [];
+  for (const c of rawCategories) {
+    if (!c || typeof c !== 'object' || typeof c.keywords !== 'string') continue;
+    const color = typeof c.color === 'string' && /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : DEFAULT_KEYWORD_COLOR;
+    const id = typeof c.id === 'string' && c.id ? c.id : generateKeywordCategoryId();
+    result.push({ id, keywords: c.keywords, color });
+  }
+  return result;
+}
+
+function loadKeywordCategories() {
+  let raw;
   try {
-    localStorage.setItem(SK_KEYWORDS, raw);
+    raw = localStorage.getItem(SK_KEYWORDS);
+  } catch (e) {
+    console.error('Failed to load keywords from localStorage:', e);
+    return [];
+  }
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return sanitizeKeywordCategories(parsed);
+  } catch (e) {
+    // Not JSON — fall through to the legacy plain-string migration below.
+  }
+
+  // Legacy format (pre-#50): a bare comma-separated keyword string.
+  return [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR }];
+}
+
+function saveKeywordCategories(categories) {
+  try {
+    localStorage.setItem(SK_KEYWORDS, JSON.stringify(categories));
   } catch (e) {
     console.error('Failed to save keywords to localStorage:', e);
     alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
   }
 }
 
-// Parses the raw comma-separated input into a de-duplicated list of
+// Parses a category's raw comma-separated input into a de-duplicated list of
 // non-empty, trimmed keywords. Whitespace-only entries are dropped, so an
 // empty/blank input yields an empty array (= no highlighting).
 function parseKeywords(raw) {
@@ -1653,27 +1755,21 @@ function parseKeywords(raw) {
   return result;
 }
 
-function getActiveKeywords() {
-  return parseKeywords(loadKeywordsRaw());
+/**
+ * Returns the active keyword categories with their raw keyword string
+ * already parsed, dropping categories with no keywords. Order matches the
+ * saved category order and determines highlight priority when two
+ * categories match overlapping text (earlier category wins — see
+ * findKeywordRanges).
+ * @returns {Array<{color:string, keywords:string[]}>}
+ */
+function getActiveKeywordGroups() {
+  return loadKeywordCategories()
+    .map(cat => ({ color: cat.color, keywords: parseKeywords(cat.keywords) }))
+    .filter(g => g.keywords.length > 0);
 }
 
-// Finds all (merged, non-overlapping) match ranges of any keyword within
-// `text`, case-insensitively. Plain substring search only — no RegExp.
-function findKeywordRanges(text, keywords) {
-  if (!keywords || keywords.length === 0 || !text) return [];
-  const lowerText = text.toLowerCase();
-  const ranges = [];
-  for (const kw of keywords) {
-    const lowerKw = kw.toLowerCase();
-    if (!lowerKw) continue;
-    let from = 0;
-    while (true) {
-      const idx = lowerText.indexOf(lowerKw, from);
-      if (idx === -1) break;
-      ranges.push({ start: idx, end: idx + lowerKw.length });
-      from = idx + lowerKw.length;
-    }
-  }
+function mergeRanges(ranges) {
   if (ranges.length === 0) return [];
   ranges.sort((a, b) => a.start - b.start);
   const merged = [ranges[0]];
@@ -1689,11 +1785,91 @@ function findKeywordRanges(text, keywords) {
   return merged;
 }
 
+// Finds all (merged, non-overlapping) match ranges of a single set of
+// same-color keywords within `text`, case-insensitively.
+function findRawKeywordRanges(text, keywords) {
+  const lowerText = text.toLowerCase();
+  const ranges = [];
+  for (const kw of keywords) {
+    const lowerKw = kw.toLowerCase();
+    if (!lowerKw) continue;
+    let from = 0;
+    while (true) {
+      const idx = lowerText.indexOf(lowerKw, from);
+      if (idx === -1) break;
+      ranges.push({ start: idx, end: idx + lowerKw.length });
+      from = idx + lowerKw.length;
+    }
+  }
+  return mergeRanges(ranges);
+}
+
+// Subtracts `claimed` (sorted, non-overlapping) intervals from `ranges`
+// (sorted, non-overlapping), returning the remaining pieces of `ranges`
+// that don't overlap any claimed interval.
+function subtractRanges(ranges, claimed) {
+  if (claimed.length === 0) return ranges;
+  const result = [];
+  for (const r of ranges) {
+    let segments = [{ start: r.start, end: r.end }];
+    for (const c of claimed) {
+      const next = [];
+      for (const seg of segments) {
+        if (c.end <= seg.start || c.start >= seg.end) {
+          next.push(seg);
+          continue;
+        }
+        if (c.start > seg.start) next.push({ start: seg.start, end: Math.min(c.start, seg.end) });
+        if (c.end < seg.end) next.push({ start: Math.max(c.end, seg.start), end: seg.end });
+      }
+      segments = next;
+    }
+    result.push(...segments);
+  }
+  return result;
+}
+
+/**
+ * Finds all match ranges of the given keyword groups within `text`,
+ * case-insensitively (plain substring search, no RegExp). Each returned
+ * range carries the color of the category it matched. When two categories'
+ * keywords match overlapping text, the earlier group in `groups` wins the
+ * overlap — its range is kept whole and later groups are trimmed around it.
+ * @param {string} text
+ * @param {Array<{color:string, keywords:string[]}>} groups
+ * @returns {Array<{start:number, end:number, color:string}>} sorted, non-overlapping
+ */
+function findKeywordRanges(text, groups) {
+  if (!groups || groups.length === 0 || !text) return [];
+  let claimed = [];
+  const colored = [];
+  for (const group of groups) {
+    const raw = findRawKeywordRanges(text, group.keywords);
+    if (raw.length === 0) continue;
+    for (const p of subtractRanges(raw, claimed)) colored.push({ start: p.start, end: p.end, color: group.color });
+    claimed = mergeRanges([...claimed, ...raw]);
+  }
+  colored.sort((a, b) => a.start - b.start);
+  return colored;
+}
+
+/** Picks black or white text for readable contrast against a hex background color. */
+function contrastTextColor(hexColor) {
+  const hex = hexColor.replace('#', '');
+  if (hex.length !== 6) return '#24292e';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  const luminance = (r * 299 + g * 587 + b * 114) / 1000; // ITU-R BT.601 perceived luminance
+  return luminance > 150 ? '#24292e' : '#ffffff';
+}
+
 // Walks the text nodes under `root` and wraps any keyword match in
-// <mark class="keyword-hit">. Operates on the DOM directly (rather than via
-// string/HTML manipulation) so it cannot corrupt highlight.js's markup.
-function applyKeywordHighlight(root, keywords) {
-  if (!keywords || keywords.length === 0) return;
+// <mark class="keyword-hit">, colored per its matching category. Operates on
+// the DOM directly (rather than via string/HTML manipulation) so it cannot
+// corrupt highlight.js's markup.
+function applyKeywordHighlight(root, groups) {
+  if (!groups || groups.length === 0) return;
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes = [];
@@ -1702,7 +1878,7 @@ function applyKeywordHighlight(root, keywords) {
 
   for (const textNode of textNodes) {
     const text = textNode.nodeValue;
-    const ranges = findKeywordRanges(text, keywords);
+    const ranges = findKeywordRanges(text, groups);
     if (ranges.length === 0) continue;
 
     const frag = document.createDocumentFragment();
@@ -1711,6 +1887,8 @@ function applyKeywordHighlight(root, keywords) {
       if (r.start > pos) frag.appendChild(document.createTextNode(text.slice(pos, r.start)));
       const mark = document.createElement('mark');
       mark.className = 'keyword-hit';
+      mark.style.backgroundColor = r.color;
+      mark.style.color = contrastTextColor(r.color);
       mark.textContent = text.slice(r.start, r.end);
       frag.appendChild(mark);
       pos = r.end;
@@ -2656,10 +2834,10 @@ function computeLineRecords(hunk) {
  * @param {{idx:number,type:string,content:string}|null} record
  * @param {string[]|null} hlLines
  * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
- * @param {string[]} [keywords] - keywords to highlight within this cell's text (see applyKeywordHighlight)
+ * @param {Array<{color:string, keywords:string[]}>} [keywordGroups] - active keyword categories to highlight within this cell's text (see applyKeywordHighlight)
  * @returns {HTMLTableCellElement}
  */
-function buildContentCell(record, hlLines, extraCls, keywords) {
+function buildContentCell(record, hlLines, extraCls, keywordGroups) {
   const td = document.createElement('td');
   td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
   if (!record) return td;
@@ -2680,7 +2858,7 @@ function buildContentCell(record, hlLines, extraCls, keywords) {
     td.appendChild(document.createTextNode(record.content));
   }
 
-  if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+  if (keywordGroups && keywordGroups.length) applyKeywordHighlight(td, keywordGroups);
 
   return td;
 }
@@ -2688,7 +2866,7 @@ function buildContentCell(record, hlLines, extraCls, keywords) {
 /**
  * Build the <tbody> for the current (single-column) unified diff view.
  */
-function buildUnifiedTbody(hunk, hlLines, keywords) {
+function buildUnifiedTbody(hunk, hlLines, keywordGroups) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -2700,7 +2878,7 @@ function buildUnifiedTbody(hunk, hlLines, keywords) {
       td.colSpan = 3;
       td.className = 'line-content line-no-newline';
       td.textContent = record.content;
-      if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+      if (keywordGroups && keywordGroups.length) applyKeywordHighlight(td, keywordGroups);
       tr.appendChild(td);
       tbody.appendChild(tr);
       continue;
@@ -2711,7 +2889,7 @@ function buildUnifiedTbody(hunk, hlLines, keywords) {
 
     const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
     const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
-    const tdCon = buildContentCell(record, hlLines, null, keywords);
+    const tdCon = buildContentCell(record, hlLines, null, keywordGroups);
 
     tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
     tbody.appendChild(tr);
@@ -2730,7 +2908,7 @@ function buildUnifiedTbody(hunk, hlLines, keywords) {
  * for side-by-side diff views and does not require a full realignment
  * (Myers-style) of old vs. new content.
  */
-function buildSplitTbody(hunk, hlLines, keywords) {
+function buildSplitTbody(hunk, hlLines, keywordGroups) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -2748,13 +2926,13 @@ function buildSplitTbody(hunk, hlLines, keywords) {
     tdOldNum.className = 'line-num ' + oldCls;
     tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
 
-    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywords);
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider ' + newCls;
     tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
 
-    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywords);
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups);
 
     tr.appendChild(tdOldNum);
     tr.appendChild(tdOldContent);
@@ -2783,7 +2961,7 @@ function buildSplitTbody(hunk, hlLines, keywords) {
     // Context rows show identical content on both sides; build it once and
     // clone the node for the second column instead of re-parsing the same
     // highlighted HTML twice.
-    const tdOldContent = buildContentCell(record, hlLines, null, keywords);
+    const tdOldContent = buildContentCell(record, hlLines, null, keywordGroups);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider';
@@ -2804,7 +2982,7 @@ function buildSplitTbody(hunk, hlLines, keywords) {
     td.colSpan = 4;
     td.className = 'line-content line-no-newline';
     td.textContent = record.content;
-    if (keywords && keywords.length) applyKeywordHighlight(td, keywords);
+    if (keywordGroups && keywordGroups.length) applyKeywordHighlight(td, keywordGroups);
     tr.appendChild(td);
     tbody.appendChild(tr);
   }
@@ -2881,10 +3059,10 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = highlightHunkLines(hunk.lines, language, filePath);
 
-  // Keywords are read once per hunk render; changing the keyword input
-  // re-renders the whole diff (see the keyword-input listener below), so
-  // this always reflects the latest configured list.
-  const keywords = getActiveKeywords();
+  // Keyword categories are read once per hunk render; changing them
+  // re-renders the whole diff (see the keyword-categories listeners below),
+  // so this always reflects the latest configured list.
+  const keywordGroups = getActiveKeywordGroups();
 
   if (isSplit) {
     const thead = document.createElement('thead');
@@ -2894,9 +3072,9 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
     trHead.appendChild(thOld); trHead.appendChild(thNew);
     thead.appendChild(trHead);
     table.appendChild(thead);
-    table.appendChild(buildSplitTbody(hunk, hlLines, keywords));
+    table.appendChild(buildSplitTbody(hunk, hlLines, keywordGroups));
   } else {
-    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywords));
+    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywordGroups));
   }
 
   body.appendChild(table);
@@ -4384,20 +4562,101 @@ window.addEventListener('drop', async (e) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Keyword input (issue #10): persists across reloads/projects and re-renders
-// the currently displayed diff immediately (debounced) whenever it changes.
+// Keyword categories (issue #10, #50): each category row lets the user edit
+// its keyword list and background color; persists across reloads/projects
+// and re-renders the currently displayed diff (debounced) whenever a
+// category's content changes. Adding/removing a category rebuilds the row
+// list immediately (no debounce needed, and no in-progress input to lose
+// focus on).
 // ─────────────────────────────────────────────────────────────────────────────
-const keywordInput = document.getElementById('keyword-input');
-keywordInput.value = loadKeywordsRaw();
+function buildKeywordCategoryRow(category) {
+  const row = document.createElement('div');
+  row.className = 'keyword-category-row';
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'color';
+  colorInput.className = 'keyword-category-color';
+  colorInput.value = category.color;
+  colorInput.title = '背景色';
+  colorInput.addEventListener('input', () => {
+    updateKeywordCategory(category.id, { color: colorInput.value });
+  });
+
+  const keywordsInput = document.createElement('input');
+  keywordsInput.type = 'text';
+  keywordsInput.className = 'keyword-category-keywords';
+  keywordsInput.value = category.keywords;
+  keywordsInput.placeholder = '例: TODO, FIXME, XXX';
+  keywordsInput.title = 'カンマ区切りで複数指定できます（大文字小文字は区別しません）';
+  keywordsInput.addEventListener('input', () => {
+    updateKeywordCategory(category.id, { keywords: keywordsInput.value });
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'keyword-category-remove-btn';
+  removeBtn.title = 'このカテゴリを削除';
+  removeBtn.setAttribute('aria-label', 'カテゴリを削除');
+  removeBtn.textContent = '×';
+  removeBtn.addEventListener('click', () => deleteKeywordCategory(category.id));
+
+  row.appendChild(colorInput);
+  row.appendChild(keywordsInput);
+  row.appendChild(removeBtn);
+  return row;
+}
+
+function renderKeywordCategoryList() {
+  const container = document.getElementById('keyword-categories');
+  container.innerHTML = '';
+  const categories = loadKeywordCategories();
+  if (categories.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'keyword-categories-empty';
+    empty.textContent = 'カテゴリがありません。「+ カテゴリ」から追加してください。';
+    container.appendChild(empty);
+    return;
+  }
+  for (const category of categories) {
+    container.appendChild(buildKeywordCategoryRow(category));
+  }
+}
+
+function addKeywordCategory() {
+  const categories = loadKeywordCategories();
+  const color = KEYWORD_CATEGORY_COLOR_PALETTE[categories.length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
+  categories.push({ id: generateKeywordCategoryId(), keywords: '', color });
+  saveKeywordCategories(categories);
+  renderKeywordCategoryList();
+}
 
 let keywordDebounceTimer = null;
-keywordInput.addEventListener('input', () => {
-  saveKeywordsRaw(keywordInput.value);
+function scheduleKeywordDiffRerender() {
   clearTimeout(keywordDebounceTimer);
   keywordDebounceTimer = setTimeout(() => {
     if (app.parsedDiff) renderDiff();
   }, 200);
-});
+}
+
+/** Updates a single category's fields in place without rebuilding the row list, so the input being edited keeps focus. */
+function updateKeywordCategory(id, patch) {
+  const categories = loadKeywordCategories();
+  const category = categories.find(c => c.id === id);
+  if (!category) return;
+  Object.assign(category, patch);
+  saveKeywordCategories(categories);
+  scheduleKeywordDiffRerender();
+}
+
+function deleteKeywordCategory(id) {
+  const categories = loadKeywordCategories().filter(c => c.id !== id);
+  saveKeywordCategories(categories);
+  renderKeywordCategoryList();
+  scheduleKeywordDiffRerender();
+}
+
+renderKeywordCategoryList();
+document.getElementById('keyword-category-add-btn').addEventListener('click', addKeywordCategory);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Initialise

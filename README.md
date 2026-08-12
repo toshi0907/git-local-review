@@ -17,7 +17,7 @@
 - **プロジェクト管理** — 複数プロジェクトの切り替え・並び替え・削除、JSON でのエクスポート / インポート
 - **文字コード自動判定** — UTF-8 / Shift_JIS / EUC-JP を自動判定して読み込み
 - **複数ファイル一括読み込み / ドラッグ&ドロップ** — 複数 diff ファイルをまとめて選択・ドロップして個別プロジェクトとして追加
-- **キーワードハイライト** — 登録したキーワード（`TODO` など）を diff 中で黄色にハイライト
+- **キーワードハイライト（カテゴリ別）** — キーワード（`TODO` / `SECURITY` など）をカテゴリごとに登録し、カテゴリごとに背景色を指定して diff 中でハイライト
 
 ## 使い方
 
@@ -89,7 +89,7 @@ diff ファイルのバイト列から文字コードを自動判定します（
 | `gitLocalReview_viewMode` | diff の表示モード（`unified` / `split`） |
 | `gitLocalReview_unreviewedOnly` | 「未レビューのみ表示」フィルタの ON/OFF |
 | `gitLocalReview_projectSort` | プロジェクト一覧の並び順 |
-| `gitLocalReview_keywords` | キーワードハイライト用に登録したキーワード（カンマ区切り文字列） |
+| `gitLocalReview_keywords` | キーワードハイライトのカテゴリ配列（`{ id, keywords, color }[]` の JSON） |
 
 `gitLocalReview_reviews` は以下の構造で保存されます。
 
