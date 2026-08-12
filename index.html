@@ -2533,7 +2533,6 @@ function renderDiff() {
   }
 
   emptyState.style.display = 'none';
-  renderStatSummary(files);
 
   const allReviews     = loadAllReviews();
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
@@ -2541,6 +2540,16 @@ function renderDiff() {
   const filterActive = !!app.unreviewedOnly;
   let totalHunks = 0, totalReviewed = 0;
   let renderedSections = 0;
+
+  // Collect files that will actually be rendered (respects filterActive)
+  const visibleFiles = filterActive
+    ? files.filter(f => {
+        const rev = projectReviews[f.filePath] || Object.create(null);
+        return f.hunks.filter(h => rev[h.hash]).length < f.hunks.length;
+      })
+    : files;
+
+  renderStatSummary(visibleFiles.length > 0 ? visibleFiles : null);
 
   for (const file of files) {
     const fileReviews  = projectReviews[file.filePath] || Object.create(null);

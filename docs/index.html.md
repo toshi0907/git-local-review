@@ -95,12 +95,12 @@ test/                ← テスト用 .diff サンプルファイル
 | ~2227 | **HTML escaping** | `esc()` ユーティリティ |
 | ~2236 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
 | ~2244 | **Render: sidebar project list** | `renderProjectList()` |
-| ~2334 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
-| ~2421 | **Render: full diff view** | `renderDiff()` |
-| ~2417 | **Build a single hunk card** | `buildHunkCard()` |
-| ~2730 | **Set collapsed state** | ハンクの折りたたみ |
-| ~2744 | **Checkbox change handler** | レビュー済みチェック処理 |
-| ~2779 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| ~2422 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
+| ~2518 | **Render: full diff view** | `renderDiff()` |
+| ~2603 | **Build a single hunk card** | `buildHunkCard()` |
+| ~2916 | **Set collapsed state** | ハンクの折りたたみ |
+| ~2930 | **Checkbox change handler** | レビュー済みチェック処理 |
+| ~2965 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
 | ~2811 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
 | ~3027 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
 | ~3090 | **View mode toggle** | Unified ↔ Split ボタン処理 |
@@ -110,10 +110,10 @@ test/                ← テスト用 .diff サンプルファイル
 | ~3414 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
 | ~3667 | **Conflict modal** | ファイル名衝突ダイアログ |
 | ~3755 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| ~3914 | **Event listeners** | UI イベントの登録 |
-| ~4119 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| ~4192 | **Keyword input** | キーワード入力フィールド |
-| ~4209 | **Initialise** | `init()` — 起動時初期化 |
+| ~4100 | **Event listeners** | UI イベントの登録 |
+| ~4305 | **Drag & drop** | ドラッグ&ドロップ対応 |
+| ~4378 | **Keyword input** | キーワード入力フィールド |
+| ~4394 | **Initialise** | `init()` — 起動時初期化 |
 
 ---
 
