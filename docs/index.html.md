@@ -95,24 +95,25 @@ test/                ← テスト用 .diff サンプルファイル
 | ~2227 | **HTML escaping** | `esc()` ユーティリティ |
 | ~2236 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
 | ~2244 | **Render: sidebar project list** | `renderProjectList()` |
-| ~2334 | **Render: full diff view** | `renderDiff()` |
-| ~2417 | **Build a single hunk card** | `buildHunkCard()` |
-| ~2730 | **Set collapsed state** | ハンクの折りたたみ |
-| ~2744 | **Checkbox change handler** | レビュー済みチェック処理 |
-| ~2779 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
-| ~2811 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
-| ~3027 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
-| ~3090 | **View mode toggle** | Unified ↔ Split ボタン処理 |
-| ~3118 | **Empty state helpers** | 空状態メッセージ表示 |
-| ~3130 | **Project actions** | プロジェクトの選択・削除・並び替え |
-| ~3303 | **Export / Import** | JSON エクスポート / インポート |
-| ~3414 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
-| ~3667 | **Conflict modal** | ファイル名衝突ダイアログ |
-| ~3755 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| ~3914 | **Event listeners** | UI イベントの登録 |
-| ~4119 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| ~4192 | **Keyword input** | キーワード入力フィールド |
-| ~4209 | **Initialise** | `init()` — 起動時初期化 |
+| ~2422 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
+| ~2518 | **Render: full diff view** | `renderDiff()` |
+| ~2612 | **Build a single hunk card** | `buildHunkCard()` |
+| ~2925 | **Set collapsed state** | ハンクの折りたたみ |
+| ~2939 | **Checkbox change handler** | レビュー済みチェック処理 |
+| ~2974 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| ~3006 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
+| ~3222 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| ~3285 | **View mode toggle** | Unified ↔ Split ボタン処理 |
+| ~3313 | **Empty state helpers** | 空状態メッセージ表示 |
+| ~3325 | **Project actions** | プロジェクトの選択・削除・並び替え |
+| ~3498 | **Export / Import** | JSON エクスポート / インポート |
+| ~3609 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
+| ~3862 | **Conflict modal** | ファイル名衝突ダイアログ |
+| ~3950 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| ~4109 | **Event listeners** | UI イベントの登録 |
+| ~4314 | **Drag & drop** | ドラッグ&ドロップ対応 |
+| ~4387 | **Keyword input** | キーワード入力フィールド |
+| ~4403 | **Initialise** | `init()` — 起動時初期化 |
 
 ---
 
