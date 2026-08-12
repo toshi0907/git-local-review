@@ -897,23 +897,27 @@
 
     .memo-add-form {
       display: flex;
+      flex-direction: column;
       gap: 8px;
       padding: 12px 16px;
       border-bottom: 1px solid #e1e4e8;
       flex-shrink: 0;
     }
 
-    .memo-add-form input {
-      flex: 1;
-      min-width: 0;
+    .memo-add-form textarea {
+      width: 100%;
+      min-height: 88px;
       padding: 6px 10px;
       border: 1px solid #d0d7de;
       border-radius: 6px;
       font-size: 13px;
+      line-height: 1.5;
+      font-family: inherit;
+      resize: vertical;
     }
 
     .memo-add-btn {
-      flex-shrink: 0;
+      align-self: flex-end;
       padding: 6px 14px;
       background: #0969da;
       color: #fff;
@@ -925,7 +929,7 @@
     }
 
     .memo-add-btn:hover { background: #0550ae; }
-    .memo-add-form input:disabled,
+    .memo-add-form textarea:disabled,
     .memo-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .memo-empty {
@@ -971,6 +975,7 @@
 
     .memo-item .memo-text {
       word-break: break-word;
+      overflow-wrap: anywhere;
       white-space: pre-wrap;
     }
 
@@ -1135,7 +1140,7 @@
     <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
   </div>
   <form class="memo-add-form" id="memo-add-form">
-    <input type="text" id="memo-input" placeholder="メモを追加" maxlength="500" autocomplete="off">
+    <textarea id="memo-input" placeholder="メモを追加" maxlength="5000"></textarea>
     <button type="submit" class="memo-add-btn">追加</button>
   </form>
   <div class="memo-empty" id="memo-empty" style="display:none;"></div>
