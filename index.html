@@ -1726,8 +1726,14 @@ function loadKeywordCategories() {
     // Not JSON — fall through to the legacy plain-string migration below.
   }
 
-  // Legacy format (pre-#50): a bare comma-separated keyword string.
-  return [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR }];
+  // Legacy format (pre-#50): a bare comma-separated keyword string. Persist
+  // the migrated array immediately so its generated id stays stable across
+  // subsequent loads — otherwise every loadKeywordCategories() call would
+  // mint a new id and break edits/deletes for these rows (they look up the
+  // category by an id from a previous load).
+  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR }];
+  saveKeywordCategories(migrated);
+  return migrated;
 }
 
 function saveKeywordCategories(categories) {
@@ -4578,6 +4584,7 @@ function buildKeywordCategoryRow(category) {
   colorInput.className = 'keyword-category-color';
   colorInput.value = category.color;
   colorInput.title = '背景色';
+  colorInput.setAttribute('aria-label', '背景色');
   colorInput.addEventListener('input', () => {
     updateKeywordCategory(category.id, { color: colorInput.value });
   });
@@ -4588,6 +4595,7 @@ function buildKeywordCategoryRow(category) {
   keywordsInput.value = category.keywords;
   keywordsInput.placeholder = '例: TODO, FIXME, XXX';
   keywordsInput.title = 'カンマ区切りで複数指定できます（大文字小文字は区別しません）';
+  keywordsInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
   keywordsInput.addEventListener('input', () => {
     updateKeywordCategory(category.id, { keywords: keywordsInput.value });
   });
