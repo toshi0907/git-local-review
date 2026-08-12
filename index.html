@@ -102,6 +102,41 @@
       cursor: pointer;
     }
 
+    .memo-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: #2d333b;
+      color: #adbac7;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    .memo-toggle-btn:hover { background: #373e47; }
+    .memo-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
+
+    .memo-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      background: #da3633;
+      color: #fff;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .memo-badge[hidden] { display: none; }
+
     /* ===== Layout ===== */
     .layout {
       display: flex;
@@ -801,6 +836,170 @@
     }
     .modal-btn-secondary:hover { background: #e7eaef; }
 
+    /* ===== Review memo panel =====
+       z-index stays below .drop-overlay (400) so the drag & drop guide is
+       never hidden behind the panel while it's open. */
+    .memo-panel-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.3);
+      z-index: 380;
+    }
+
+    .memo-panel-overlay.active { display: block; }
+
+    .memo-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 340px;
+      max-width: 90vw;
+      background: #fff;
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2);
+      z-index: 390;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      /* visibility is a discrete property: transitioning to 'visible' flips
+         immediately, transitioning to 'hidden' flips only once the slide-out
+         finishes — so closed-but-offscreen content can't be Tab-focused
+         (aria-hidden alone doesn't block keyboard focus). */
+      visibility: hidden;
+      transition: transform 0.2s ease, visibility 0.2s ease;
+    }
+
+    .memo-panel.open { transform: translateX(0); visibility: visible; }
+
+    .memo-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid #e1e4e8;
+      flex-shrink: 0;
+    }
+
+    .memo-panel-header h2 { font-size: 15px; font-weight: 700; color: #24292e; }
+
+    .memo-panel-close {
+      background: none;
+      border: none;
+      font-size: 16px;
+      color: #57606a;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .memo-panel-close:hover { background: #f0f2f5; color: #24292e; }
+
+    .memo-add-form {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e1e4e8;
+      flex-shrink: 0;
+    }
+
+    .memo-add-form input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 10px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .memo-add-btn {
+      flex-shrink: 0;
+      padding: 6px 14px;
+      background: #0969da;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .memo-add-btn:hover { background: #0550ae; }
+    .memo-add-form input:disabled,
+    .memo-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .memo-empty {
+      padding: 24px 16px;
+      text-align: center;
+      font-size: 13px;
+      color: #8b949e;
+    }
+
+    .memo-list {
+      list-style: none;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .memo-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .memo-item label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+      font-size: 13px;
+      color: #24292e;
+      cursor: pointer;
+    }
+
+    .memo-item input[type="checkbox"] {
+      margin-top: 2px;
+      width: 15px;
+      height: 15px;
+      flex-shrink: 0;
+      cursor: pointer;
+      accent-color: #1a7f37;
+    }
+
+    .memo-item .memo-text {
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .memo-item.done .memo-text {
+      text-decoration: line-through;
+      color: #8b949e;
+    }
+
+    .memo-item-delete {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    .memo-item-delete:hover { background: #ffeef0; color: #cf222e; }
+
+    .memo-list-divider {
+      padding: 6px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #8b949e;
+      background: #f6f8fa;
+    }
+
     /* ===== Scrollbar ===== */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -822,6 +1021,9 @@
     <input type="checkbox" id="unreviewed-filter-toggle">
     未レビューのみ表示
   </label>
+  <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
+    <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
+  </button>
   <span id="overall-progress"></span>
 </div>
 
@@ -925,6 +1127,21 @@
   </div>
 </div>
 
+<!-- Review memo panel: per-project checklist notes, unrelated to any specific file/hunk -->
+<div class="memo-panel-overlay" id="memo-panel-overlay"></div>
+<aside class="memo-panel" id="memo-panel" aria-hidden="true" aria-label="レビューメモ">
+  <div class="memo-panel-header">
+    <h2>📝 レビューメモ</h2>
+    <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
+  </div>
+  <form class="memo-add-form" id="memo-add-form">
+    <input type="text" id="memo-input" placeholder="メモを追加" maxlength="500" autocomplete="off">
+    <button type="submit" class="memo-add-btn">追加</button>
+  </form>
+  <div class="memo-empty" id="memo-empty" style="display:none;"></div>
+  <ul class="memo-list" id="memo-list"></ul>
+</aside>
+
 <script>
 'use strict';
 
@@ -933,6 +1150,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const SK_PROJECTS         = 'gitLocalReview_projects';
 const SK_REVIEWS          = 'gitLocalReview_reviews';
+const SK_MEMOS            = 'gitLocalReview_memos';
 const SK_CURRENT          = 'gitLocalReview_currentProject';
 const SK_FILES            = 'gitLocalReview_files';
 const SK_VIEW_MODE        = 'gitLocalReview_viewMode';
@@ -1208,6 +1426,46 @@ function saveAllReviews(reviews) {
   } catch (e) {
     console.error('Failed to save reviews to localStorage:', e);
     alert('レビュー状態の保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// Rebuild with validated shapes, mirroring sanitizeReviewsData's defense
+// against malformed/prototype-polluting imported data.
+function sanitizeMemosData(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object') return safe;
+  for (const pid of Object.keys(parsed)) {
+    const list = parsed[pid];
+    if (!Array.isArray(list)) continue;
+    safe[pid] = list
+      .filter(m => m && typeof m === 'object' && typeof m.id === 'string' && typeof m.text === 'string')
+      .map(m => ({
+        id: m.id,
+        text: m.text,
+        done: !!m.done,
+        createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
+        updatedAt: typeof m.updatedAt === 'number' ? m.updatedAt : Date.now(),
+      }));
+  }
+  return safe;
+}
+
+function loadAllMemos() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SK_MEMOS) || '{}');
+    return sanitizeMemosData(parsed);
+  } catch (e) {
+    console.error('Failed to parse memos from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllMemos(memos) {
+  try {
+    localStorage.setItem(SK_MEMOS, JSON.stringify(memos));
+  } catch (e) {
+    console.error('Failed to save memos to localStorage:', e);
+    alert('メモの保存に失敗しました。ストレージの容量が不足している可能性があります。');
   }
 }
 
@@ -2531,6 +2789,183 @@ function setOverallProgress(reviewed, total) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Review memos — free-form per-project checklist notes shown in a slide-in
+// panel, unrelated to any specific file/hunk (see loadAllReviews for that).
+// ─────────────────────────────────────────────────────────────────────────────
+function generateMemoId() {
+  return `memo_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function getCurrentProjectMemos() {
+  if (!app.currentProjectId) return [];
+  return loadAllMemos()[app.currentProjectId] || [];
+}
+
+/** Refresh the always-visible topbar badge (count of not-yet-done memos). */
+function refreshMemoBadge() {
+  const badge = document.getElementById('memo-badge');
+  if (!badge) return;
+  const openCount = getCurrentProjectMemos().filter(m => !m.done).length;
+  badge.textContent = String(openCount);
+  badge.hidden = openCount === 0;
+}
+
+function buildMemoItem(memo) {
+  const li = document.createElement('li');
+  li.className = 'memo-item' + (memo.done ? ' done' : '');
+
+  const label = document.createElement('label');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = memo.done;
+  cb.addEventListener('change', () => toggleMemoDone(memo.id, cb.checked));
+
+  const text = document.createElement('span');
+  text.className = 'memo-text';
+  text.textContent = memo.text;
+
+  label.appendChild(cb);
+  label.appendChild(text);
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'memo-item-delete';
+  delBtn.title = '削除';
+  delBtn.setAttribute('aria-label', 'メモを削除');
+  delBtn.textContent = '🗑';
+  delBtn.addEventListener('click', () => deleteMemo(memo.id));
+
+  li.appendChild(label);
+  li.appendChild(delBtn);
+  return li;
+}
+
+/** Re-render the memo list inside the panel for the current project. */
+function renderMemoList() {
+  const listEl  = document.getElementById('memo-list');
+  const emptyEl = document.getElementById('memo-empty');
+  const input   = document.getElementById('memo-input');
+  const addBtn  = document.querySelector('.memo-add-btn');
+  listEl.innerHTML = '';
+
+  if (!app.currentProjectId) {
+    input.disabled = true;
+    addBtn.disabled = true;
+    emptyEl.textContent = 'プロジェクトを開くとメモを追加できます。';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  input.disabled = false;
+  addBtn.disabled = false;
+
+  const memos = getCurrentProjectMemos();
+  if (memos.length === 0) {
+    emptyEl.textContent = 'メモはまだありません。';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const pending = memos.filter(m => !m.done);
+  const done    = memos.filter(m => m.done);
+
+  for (const m of pending) listEl.appendChild(buildMemoItem(m));
+  if (done.length > 0) {
+    const divider = document.createElement('li');
+    divider.className = 'memo-list-divider';
+    divider.textContent = `対応済み（${done.length}）`;
+    listEl.appendChild(divider);
+    for (const m of done) listEl.appendChild(buildMemoItem(m));
+  }
+}
+
+function addMemo(text) {
+  const trimmed = text.trim();
+  if (!trimmed || !app.currentProjectId) return;
+
+  const all = loadAllMemos();
+  if (!all[app.currentProjectId]) all[app.currentProjectId] = [];
+  const now = Date.now();
+  all[app.currentProjectId].push({ id: generateMemoId(), text: trimmed, done: false, createdAt: now, updatedAt: now });
+  saveAllMemos(all);
+  scheduleSettingsAutoSave();
+
+  renderMemoList();
+  refreshMemoBadge();
+}
+
+function toggleMemoDone(memoId, done) {
+  if (!app.currentProjectId) return;
+  const all  = loadAllMemos();
+  const list = all[app.currentProjectId] || [];
+  const memo = list.find(m => m.id === memoId);
+  if (!memo) return;
+  memo.done = done;
+  memo.updatedAt = Date.now();
+  saveAllMemos(all);
+  scheduleSettingsAutoSave();
+
+  renderMemoList();
+  refreshMemoBadge();
+}
+
+function deleteMemo(memoId) {
+  if (!app.currentProjectId) return;
+  const all  = loadAllMemos();
+  const list = all[app.currentProjectId] || [];
+  const idx  = list.findIndex(m => m.id === memoId);
+  if (idx === -1) return;
+  list.splice(idx, 1);
+  saveAllMemos(all);
+  scheduleSettingsAutoSave();
+
+  renderMemoList();
+  refreshMemoBadge();
+}
+
+/** Remove all memos belonging to a permanently deleted project. */
+function deleteMemosForProject(projectId) {
+  const all = loadAllMemos();
+  if (!(projectId in all)) return;
+  delete all[projectId];
+  saveAllMemos(all);
+}
+
+function isMemoPanelOpen() {
+  return document.getElementById('memo-panel').classList.contains('open');
+}
+
+/** Called whenever the active project changes, to keep the badge/panel in sync. */
+function refreshMemoUI() {
+  refreshMemoBadge();
+  if (isMemoPanelOpen()) renderMemoList();
+}
+
+function openMemoPanel() {
+  document.getElementById('memo-panel').classList.add('open');
+  document.getElementById('memo-panel').setAttribute('aria-hidden', 'false');
+  document.getElementById('memo-panel-overlay').classList.add('active');
+  document.getElementById('memo-toggle-btn').setAttribute('aria-expanded', 'true');
+  renderMemoList();
+  const input = document.getElementById('memo-input');
+  if (!input.disabled) input.focus();
+}
+
+function closeMemoPanel() {
+  document.getElementById('memo-panel').classList.remove('open');
+  document.getElementById('memo-panel').setAttribute('aria-hidden', 'true');
+  document.getElementById('memo-panel-overlay').classList.remove('active');
+  const toggleBtn = document.getElementById('memo-toggle-btn');
+  toggleBtn.setAttribute('aria-expanded', 'false');
+  // Return focus to the toggle button so it doesn't stay stranded on a
+  // now off-screen element inside the panel (e.g. after Escape or an
+  // overlay click, rather than a direct click on the close button).
+  if (document.getElementById('memo-panel').contains(document.activeElement)) {
+    toggleBtn.focus();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Keyboard navigation between hunks (j/k to move focus, Space to toggle
 // レビュー済み on the focused hunk). See keydown listener near the bottom of
 // this script for the key handling itself.
@@ -2646,6 +3081,7 @@ async function activateProject(projectId) {
   app.currentProjectId = projectId;
   app.parsedDiff = null;
   localStorage.setItem(SK_CURRENT, projectId);
+  refreshMemoUI();
 
   renderProjectList();
   // Clear the previous project's diff (and its checkboxes) immediately so
@@ -2715,6 +3151,7 @@ function deleteProject(projectId) {
   const allReviews = loadAllReviews();
   delete allReviews[projectId];
   saveAllReviews(allReviews);
+  deleteMemosForProject(projectId);
   deleteFileContent(projectId);
   deleteFileHandleRecord(projectId);
 
@@ -2727,6 +3164,7 @@ function deleteProject(projectId) {
     localStorage.removeItem(SK_CURRENT);
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
   }
+  refreshMemoUI();
 
   renderProjectList();
 }
@@ -2750,6 +3188,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   app.currentProjectId = id;
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, id);
+  refreshMemoUI();
 
   renderProjectList();
   renderDiff();
@@ -2772,6 +3211,7 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
   app.currentProjectId = projectId;
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, projectId);
+  refreshMemoUI();
 
   renderProjectList();
   renderDiff();
@@ -2828,6 +3268,7 @@ function buildExportData() {
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
+    memos: loadAllMemos(),
   };
 }
 
@@ -2840,6 +3281,7 @@ function buildExportData() {
 function mergeImportedData(data) {
   const importedProjects = sanitizeImportedProjects(data.projects);
   const importedReviews  = sanitizeReviewsData(data.reviews);
+  const importedMemos    = sanitizeMemosData(data.memos);
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
@@ -2851,6 +3293,12 @@ function mergeImportedData(data) {
     reviews[pid] = importedReviews[pid];
   }
   saveAllReviews(reviews);
+
+  const memos = loadAllMemos();
+  for (const pid of Object.keys(importedMemos)) {
+    memos[pid] = importedMemos[pid];
+  }
+  saveAllMemos(memos);
 
   return importedProjects.length;
 }
@@ -2900,6 +3348,7 @@ async function importAppData(file) {
 
   mergeImportedData(data);
   renderProjectList();
+  refreshMemoUI();
   alert(`${importedCount} 件のプロジェクトをインポートしました。`);
 }
 
@@ -3148,6 +3597,7 @@ async function reloadSettingsFromFolderManually() {
     hideSettingsExternalUpdateNotice();
     renderProjectList();
     if (app.currentProjectId && app.parsedDiff) renderDiff();
+    refreshMemoUI();
     alert(`${count} 件のプロジェクトを読み込みました。`);
   } catch (err) {
     console.error('Failed to reload settings from folder', err);
@@ -3555,6 +4005,21 @@ modalOverlay.addEventListener('click', (e) => {
   }
 });
 
+// Review memo panel: toggle button, close button, backdrop click, and the
+// add-memo form.
+document.getElementById('memo-toggle-btn').addEventListener('click', () => {
+  if (isMemoPanelOpen()) closeMemoPanel(); else openMemoPanel();
+});
+document.getElementById('memo-panel-close').addEventListener('click', closeMemoPanel);
+document.getElementById('memo-panel-overlay').addEventListener('click', closeMemoPanel);
+document.getElementById('memo-add-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('memo-input');
+  addMemo(input.value);
+  input.value = '';
+  input.focus();
+});
+
 // Close modal with ESC key for keyboard accessibility, and provide keyboard
 // shortcuts for hunk navigation: j/k move focus between hunks, Space toggles
 // レビュー済み on the focused hunk.
@@ -3565,11 +4030,18 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Don't hijack keys while the user is typing into a form field, or while
-  // the file-conflict modal is open.
+  if (e.key === 'Escape' && isMemoPanelOpen()) {
+    closeMemoPanel();
+    return;
+  }
+
+  // Don't hijack keys while the user is typing into a form field, while the
+  // file-conflict modal is open, or while the memo panel is open (its close/
+  // delete buttons can hold focus without being an INPUT, which would
+  // otherwise let j/k/Space leak through to hunk navigation behind it).
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
-  if (isTyping || modalOverlay.classList.contains('active')) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isMemoPanelOpen()) return;
 
   if (e.key === 'j') {
     e.preventDefault();
@@ -3716,6 +4188,7 @@ keywordInput.addEventListener('input', () => {
   } else {
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
   }
+  refreshMemoUI();
 })();
 </script>
 </body>
