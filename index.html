@@ -836,13 +836,15 @@
     }
     .modal-btn-secondary:hover { background: #e7eaef; }
 
-    /* ===== Review memo panel ===== */
+    /* ===== Review memo panel =====
+       z-index stays below .drop-overlay (400) so the drag & drop guide is
+       never hidden behind the panel while it's open. */
     .memo-panel-overlay {
       display: none;
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.3);
-      z-index: 400;
+      z-index: 380;
     }
 
     .memo-panel-overlay.active { display: block; }
@@ -856,14 +858,19 @@
       max-width: 90vw;
       background: #fff;
       box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2);
-      z-index: 401;
+      z-index: 390;
       display: flex;
       flex-direction: column;
       transform: translateX(100%);
-      transition: transform 0.2s ease;
+      /* visibility is a discrete property: transitioning to 'visible' flips
+         immediately, transitioning to 'hidden' flips only once the slide-out
+         finishes — so closed-but-offscreen content can't be Tab-focused
+         (aria-hidden alone doesn't block keyboard focus). */
+      visibility: hidden;
+      transition: transform 0.2s ease, visibility 0.2s ease;
     }
 
-    .memo-panel.open { transform: translateX(0); }
+    .memo-panel.open { transform: translateX(0); visibility: visible; }
 
     .memo-panel-header {
       display: flex;
@@ -2948,7 +2955,14 @@ function closeMemoPanel() {
   document.getElementById('memo-panel').classList.remove('open');
   document.getElementById('memo-panel').setAttribute('aria-hidden', 'true');
   document.getElementById('memo-panel-overlay').classList.remove('active');
-  document.getElementById('memo-toggle-btn').setAttribute('aria-expanded', 'false');
+  const toggleBtn = document.getElementById('memo-toggle-btn');
+  toggleBtn.setAttribute('aria-expanded', 'false');
+  // Return focus to the toggle button so it doesn't stay stranded on a
+  // now off-screen element inside the panel (e.g. after Escape or an
+  // overlay click, rather than a direct click on the close button).
+  if (document.getElementById('memo-panel').contains(document.activeElement)) {
+    toggleBtn.focus();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4021,11 +4035,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Don't hijack keys while the user is typing into a form field, or while
-  // the file-conflict modal is open.
+  // Don't hijack keys while the user is typing into a form field, while the
+  // file-conflict modal is open, or while the memo panel is open (its close/
+  // delete buttons can hold focus without being an INPUT, which would
+  // otherwise let j/k/Space leak through to hunk navigation behind it).
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
-  if (isTyping || modalOverlay.classList.contains('active')) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isMemoPanelOpen()) return;
 
   if (e.key === 'j') {
     e.preventDefault();
