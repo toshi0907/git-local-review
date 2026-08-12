@@ -77,43 +77,45 @@ test/                ← テスト用 .diff サンプルファイル
 
 `<script>` タグ内は `// ──…──` のセクション区切りで論理的に分割されています。
 
-| 行番号 (目安) | セクション名 | 役割 |
-|---|---|---|
-| ~1168 | **Storage keys** | `localStorage` キー定数 |
-| ~1184 | **Application state** | `app` オブジェクト（ランタイム状態） |
-| ~1233 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
-| ~1353 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
-| ~1492 | **Diff view mode** | Unified / Side-by-side モード保存 |
-| ~1525 | **Keyword highlight** | キーワード黄色ハイライト機能 |
-| ~1681 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
-| ~1775 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
-| ~1869 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
-| ~1883 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
-| ~1941 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
-| ~2023 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
-| ~2182 | **Hashing** | Web Crypto API / djb2 フォールバック |
-| ~2227 | **HTML escaping** | `esc()` ユーティリティ |
-| ~2236 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
-| ~2244 | **Render: sidebar project list** | `renderProjectList()` |
-| ~2422 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
-| ~2518 | **Render: full diff view** | `renderDiff()` |
-| ~2612 | **Build a single hunk card** | `buildHunkCard()` |
-| ~2925 | **Set collapsed state** | ハンクの折りたたみ |
-| ~2939 | **Checkbox change handler** | レビュー済みチェック処理 |
-| ~2974 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
-| ~3006 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
-| ~3222 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
-| ~3285 | **View mode toggle** | Unified ↔ Split ボタン処理 |
-| ~3313 | **Empty state helpers** | 空状態メッセージ表示 |
-| ~3325 | **Project actions** | プロジェクトの選択・削除・並び替え |
-| ~3498 | **Export / Import** | JSON エクスポート / インポート |
-| ~3609 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
-| ~3862 | **Conflict modal** | ファイル名衝突ダイアログ |
-| ~3950 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| ~4109 | **Event listeners** | UI イベントの登録 |
-| ~4314 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| ~4387 | **Keyword input** | キーワード入力フィールド |
-| ~4403 | **Initialise** | `init()` — 起動時初期化 |
+| セクション名 | 役割 |
+|---|---|
+| **Storage keys** | `localStorage` キー定数 |
+| **Application state** | `app` オブジェクト（ランタイム状態） |
+| **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
+| **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
+| **Diff view mode** | Unified / Side-by-side モード保存 |
+| **Keyword highlight** | キーワード黄色ハイライト機能 |
+| **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
+| **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
+| **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
+| **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
+| **Large-hunk splitting** | 大きなハンクを分割して表示 |
+| **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
+| **Hashing** | Web Crypto API / djb2 フォールバック |
+| **HTML escaping** | `esc()` ユーティリティ |
+| **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| **Render: sidebar project list** | `renderProjectList()` |
+| **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
+| **Render: full diff view** | `renderDiff()` |
+| **Build a single hunk card** | `buildHunkCard()` |
+| **Set collapsed state** | ハンクの折りたたみ |
+| **Checkbox change handler** | レビュー済みチェック処理 |
+| **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
+| **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| **View mode toggle** | Unified ↔ Split ボタン処理 |
+| **Empty state helpers** | 空状態メッセージ表示 |
+| **Project actions** | プロジェクトの選択・削除・並び替え |
+| **Export / Import** | JSON エクスポート / インポート |
+| **Settings folder** | 設定フォルダへの自動保存・読み込み |
+| **Conflict modal** | ファイル名衝突ダイアログ |
+| **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| **Event listeners** | UI イベントの登録 |
+| **Drag & drop** | ドラッグ&ドロップ対応 |
+| **Keyword input** | キーワード入力フィールド |
+| **Initialise** | `init()` — 起動時初期化 |
+
+> セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
 
 ---
 
