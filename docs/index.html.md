@@ -79,40 +79,40 @@ test/                ← テスト用 .diff サンプルファイル
 
 | 行番号 (目安) | セクション名 | 役割 |
 |---|---|---|
-| ~1148 | **Storage keys** | `localStorage` キー定数 |
-| ~1164 | **Application state** | `app` オブジェクト（ランタイム状態） |
-| ~1213 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
-| ~1333 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
-| ~1472 | **Diff view mode** | Unified / Side-by-side モード保存 |
-| ~1505 | **Keyword highlight** | キーワード黄色ハイライト機能 |
-| ~1661 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
-| ~1755 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
-| ~1849 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
-| ~1863 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
-| ~1921 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
-| ~2003 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
-| ~2162 | **Hashing** | Web Crypto API / djb2 フォールバック |
-| ~2207 | **HTML escaping** | `esc()` ユーティリティ |
-| ~2216 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
-| ~2224 | **Render: sidebar project list** | `renderProjectList()` |
-| ~2314 | **Render: full diff view** | `renderDiff()` |
-| ~2397 | **Build a single hunk card** | `buildHunkCard()` |
-| ~2710 | **Set collapsed state** | ハンクの折りたたみ |
-| ~2724 | **Checkbox change handler** | レビュー済みチェック処理 |
-| ~2759 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
-| ~2791 | **Review memos** | レビューメモ（スライドパネル） |
-| ~2968 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
-| ~3031 | **View mode toggle** | Unified ↔ Split ボタン処理 |
-| ~3059 | **Empty state helpers** | 空状態メッセージ表示 |
-| ~3071 | **Project actions** | プロジェクトの選択・削除・並び替え |
-| ~3244 | **Export / Import** | JSON エクスポート / インポート |
-| ~3355 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
-| ~3608 | **Conflict modal** | ファイル名衝突ダイアログ |
-| ~3696 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| ~3855 | **Event listeners** | UI イベントの登録 |
-| ~4059 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| ~4132 | **Keyword input** | キーワード入力フィールド |
-| ~4148 | **Initialise** | `init()` — 起動時初期化 |
+| ~1168 | **Storage keys** | `localStorage` キー定数 |
+| ~1184 | **Application state** | `app` オブジェクト（ランタイム状態） |
+| ~1233 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
+| ~1353 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
+| ~1492 | **Diff view mode** | Unified / Side-by-side モード保存 |
+| ~1525 | **Keyword highlight** | キーワード黄色ハイライト機能 |
+| ~1681 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
+| ~1775 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
+| ~1869 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
+| ~1883 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
+| ~1941 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
+| ~2023 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
+| ~2182 | **Hashing** | Web Crypto API / djb2 フォールバック |
+| ~2227 | **HTML escaping** | `esc()` ユーティリティ |
+| ~2236 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| ~2244 | **Render: sidebar project list** | `renderProjectList()` |
+| ~2334 | **Render: full diff view** | `renderDiff()` |
+| ~2417 | **Build a single hunk card** | `buildHunkCard()` |
+| ~2730 | **Set collapsed state** | ハンクの折りたたみ |
+| ~2744 | **Checkbox change handler** | レビュー済みチェック処理 |
+| ~2779 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| ~2811 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
+| ~3027 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| ~3090 | **View mode toggle** | Unified ↔ Split ボタン処理 |
+| ~3118 | **Empty state helpers** | 空状態メッセージ表示 |
+| ~3130 | **Project actions** | プロジェクトの選択・削除・並び替え |
+| ~3303 | **Export / Import** | JSON エクスポート / インポート |
+| ~3414 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
+| ~3667 | **Conflict modal** | ファイル名衝突ダイアログ |
+| ~3755 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| ~3914 | **Event listeners** | UI イベントの登録 |
+| ~4119 | **Drag & drop** | ドラッグ&ドロップ対応 |
+| ~4192 | **Keyword input** | キーワード入力フィールド |
+| ~4209 | **Initialise** | `init()` — 起動時初期化 |
 
 ---
 
@@ -390,6 +390,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 ```
 
 `loadAllMemos()` / `saveAllMemos()` で `SK_MEMOS` キーに保存されます。メモは diff の特定ファイルやハンクには紐付いておらず、プロジェクト全体に対するフリーメモです。
+
+メモ入力欄は複数行入力に対応した `<textarea>`（`maxlength="5000"`）で、長文やコードの貼り付けにも対応します。パネル左端の `#memo-panel-resizer` ハンドルをドラッグすると Pointer Events（`initMemoPanelResizer()`）でパネル幅を変更できます（幅は `localStorage` には保存されず、セッション内のみ有効）。
 
 ---
 
