@@ -102,7 +102,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
-| **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` ショートカット |
 | **View mode toggle** | Unified ↔ Split ボタン処理 |
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |

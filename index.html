@@ -1414,18 +1414,29 @@ const app = {
 
 /**
  * Read the diff-list review filter from localStorage (defaults to 'all').
- * Migrates the pre-#51 boolean-only "未レビューのみ表示" toggle on first read.
+ * Migrates the pre-#51 boolean-only "未レビューのみ表示" toggle on first read,
+ * writing the migrated value to SK_REVIEW_FILTER and removing the legacy key
+ * so the migration only needs to run once, not on every page load.
  */
 function loadReviewFilter() {
   try {
     const v = localStorage.getItem(SK_REVIEW_FILTER);
     if (VALID_REVIEW_FILTERS.includes(v)) return v;
-    if (localStorage.getItem(SK_UNREVIEWED_ONLY_LEGACY) === '1') return 'unreviewed';
-    return 'all';
   } catch (e) {
     console.error('Failed to load review filter preference:', e);
     return 'all';
   }
+
+  try {
+    if (localStorage.getItem(SK_UNREVIEWED_ONLY_LEGACY) === '1') {
+      saveReviewFilter('unreviewed');
+      localStorage.removeItem(SK_UNREVIEWED_ONLY_LEGACY);
+      return 'unreviewed';
+    }
+  } catch (e) {
+    console.error('Failed to migrate legacy review filter preference:', e);
+  }
+  return 'all';
 }
 
 /** Persist the diff-list review filter. */
