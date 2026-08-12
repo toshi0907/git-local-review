@@ -1,0 +1,651 @@
+# index.html 開発者ガイド
+
+> **対象読者**: コードを修正・拡張する開発者向け。ユーザー向けの説明は [README.md](../README.md) を参照。
+
+---
+
+## 目次
+
+1. [ファイル構成の概要](#ファイル構成の概要)
+2. [HTML 構造](#html-構造)
+3. [JavaScript モジュール構成](#javascript-モジュール構成)
+4. [データフロー](#データフロー)
+5. [主要モジュール詳解](#主要モジュール詳解)
+   - [Storage keys](#storage-keys)
+   - [Application state](#application-state)
+   - [Character encoding detection](#character-encoding-detection)
+   - [localStorage helpers](#localstorage-helpers)
+   - [Diff parser](#diff-parser)
+   - [Large-hunk splitting](#large-hunk-splitting)
+   - [Syntax highlighting helpers](#syntax-highlighting-helpers)
+   - [Hashing](#hashing)
+   - [Render: sidebar project list](#render-sidebar-project-list)
+   - [Render: full diff view](#render-full-diff-view)
+   - [Build a single hunk card](#build-a-single-hunk-card)
+   - [Keyboard navigation](#keyboard-navigation)
+   - [Review memos](#review-memos)
+   - [Export / Import](#export--import)
+   - [File System Access API — file handles](#file-system-access-api--file-handles)
+   - [File System Access API — directory handles & settings folder](#file-system-access-api--directory-handles--settings-folder)
+   - [File loading](#file-loading)
+   - [Initialise](#initialise)
+6. [状態管理の全体像](#状態管理の全体像)
+7. [ハンクの同一性判定 (hunk hash)](#ハンクの同一性判定-hunk-hash)
+8. [サイドバイサイド表示の仕組み](#サイドバイサイド表示の仕組み)
+9. [ファイル読み込みの全フロー](#ファイル読み込みの全フロー)
+10. [よくある修正パターン](#よくある修正パターン)
+
+---
+
+## ファイル構成の概要
+
+```
+index.html           ← アプリ本体（CSS・JS・HTML がすべて inline）
+docs/
+  index.html.md      ← 本ドキュメント（開発者向け解説）
+README.md            ← ユーザー向けドキュメント
+test/                ← テスト用 .diff サンプルファイル
+```
+
+`index.html` は **4,000 行超のシングルファイルアプリ**です。ビルドプロセスは存在せず、ブラウザで直接開くだけで動作します。highlight.js (v11.9.0) の minified ソースも inline 同梱されており、外部リソースへの通信は一切ありません。
+
+---
+
+## HTML 構造
+
+```
+<html>
+  <head>
+    <style>                     ← highlight.js テーマ CSS (インライン)
+    <style>                     ← アプリ全体の CSS
+  <body>
+    <div id="app">
+      <aside id="sidebar">      ← 左サイドバー（プロジェクト一覧・設定）
+      <main id="main">
+        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・進捗）
+        <div id="diff-container"> ← diff 表示エリア（JS で動的生成）
+        <div id="empty-state">  ← 未読み込み時の案内テキスト
+    <aside id="memo-panel">     ← レビューメモスライドパネル
+    <div id="conflict-modal">   ← ファイル名衝突ダイアログ
+    <script>                    ← highlight.js (minified, インライン)
+    <script>                    ← アプリロジック本体
+```
+
+---
+
+## JavaScript モジュール構成
+
+`<script>` タグ内は `// ──…──` のセクション区切りで論理的に分割されています。
+
+| 行番号 (目安) | セクション名 | 役割 |
+|---|---|---|
+| ~1148 | **Storage keys** | `localStorage` キー定数 |
+| ~1164 | **Application state** | `app` オブジェクト（ランタイム状態） |
+| ~1213 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
+| ~1333 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
+| ~1472 | **Diff view mode** | Unified / Side-by-side モード保存 |
+| ~1505 | **Keyword highlight** | キーワード黄色ハイライト機能 |
+| ~1661 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
+| ~1755 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
+| ~1849 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
+| ~1863 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
+| ~1921 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
+| ~2003 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
+| ~2162 | **Hashing** | Web Crypto API / djb2 フォールバック |
+| ~2207 | **HTML escaping** | `esc()` ユーティリティ |
+| ~2216 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| ~2224 | **Render: sidebar project list** | `renderProjectList()` |
+| ~2314 | **Render: full diff view** | `renderDiff()` |
+| ~2397 | **Build a single hunk card** | `buildHunkCard()` |
+| ~2710 | **Set collapsed state** | ハンクの折りたたみ |
+| ~2724 | **Checkbox change handler** | レビュー済みチェック処理 |
+| ~2759 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| ~2791 | **Review memos** | レビューメモ（スライドパネル） |
+| ~2968 | **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| ~3031 | **View mode toggle** | Unified ↔ Split ボタン処理 |
+| ~3059 | **Empty state helpers** | 空状態メッセージ表示 |
+| ~3071 | **Project actions** | プロジェクトの選択・削除・並び替え |
+| ~3244 | **Export / Import** | JSON エクスポート / インポート |
+| ~3355 | **Settings folder** | 設定フォルダへの自動保存・読み込み |
+| ~3608 | **Conflict modal** | ファイル名衝突ダイアログ |
+| ~3696 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| ~3855 | **Event listeners** | UI イベントの登録 |
+| ~4059 | **Drag & drop** | ドラッグ&ドロップ対応 |
+| ~4132 | **Keyword input** | キーワード入力フィールド |
+| ~4148 | **Initialise** | `init()` — 起動時初期化 |
+
+---
+
+## データフロー
+
+### diff ファイル読み込み時の全体フロー
+
+```
+ユーザーがファイルを選択 / D&D
+          │
+          ▼
+    loadFile(file)
+          │
+          ├─ decodeAuto(buffer)        文字コード自動判定 → テキスト変換
+          │
+          ├─ parseDiff(text)           diff テキスト → 構造化配列
+          │     │
+          │     └─ splitLargeHunk()   巨大ハンクを分割
+          │
+          ├─ プロジェクト名衝突チェック
+          │     └─ showConflictModal() (衝突時) → ユーザー選択待ち
+          │
+          ├─ generateProjectId()       新規 ID を生成
+          │
+          ├─ computeAllHashes(files)   各ハンクに SHA-256 ハッシュを付与
+          │
+          ├─ saveProjects() / saveFileContent()  localStorage に保存
+          │
+          ├─ app.currentProjectId = id  ランタイム状態を更新
+          │
+          └─ renderDiff()             画面を再描画
+```
+
+### レビュー済みチェック変更時のフロー
+
+```
+チェックボックス変更 (onCheckboxChange)
+          │
+          ├─ loadAllReviews()          既存レビュー状態を読み込み
+          ├─ reviews[projectId][filePath][hunkHash] = true/false  更新
+          ├─ saveAllReviews()          localStorage に保存
+          └─ refreshProgress()        進捗バッジのみ更新（再レンダリングなし）
+```
+
+---
+
+## 主要モジュール詳解
+
+### Storage keys
+
+`localStorage` に使うキーをすべて定数として集中管理しています。
+
+```javascript
+const SK_PROJECTS        = 'gitLocalReview_projects';
+const SK_REVIEWS         = 'gitLocalReview_reviews';
+const SK_MEMOS           = 'gitLocalReview_memos';
+const SK_CURRENT         = 'gitLocalReview_currentProject';
+const SK_FILES           = 'gitLocalReview_files';
+const SK_VIEW_MODE       = 'gitLocalReview_viewMode';
+const SK_UNREVIEWED_ONLY = 'gitLocalReview_unreviewedOnly';
+const SK_PROJECT_SORT    = 'gitLocalReview_projectSort';
+const SK_KEYWORDS        = 'gitLocalReview_keywords';
+```
+
+---
+
+### Application state
+
+`app` オブジェクトがランタイム状態を保持します。`localStorage` に保存されない揮発性データです。
+
+```javascript
+const app = {
+  currentProjectId: null,   // 現在選択中のプロジェクト ID
+  parsedDiff: null,          // parseDiff() の戻り値（構造化 diff データ）
+  fileProgressEls: new Map(),// filePath → <span> 要素（進捗バッジ）
+  viewMode: 'unified',       // 'unified' | 'split'
+  unreviewedOnly: false,     // 未レビューのみ表示フィルター
+  focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
+};
+```
+
+---
+
+### Character encoding detection
+
+`decodeAuto(buffer: ArrayBuffer)` が中心的な関数です。
+
+```
+ArrayBuffer
+     │
+     ├─ UTF-8 BOM あり → UTF-8 確定
+     ├─ TextDecoder('utf-8', {fatal:true}) 成功 → UTF-8 確定
+     └─ 失敗 → scoreShiftJis(bytes) と scoreEucJp(bytes) を比較
+               → スコアの高い方を採用 (Shift_JIS or EUC-JP)
+```
+
+スコアリングは、各文字コードで有効な多バイトシーケンスの出現頻度をバイト列から計算します。
+
+---
+
+### localStorage helpers
+
+プロジェクト・レビュー状態・メモ・ファイル内容の読み書きを担います。
+
+**主要関数:**
+
+| 関数 | 説明 |
+|---|---|
+| `loadProjects()` | プロジェクト一覧を配列で返す |
+| `saveProjects(projects)` | プロジェクト一覧を保存 |
+| `loadAllReviews()` | `{ projectId: { filePath: { hunkHash: true } } }` 形式で返す |
+| `saveAllReviews(reviews)` | レビュー状態を保存 |
+| `loadAllMemos()` | `{ projectId: MemoItem[] }` 形式で返す |
+| `saveAllMemos(memos)` | メモを保存 |
+| `loadFileContent(projectId)` | diff テキスト本文を返す |
+| `saveFileContent(projectId, text)` | diff テキスト本文を保存 |
+| `deleteFileContent(projectId)` | diff テキスト本文を削除 |
+
+`sanitizeReviewsData()` / `sanitizeMemosData()` / `sanitizeFilesData()` は localStorage の値が不正なフォーマットだった場合に安全なデフォルト値に戻すガード関数です。
+
+---
+
+### Diff parser
+
+```javascript
+parseDiff(text: string): Array<{filePath, hunks}>
+```
+
+**パースの流れ:**
+
+```
+入力: unified diff テキスト
+  "diff --git a/foo b/foo"  → 新しいファイルエントリを開始
+  "+++ b/foo"               → filePath を確定（rename 対応）
+  "@@ -1,5 +1,6 @@"        → 新しいハンクを開始
+  " " / "+" / "-" / "\"    → ハンクに行を追加
+  次の "diff --git" / EOF   → ハンクとファイルを確定 (commit)
+```
+
+各ハンクは `{ header: string, lines: string[] }` の形式です。ハンクの確定時に `splitLargeHunk()` が呼ばれ、行数が多いハンクは複数に分割されます。
+
+---
+
+### Large-hunk splitting
+
+`splitLargeHunk(hunk)` は、1 ハンクの行数が多い場合に「変更なし行のまとまり」を境にサブハンクへ分割します。これにより UI 上で大量の unchanged 行を持つハンクが扱いやすくなります。
+
+分割後の各サブハンクには、元のハンクヘッダ情報から正確な `@@ -oldStart,oldCount +newStart,newCount @@` が再計算されます（`splitLargeHunk()` 内のインラインロジックで処理されます）。
+
+---
+
+### Syntax highlighting helpers
+
+**言語検出:**
+
+```javascript
+detectLanguage(filePath: string): string | null
+```
+
+`filePath` の拡張子から highlight.js の言語 ID を返します。対応していない拡張子は `null`（プレーンテキスト表示）。
+
+**ハイライト処理:**
+
+```javascript
+highlightHunkLines(lines: string[], language: string, filePath: string): string[] | null
+```
+
+ハンク内の `+` / `-` / ` ` 行のテキスト部分をまとめて highlight.js でハイライトし、行ごとの HTML を返します。`<span>` タグが行をまたいで開いていた場合は `splitHighlightedLines()` が正しく閉じ/開きを挿入します。
+
+---
+
+### Hashing
+
+各ハンクの同一性判定に使うハッシュは、**ハンクの内容行（`@@` ヘッダを除く）のテキスト**を入力として計算されます。
+
+```javascript
+async sha256hex(text: string): Promise<string>   // Web Crypto または djb2hex フォールバック
+async computeAllHashes(files: Array): Promise<void>  // 全ハンクに hash を付与
+```
+
+- `sha256hex()` は Web Crypto API (`crypto.subtle`) が使える環境では SHA-256 を使用
+- `file://` プロトコルなど Crypto API が使えない場合は `djb2hex()` にフォールバック
+- `computeAllHashes(files)` が `parsedDiff` の全ファイル・全ハンクに対して `sha256hex()` を呼び出し、`hunk.hash` にセットします
+
+同じ内容のハンクは行番号が変わっても同じハッシュになるため、diff が更新されてもレビュー済み状態が引き継がれます。
+
+---
+
+### Render: sidebar project list
+
+```javascript
+renderProjectList()
+```
+
+`loadProjects()` で取得したリストを `sortProjects()` でソートし、サイドバーの `#project-list` に DOM を構築します。現在アクティブなプロジェクト (`app.currentProjectId`) には `active` クラスが付与されます。File System Access API が利用可能なプロジェクトには「🔃 再読み込み」ボタンが表示されます。
+
+---
+
+### Render: full diff view
+
+```javascript
+renderDiff()
+```
+
+`app.parsedDiff` を元に `#diff-container` を再構築します。
+
+```
+renderDiff()
+  │
+  ├─ app.parsedDiff が null → 空状態表示して終了
+  │
+  ├─ for each file:
+  │     ├─ unreviewedOnly かつ全ハンクレビュー済み → スキップ
+  │     ├─ file-section > file-header を生成
+  │     └─ for each hunk:
+  │           ├─ unreviewedOnly かつレビュー済み → スキップ
+  │           └─ buildHunkCard() → section に追加
+  │
+  ├─ setOverallProgress()   全体進捗バーを更新
+  └─ setFocusedHunk(0)      キーボードフォーカスをリセット
+```
+
+---
+
+### Build a single hunk card
+
+```javascript
+buildHunkCard(filePath, hunk, isReviewed, language): HTMLElement
+```
+
+1 つのハンクを表すカード要素を生成します。
+
+**内部処理:**
+
+1. `computeLineRecords(hunk)` — 行ごとに `{ type, content, oldLabel, newLabel }` を計算
+2. `highlightHunkLines()` — syntax highlight HTML を生成（`language` が null の場合はスキップ）
+3. Unified / Split の分岐で異なる `<table>` 構造を構築
+4. キーワードハイライト (`applyKeywordHighlight()`) を適用
+
+**Unified 表示の行構造:**
+
+```html
+<tr class="line-added | line-removed | line-context">
+  <td class="line-num old">旧行番号</td>
+  <td class="line-num new">新行番号</td>
+  <td class="line-prefix">+/-/ </td>
+  <td class="line-content">...</td>
+</tr>
+```
+
+**Split（サイドバイサイド）表示の行構造:**
+
+1 つの diff 行が `computeLineRecords` の結果から旧ファイル側と新ファイル側に分離されます。詳細は [サイドバイサイド表示の仕組み](#サイドバイサイド表示の仕組み) を参照。
+
+---
+
+### Keyboard navigation
+
+```javascript
+// j → 次のハンク、k → 前のハンク、Space → レビュー済みトグル
+getHunkCards(): NodeList   // 現在レンダリング中のハンクカード一覧
+setFocusedHunk(index)      // フォーカスを index に移動してスクロール
+```
+
+フォーカス中のハンクカードには `focused` クラスが付きます。フォーム入力中・モーダル表示中はイベントを無視します。
+
+---
+
+### Review memos
+
+スライドパネル (`#memo-panel`) で管理されるプロジェクト単位のチェックリストメモです。
+
+```
+MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedAt: number }
+```
+
+`loadAllMemos()` / `saveAllMemos()` で `SK_MEMOS` キーに保存されます。メモは diff の特定ファイルやハンクには紐付いておらず、プロジェクト全体に対するフリーメモです。
+
+---
+
+### Export / Import
+
+`exportAppData()` は `buildExportData()` で組み立てた以下の JSON 構造をファイルとしてダウンロードします。
+
+```json
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-08-12T00:00:00.000Z",
+  "projects": [...],
+  "reviews": { ... },
+  "memos": { ... }
+}
+```
+
+> **注意:** `gitLocalReview_files`（各プロジェクトの diff 本文）はエクスポートに含まれません。インポート後は元の diff ファイルを再度読み込む必要があります。
+
+`importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。
+
+---
+
+### File System Access API — file handles
+
+Chrome / Edge など `window.showOpenFilePicker` をサポートするブラウザ専用の機能です。
+
+```javascript
+const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function';
+```
+
+`FileSystemFileHandle` は JSON シリアライズ不可のため、`IndexedDB`（`gitLocalReview_handles` DB, `fileHandles` ストア）に保存します。
+
+| 関数 | 説明 |
+|---|---|
+| `saveFileHandle(projectId, handle)` | IndexedDB に保存 |
+| `loadFileHandle(projectId)` | IndexedDB から取得 |
+| `deleteFileHandleRecord(projectId)` | IndexedDB から削除 |
+| `refreshHandleIndex()` | `projectIdsWithHandles` Set を IndexedDB から再構築 |
+| `verifyHandlePermission(handle, mode)` | パーミッション確認・要求 |
+
+---
+
+### File System Access API — directory handles & settings folder
+
+フォルダハンドル（既定の開くフォルダ・設定保存先フォルダ）は同じ `gitLocalReview_handles` DB の `folderHandles` ストアに保存されます。
+
+| キー定数 | 用途 |
+|---|---|
+| `FOLDER_KEY_OPEN` (`'defaultOpenFolder'`) | 「📂 Diff ファイルを開く」の既定フォルダ |
+| `FOLDER_KEY_SETTINGS` (`'settingsFolder'`) | 設定の自動保存先フォルダ |
+
+**設定フォルダの自動保存フロー:**
+
+```
+diff 読み込み / レビュー変更 / プロジェクト削除
+          │
+          └─ scheduleSettingsAutoSave()   (デバウンス)
+                │
+                └─ autoSaveSettingsToFolder()
+                      │
+                      ├─ 外部変更チェック（前回保存ハッシュと比較）
+                      │     └─ 変更あり → 上書きをスキップして通知
+                      └─ buildExportData() → git-local-review-settings.json に書き込み
+```
+
+外部変更の検知は `startSettingsExternalChangeWatcher()` が 1 分ごとに行います。
+
+---
+
+### File loading
+
+```javascript
+async loadDiffFiles(files: File[], encodingPref?: string, fileHandles?: FileSystemFileHandle[]): Promise<void>
+async loadFile(file: File, fileHandle?: FileSystemFileHandle, encodingPref?: string): Promise<void>
+```
+
+各イベントリスナー（ファイル選択・ドロップ・再読み込みボタン）が個別に `loadDiffFiles()` を呼び出し、`loadDiffFiles()` がループで各ファイルに対して `loadFile()` を呼び出す構成です。設定ファイルからの復元など一部の経路は直接 `loadFile()` を呼び出します。
+
+**同名ファイルの衝突検出:**
+
+```javascript
+projectsByFileName(fileName): Project[]
+```
+
+同じ `fileName` を持つ既存プロジェクトがある場合、`showConflictModal()` でユーザーに上書きか新規作成かを選択させます。
+
+---
+
+### Initialise
+
+```javascript
+(async function init() { ... })();
+```
+
+ページロード時に一度だけ実行されます。
+
+```
+init()
+  │
+  ├─ loadViewMode() → updateViewModeButtons()
+  ├─ unreviewedOnly フィルターの復元
+  ├─ refreshHandleIndex()
+  ├─ [File System Access 対応ブラウザのみ]
+  │     ├─ refreshOpenFolderUI()
+  │     ├─ refreshSettingsFolderUI()
+  │     ├─ loadSettingsFromFolderOnStartup()   設定ファイルがあれば自動読み込み
+  │     └─ startSettingsExternalChangeWatcher()
+  ├─ renderProjectList()
+  └─ 最後に開いていたプロジェクトを復元 (SK_CURRENT → restoreProjectDiff)
+```
+
+---
+
+## 状態管理の全体像
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    ブラウザメモリ                      │
+│  app.currentProjectId                               │
+│  app.parsedDiff                                     │
+│  app.viewMode                                       │
+│  app.unreviewedOnly                                 │
+│  app.focusedHunkIndex                               │
+│  app.fileProgressEls (DOM 参照キャッシュ)             │
+└─────────────────────────────────────────────────────┘
+          ↕ read/write
+┌─────────────────────────────────────────────────────┐
+│                  localStorage                        │
+│  gitLocalReview_projects      プロジェクト一覧        │
+│  gitLocalReview_reviews       レビュー済み状態        │
+│  gitLocalReview_memos         レビューメモ            │
+│  gitLocalReview_files         diff テキスト本文       │
+│  gitLocalReview_currentProject 最後に開いた ID        │
+│  gitLocalReview_viewMode      表示モード              │
+│  gitLocalReview_unreviewedOnly フィルター設定         │
+│  gitLocalReview_projectSort   並び順                 │
+│  gitLocalReview_keywords      キーワード             │
+└─────────────────────────────────────────────────────┘
+          ↕ read/write（File System Access API 対応のみ）
+┌─────────────────────────────────────────────────────┐
+│               IndexedDB                              │
+│  fileHandles   プロジェクトID → FileSystemFileHandle  │
+│  folderHandles 'defaultOpenFolder' / 'settingsFolder' │
+└─────────────────────────────────────────────────────┘
+          ↕ read/write（File System Access API 対応のみ）
+┌─────────────────────────────────────────────────────┐
+│              ローカルファイルシステム                  │
+│  git-local-review-settings.json  (設定自動保存先)     │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## ハンクの同一性判定 (hunk hash)
+
+diff ファイルが更新されると行番号がずれることがありますが、ハンクの内容（`+`/`-`/` ` で始まる行のテキスト）が同じであれば「レビュー済み」状態が引き継がれます。
+
+```
+hunk.lines（例: ["-old line", "+new line", " context"]）
+     │
+     └─ sha256hex(text)  ← Web Crypto または djb2hex (フォールバック)
+           │              ※ computeAllHashes(files) が全ハンクに適用
+           └─ hex 文字列 → hunk.hash として保存
+
+レビュー状態の保存形式:
+  reviews[projectId][filePath][hunk.hash] = true
+```
+
+この設計により、`git rebase` や `git merge` で行番号が変化しても、変更内容が同じハンクは正しく「レビュー済み」と認識されます。
+
+---
+
+## サイドバイサイド表示の仕組み
+
+`buildHunkCard()` 内で `app.viewMode === 'split'` のときに使われます。
+
+`computeLineRecords(hunk)` の結果をいったん全行フラットな配列として持ち、その後以下のように旧ファイル側と新ファイル側のペアに組み立てます。
+
+```
+diff 行                旧ファイル列       新ファイル列
+────────────────────  ─────────────────  ─────────────
+" context"            行番号 + テキスト  行番号 + テキスト
+"-removed"            行番号 + テキスト  （空）
+"+added"              （空）             行番号 + テキスト
+```
+
+`-` 行と `+` 行が連続して現れる場合は同一行の変更とみなし、同じ `<tr>` の左右に並べます（`buildSplitTbody()` 内のペアリングロジック）。
+
+---
+
+## ファイル読み込みの全フロー
+
+```
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│ load-btn     │  │ drag & drop  │  │ reload-btn   │
+│ (file input) │  │ (drop event) │  │ (handle)     │
+└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+       │                 │                 │
+       │          filesFromDataTransfer()  │
+       │                 │                 │
+       └─────────────────┴─────────────────┘
+                         │
+                         ▼
+               loadDiffFiles(files, encodingPref, handles)
+                         │
+                    for each file
+                         │
+                         ▼
+                    loadFile(file, ...)
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+         decodeAuto()          parseDiff()
+         (文字コード判定)      (diff パース)
+              │                     │
+              └──────────┬──────────┘
+                         │
+              ├─ computeAllHashes()  ハンクハッシュ計算
+              │
+              projectsByFileName() で衝突確認
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+         衝突なし                衝突あり
+              │                     │
+         新規プロジェクト      showConflictModal()
+         として保存           (ユーザー選択待ち)
+              │
+              ▼
+         renderDiff() / renderProjectList()
+```
+
+---
+
+## よくある修正パターン
+
+### 新しい localStorage キーを追加する
+
+1. `Storage keys` セクションに `SK_XXX = 'gitLocalReview_xxx'` を追加
+2. 対応する `loadXxx()` / `saveXxx()` 関数を `localStorage helpers` セクションに追加
+3. `sanitize` 関数が必要な場合はあわせて追加
+
+### 新しい言語のシンタックスハイライトを追加する
+
+1. `detectLanguage()` の `extMap` オブジェクトに拡張子と highlight.js 言語 ID を追加
+2. highlight.js 本体がその言語に対応しているか確認（inline 同梱のため、非対応の場合はバンドルを差し替える必要あり）
+
+### diff パーサーを変更する
+
+`parseDiff()` を変更する際は、`splitLargeHunk()` と `computeLineRecords()` も合わせて確認してください。これらは連携してハンクの構造を扱っています。
+
+### レビュー状態の構造を変更する
+
+`sanitizeReviewsData()` のバリデーションロジックと、`saveAllReviews()` / `loadAllReviews()` を同時に変更してください。また、エクスポート JSON の `version` フィールドを上げてマイグレーション処理を追加することを検討してください。
+
+---
+
+> このドキュメントは `index.html` を修正した際に合わせて更新してください（詳細は [CLAUDE.md](../CLAUDE.md) 参照）。
