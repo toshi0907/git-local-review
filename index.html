@@ -517,6 +517,7 @@
       background: #f1f8ff;
       border-bottom: 1px solid #dbe9fd;
       gap: 10px;
+      cursor: pointer;
     }
 
     .hunk-card.reviewed .hunk-header-bar {
@@ -2428,6 +2429,18 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
 
   body.appendChild(table);
   card.appendChild(body);
+
+  // Clicking anywhere in the hunk (header bar or diff body) focuses it, so
+  // it can be reviewed with the mouse-click + Space keyboard shortcut flow
+  // alongside j/k navigation. Skip when the click is the end of a text
+  // selection drag (e.g. copying diff text) rather than a plain click.
+  card.addEventListener('click', () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().length > 0) return;
+    const index = getHunkCards().indexOf(card);
+    if (index !== -1) setFocusedHunk(index, { scroll: false });
+  });
+
   return card;
 }
 
