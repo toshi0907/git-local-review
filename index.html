@@ -2433,10 +2433,15 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   // Clicking anywhere in the hunk (header bar or diff body) focuses it, so
   // it can be reviewed with the mouse-click + Space keyboard shortcut flow
   // alongside j/k navigation. Skip when the click is the end of a text
-  // selection drag (e.g. copying diff text) rather than a plain click.
+  // selection drag within this card (e.g. copying diff text) rather than a
+  // plain click — a leftover selection elsewhere on the page shouldn't block
+  // focusing this hunk.
   card.addEventListener('click', () => {
     const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) return;
+    if (selection && !selection.isCollapsed &&
+        card.contains(selection.anchorNode) && card.contains(selection.focusNode)) {
+      return;
+    }
     const index = getHunkCards().indexOf(card);
     if (index !== -1) setFocusedHunk(index, { scroll: false });
   });
