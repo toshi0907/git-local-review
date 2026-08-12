@@ -855,12 +855,14 @@
       right: 0;
       bottom: 0;
       width: 340px;
+      min-width: 280px;
       max-width: 90vw;
       background: #fff;
       box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2);
       z-index: 390;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
       transform: translateX(100%);
       /* visibility is a discrete property: transitioning to 'visible' flips
          immediately, transitioning to 'hidden' flips only once the slide-out
@@ -871,6 +873,17 @@
     }
 
     .memo-panel.open { transform: translateX(0); visibility: visible; }
+
+    .memo-panel-resizer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 10px;
+      height: 100%;
+      cursor: ew-resize;
+      touch-action: none;
+      z-index: 1;
+    }
 
     .memo-panel-header {
       display: flex;
@@ -1136,6 +1149,7 @@
 <!-- Review memo panel: per-project checklist notes, unrelated to any specific file/hunk -->
 <div class="memo-panel-overlay" id="memo-panel-overlay"></div>
 <aside class="memo-panel" id="memo-panel" aria-hidden="true" aria-label="レビューメモ">
+  <div class="memo-panel-resizer" id="memo-panel-resizer" aria-hidden="true"></div>
   <div class="memo-panel-header">
     <h2>📝 レビューメモ</h2>
     <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
@@ -2971,6 +2985,45 @@ function closeMemoPanel() {
   }
 }
 
+function initMemoPanelResizer() {
+  const panel = document.getElementById('memo-panel');
+  const handle = document.getElementById('memo-panel-resizer');
+  if (!panel || !handle) return;
+
+  let minWidth = 0;
+  let startX = 0;
+  let startWidth = 0;
+  let maxWidth = 0;
+  let isResizing = false;
+
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = panel.getBoundingClientRect().width;
+    minWidth = Number.parseFloat(getComputedStyle(panel).minWidth);
+    if (!Number.isFinite(minWidth)) minWidth = 0;
+    maxWidth = Number.parseFloat(getComputedStyle(panel).maxWidth);
+    if (!Number.isFinite(maxWidth)) maxWidth = window.innerWidth;
+    isResizing = true;
+    handle.setPointerCapture(e.pointerId);
+  });
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!isResizing || !handle.hasPointerCapture(e.pointerId)) return;
+    const delta = startX - e.clientX;
+    const nextWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
+    panel.style.width = `${nextWidth}px`;
+  });
+
+  const stopResize = () => {
+    isResizing = false;
+  };
+  handle.addEventListener('pointerup', stopResize);
+  handle.addEventListener('pointercancel', stopResize);
+  handle.addEventListener('lostpointercapture', stopResize);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyboard navigation between hunks (j/k to move focus, Space to toggle
 // レビュー済み on the focused hunk). See keydown listener near the bottom of
@@ -4025,6 +4078,7 @@ document.getElementById('memo-add-form').addEventListener('submit', (e) => {
   input.value = '';
   input.focus();
 });
+initMemoPanelResizer();
 
 // Close modal with ESC key for keyboard accessibility, and provide keyboard
 // shortcuts for hunk navigation: j/k move focus between hunks, Space toggles
