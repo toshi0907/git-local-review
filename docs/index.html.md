@@ -99,10 +99,10 @@ test/                ← テスト用 .diff サンプルファイル
 | **Render: full diff view** | `renderDiff()` |
 | **Build a single hunk card** | `buildHunkCard()` |
 | **Set collapsed state** | ハンクの折りたたみ |
-| **Checkbox change handler** | レビュー済みチェック処理 |
+| **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
 | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
-| **Keyboard navigation** | `j` / `k` / `Space` ショートカット |
+| **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` ショートカット |
 | **View mode toggle** | Unified ↔ Split ボタン処理 |
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |
@@ -149,15 +149,19 @@ test/                ← テスト用 .diff サンプルファイル
           └─ renderDiff()             画面を再描画
 ```
 
-### レビュー済みチェック変更時のフロー
+### レビュー状態変更時のフロー
 
 ```
-チェックボックス変更 (onCheckboxChange)
+レビュー状態ボタン クリック / Space / 数字キー (setHunkReviewStatus)
           │
           ├─ loadAllReviews()          既存レビュー状態を読み込み
-          ├─ reviews[projectId][filePath][hunkHash] = true/false  更新
+          ├─ reviews[projectId][filePath][hunkHash] = 'approved' | 'needs_changes' | 'on_hold'
+          │  （クリック済みの状態をもう一度選ぶとキーを削除 = 未レビューに戻す）
           ├─ saveAllReviews()          localStorage に保存
-          └─ refreshProgress()        進捗バッジのみ更新（再レンダリングなし）
+          ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
+          ├─ collapsed は status === 'approved' のときだけ true に
+          └─ app.reviewFilter === 'all' なら refreshProgress() のみ、
+             それ以外はハンクの表示/非表示が変わるため renderDiff() 全体を再実行
 ```
 
 ---
@@ -175,12 +179,16 @@ const SK_MEMOS           = 'gitLocalReview_memos';
 const SK_CURRENT         = 'gitLocalReview_currentProject';
 const SK_FILES           = 'gitLocalReview_files';
 const SK_VIEW_MODE       = 'gitLocalReview_viewMode';
-const SK_UNREVIEWED_ONLY = 'gitLocalReview_unreviewedOnly';
+const SK_REVIEW_FILTER   = 'gitLocalReview_reviewFilter';
 const SK_PROJECT_SORT    = 'gitLocalReview_projectSort';
 const SK_KEYWORDS        = 'gitLocalReview_keywords';
 ```
 
 `SK_KEYWORDS` は JSON エンコードされたカテゴリ配列 `{ id, keywords, color }[]` を保持します（`loadKeywordCategories()` / `saveKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。
+
+`SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
+
+`SK_REVIEW_FILTER` は `'all' | 'unreviewed' | 'needs_changes'` のいずれかです。#51 で追加され、それ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは初回読み込み時に `'unreviewed'`（`true` の場合）または `'all'` へ移行されます（`loadReviewFilter()`）。
 
 ---
 
@@ -194,7 +202,7 @@ const app = {
   parsedDiff: null,          // parseDiff() の戻り値（構造化 diff データ）
   fileProgressEls: new Map(),// filePath → <span> 要素（進捗バッジ）
   viewMode: 'unified',       // 'unified' | 'split'
-  unreviewedOnly: false,     // 未レビューのみ表示フィルター
+  reviewFilter: 'all',       // 'all' | 'unreviewed' | 'needs_changes'（表示するハンクの絞り込み）
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
 ```
@@ -228,7 +236,7 @@ ArrayBuffer
 |---|---|
 | `loadProjects()` | プロジェクト一覧を配列で返す |
 | `saveProjects(projects)` | プロジェクト一覧を保存 |
-| `loadAllReviews()` | `{ projectId: { filePath: { hunkHash: true } } }` 形式で返す |
+| `loadAllReviews()` | `{ projectId: { filePath: { hunkHash: 'approved' \| 'needs_changes' \| 'on_hold' } } }` 形式で返す（キーが無ければ未レビュー） |
 | `saveAllReviews(reviews)` | レビュー状態を保存 |
 | `loadAllMemos()` | `{ projectId: MemoItem[] }` 形式で返す |
 | `saveAllMemos(memos)` | メモを保存 |
@@ -330,13 +338,14 @@ renderDiff()
   ├─ app.parsedDiff が null → 空状態表示して終了
   │
   ├─ for each file:
-  │     ├─ unreviewedOnly かつ全ハンクレビュー済み → スキップ
+  │     ├─ app.reviewFilter !== 'all' かつ、絞り込み条件に合うハンクが1つも無い → ファイルごとスキップ
+  │     │  （'unreviewed' = 未レビューのハンクのみ表示 / 'needs_changes' = 要修正のみ表示）
   │     ├─ file-section > file-header を生成
   │     └─ for each hunk:
-  │           ├─ unreviewedOnly かつレビュー済み → スキップ
-  │           └─ buildHunkCard() → section に追加
+  │           ├─ hunkPassesReviewFilter(status, filter) が false → スキップ
+  │           └─ buildHunkCard(filePath, hunk, status, language) → section に追加
   │
-  ├─ setOverallProgress()   全体進捗バーを更新
+  ├─ setOverallProgress()   全体進捗バーを更新（承認/要修正/保留の内訳付き）
   └─ setFocusedHunk(0)      キーボードフォーカスをリセット
 ```
 
@@ -345,8 +354,10 @@ renderDiff()
 ### Build a single hunk card
 
 ```javascript
-buildHunkCard(filePath, hunk, isReviewed, language): HTMLElement
+buildHunkCard(filePath, hunk, status, language): HTMLElement
 ```
+
+`status` は `'approved' | 'needs_changes' | 'on_hold' | null`（`null` = 未レビュー）。カードには `status-approved` 等のクラスが付き、`status === 'approved'` のときのみ初期状態で折りたたまれます。
 
 1 つのハンクを表すカード要素を生成します。
 
@@ -354,8 +365,9 @@ buildHunkCard(filePath, hunk, isReviewed, language): HTMLElement
 
 1. `computeLineRecords(hunk)` — 行ごとに `{ type, content, oldLabel, newLabel }` を計算
 2. `highlightHunkLines()` — syntax highlight HTML を生成（`language` が null の場合はスキップ）
-3. Unified / Split の分岐で異なる `<table>` 構造を構築
-4. キーワードハイライト (`applyKeywordHighlight()`) を適用
+3. `REVIEW_STATUSES` から承認/要修正/保留の3ボタン（`.review-status-group`）を生成。クリックで `setHunkReviewStatus()` を呼び出し、既にアクティブなボタンをもう一度押すと未レビューに戻る
+4. Unified / Split の分岐で異なる `<table>` 構造を構築
+5. キーワードハイライト (`applyKeywordHighlight()`) を適用
 
 **Unified 表示の行構造:**
 
@@ -377,12 +389,16 @@ buildHunkCard(filePath, hunk, isReviewed, language): HTMLElement
 ### Keyboard navigation
 
 ```javascript
-// j → 次のハンク、k → 前のハンク、Space → レビュー済みトグル
-getHunkCards(): NodeList   // 現在レンダリング中のハンクカード一覧
-setFocusedHunk(index)      // フォーカスを index に移動してスクロール
+// j → 次のハンク、k → 前のハンク
+// Space → レビュー状態を 未レビュー → 承認 → 要修正 → 保留 → 未レビュー… の順で循環
+// 1 / 2 / 3 → 承認 / 要修正 / 保留 を直接設定（同じ状態をもう一度押すと未レビューに戻る）
+getHunkCards(): NodeList     // 現在レンダリング中のハンクカード一覧
+setFocusedHunk(index)        // フォーカスを index に移動してスクロール
+cycleFocusedHunkStatus()     // Space の処理
+setFocusedHunkStatus(value)  // 1/2/3 の処理
 ```
 
-フォーカス中のハンクカードには `focused` クラスが付きます。フォーム入力中・モーダル表示中はイベントを無視します。
+フォーカス中のハンクカードには `focused` クラスが付きます。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
 
 ---
 
@@ -406,17 +422,19 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
-  "reviews": { ... },
+  "reviews": {
+    "projectId": { "filePath": { "hunkHash": "needs_changes" } }
+  },
   "memos": { ... }
 }
 ```
 
 > **注意:** `gitLocalReview_files`（各プロジェクトの diff 本文）はエクスポートに含まれません。インポート後は元の diff ファイルを再度読み込む必要があります。
 
-`importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。
+`importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。`reviews` の値は `sanitizeReviewsData()` / `normalizeReviewStatus()` を経由するため、`schemaVersion: 1` 時代の古いエクスポート（値が真偽値 `true`）もインポート時に自動的に `'approved'` へ変換されます。`schemaVersion` 自体はインポート処理で参照されておらず、あくまで記録用の情報です。
 
 ---
 
@@ -498,7 +516,7 @@ projectsByFileName(fileName): Project[]
 init()
   │
   ├─ loadViewMode() → updateViewModeButtons()
-  ├─ unreviewedOnly フィルターの復元
+  ├─ reviewFilter（表示フィルター）の復元
   ├─ refreshHandleIndex()
   ├─ [File System Access 対応ブラウザのみ]
   │     ├─ refreshOpenFolderUI()
@@ -519,7 +537,7 @@ init()
 │  app.currentProjectId                               │
 │  app.parsedDiff                                     │
 │  app.viewMode                                       │
-│  app.unreviewedOnly                                 │
+│  app.reviewFilter                                   │
 │  app.focusedHunkIndex                               │
 │  app.fileProgressEls (DOM 参照キャッシュ)             │
 └─────────────────────────────────────────────────────┘
@@ -527,12 +545,12 @@ init()
 ┌─────────────────────────────────────────────────────┐
 │                  localStorage                        │
 │  gitLocalReview_projects      プロジェクト一覧        │
-│  gitLocalReview_reviews       レビュー済み状態        │
+│  gitLocalReview_reviews       レビュー状態（承認等）  │
 │  gitLocalReview_memos         レビューメモ            │
 │  gitLocalReview_files         diff テキスト本文       │
 │  gitLocalReview_currentProject 最後に開いた ID        │
 │  gitLocalReview_viewMode      表示モード              │
-│  gitLocalReview_unreviewedOnly フィルター設定         │
+│  gitLocalReview_reviewFilter  表示フィルター設定       │
 │  gitLocalReview_projectSort   並び順                 │
 │  gitLocalReview_keywords      キーワードカテゴリ配列  │
 └─────────────────────────────────────────────────────┘
@@ -553,7 +571,7 @@ init()
 
 ## ハンクの同一性判定 (hunk hash)
 
-diff ファイルが更新されると行番号がずれることがありますが、ハンクの内容（`+`/`-`/` ` で始まる行のテキスト）が同じであれば「レビュー済み」状態が引き継がれます。
+diff ファイルが更新されると行番号がずれることがありますが、ハンクの内容（`+`/`-`/` ` で始まる行のテキスト）が同じであれば「レビュー状態」が引き継がれます。
 
 ```
 hunk.lines（例: ["-old line", "+new line", " context"]）
@@ -563,10 +581,11 @@ hunk.lines（例: ["-old line", "+new line", " context"]）
            └─ hex 文字列 → hunk.hash として保存
 
 レビュー状態の保存形式:
-  reviews[projectId][filePath][hunk.hash] = true
+  reviews[projectId][filePath][hunk.hash] = 'approved' | 'needs_changes' | 'on_hold'
+  （キーが存在しなければ未レビュー）
 ```
 
-この設計により、`git rebase` や `git merge` で行番号が変化しても、変更内容が同じハンクは正しく「レビュー済み」と認識されます。
+この設計により、`git rebase` や `git merge` で行番号が変化しても、変更内容が同じハンクは正しく元のレビュー状態と紐付きます。
 
 ---
 
@@ -651,7 +670,7 @@ diff 行                旧ファイル列       新ファイル列
 
 ### レビュー状態の構造を変更する
 
-`sanitizeReviewsData()` のバリデーションロジックと、`saveAllReviews()` / `loadAllReviews()` を同時に変更してください。また、エクスポート JSON の `version` フィールドを上げてマイグレーション処理を追加することを検討してください。
+`REVIEW_STATUSES` / `VALID_REVIEW_STATUS_VALUES`、`normalizeReviewStatus()`、`sanitizeReviewsData()` のバリデーションロジックを同時に変更してください。`setHunkReviewStatus()` / `buildHunkCard()`（ステータスボタン生成・カードの `status-*` クラス）、`renderDiff()` の `hunkPassesReviewFilter()`、`refreshProgress()` / `setOverallProgress()` の集計ロジックも合わせて確認が必要です。旧形式からの移行が必要な場合は `normalizeReviewStatus()` に変換ルールを追加し、`buildExportData()` の `schemaVersion` を上げて変更点をコメントに残すと良いでしょう（`schemaVersion` 自体はインポート時に参照されず記録用です）。
 
 ---
 

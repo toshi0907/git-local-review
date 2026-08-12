@@ -87,18 +87,23 @@
     .view-mode-btn:hover:not(.active) { background: #373e47; }
     .view-mode-btn.active { background: #58a6ff; color: #0b1116; }
 
-    .filter-toggle {
+    .filter-select-label {
       display: flex;
       align-items: center;
       gap: 6px;
       font-size: 13px;
       color: #c9d1d9;
-      cursor: pointer;
       user-select: none;
       white-space: nowrap;
     }
 
-    .filter-toggle input[type="checkbox"] {
+    .filter-select-label select {
+      padding: 3px 6px;
+      border: 1px solid #444c56;
+      border-radius: 5px;
+      background: #2d333b;
+      color: #c9d1d9;
+      font-size: 12px;
       cursor: pointer;
     }
 
@@ -673,7 +678,12 @@
 
     .hunk-card:first-of-type { border-top: none; }
 
-    .hunk-card.reviewed { background: #f0fff4; }
+    /* Review status (issue #51): each status gets its own card tint so the
+       three outcomes stay visually distinct from each other and from the
+       neutral (unreviewed) state. */
+    .hunk-card.status-approved      { background: #f0fff4; }
+    .hunk-card.status-needs_changes { background: #fff5f5; }
+    .hunk-card.status-on_hold       { background: #fffdf0; }
 
     .hunk-card.focused {
       outline: 2px solid #4c9aff;
@@ -684,9 +694,9 @@
       background: #dceaff;
     }
 
-    .hunk-card.focused.reviewed .hunk-header-bar {
-      background: #d3f5df;
-    }
+    .hunk-card.focused.status-approved .hunk-header-bar      { background: #d3f5df; }
+    .hunk-card.focused.status-needs_changes .hunk-header-bar { background: #ffd9d9; }
+    .hunk-card.focused.status-on_hold .hunk-header-bar       { background: #fdf3c4; }
 
     .hunk-header-bar {
       display: flex;
@@ -699,9 +709,19 @@
       cursor: pointer;
     }
 
-    .hunk-card.reviewed .hunk-header-bar {
+    .hunk-card.status-approved .hunk-header-bar {
       background: #e6ffed;
       border-bottom-color: #c3e6cb;
+    }
+
+    .hunk-card.status-needs_changes .hunk-header-bar {
+      background: #ffeef0;
+      border-bottom-color: #f5c6cb;
+    }
+
+    .hunk-card.status-on_hold .hunk-header-bar {
+      background: #fff8e1;
+      border-bottom-color: #f0e2a6;
     }
 
     .hunk-card.collapsed .hunk-header-bar {
@@ -741,24 +761,47 @@
       text-overflow: ellipsis;
     }
 
-    .review-label {
+    .review-status-group {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      font-weight: 500;
-      color: #24292e;
-      cursor: pointer;
-      user-select: none;
-      white-space: nowrap;
+      gap: 4px;
       flex-shrink: 0;
     }
 
-    .review-label input[type="checkbox"] {
-      width: 15px;
-      height: 15px;
+    .review-status-btn {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding: 3px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 12px;
+      background: #fff;
+      color: #57606a;
+      font-size: 11px;
+      font-weight: 500;
       cursor: pointer;
-      accent-color: #1a7f37;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .review-status-btn:hover { background: #f6f8fa; }
+
+    .review-status-btn.status-approved.active {
+      background: #1a7f37;
+      border-color: #1a7f37;
+      color: #fff;
+    }
+
+    .review-status-btn.status-needs_changes.active {
+      background: #cf222e;
+      border-color: #cf222e;
+      color: #fff;
+    }
+
+    .review-status-btn.status-on_hold.active {
+      background: #9a6700;
+      border-color: #9a6700;
+      color: #fff;
     }
 
     /* ===== Diff table ===== */
@@ -1183,9 +1226,13 @@
     <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
     <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
   </div>
-  <label class="filter-toggle" title="レビュー済みのハンク・ファイルを非表示にして、未レビューの箇所だけを表示します">
-    <input type="checkbox" id="unreviewed-filter-toggle">
-    未レビューのみ表示
+  <label class="filter-select-label" for="review-filter-select">
+    表示:
+    <select id="review-filter-select" title="表示するハンクをレビュー状態で絞り込みます">
+      <option value="all">すべて表示</option>
+      <option value="unreviewed">未レビューのみ表示</option>
+      <option value="needs_changes">要修正のみ表示</option>
+    </select>
   </label>
   <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
     <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
@@ -1324,12 +1371,27 @@ const SK_MEMOS            = 'gitLocalReview_memos';
 const SK_CURRENT          = 'gitLocalReview_currentProject';
 const SK_FILES            = 'gitLocalReview_files';
 const SK_VIEW_MODE        = 'gitLocalReview_viewMode';
-const SK_UNREVIEWED_ONLY  = 'gitLocalReview_unreviewedOnly';
+const SK_REVIEW_FILTER    = 'gitLocalReview_reviewFilter';
+/** Pre-#51 boolean-only "未レビューのみ表示" toggle, read once for migration into SK_REVIEW_FILTER. */
+const SK_UNREVIEWED_ONLY_LEGACY = 'gitLocalReview_unreviewedOnly';
 const SK_PROJECT_SORT     = 'gitLocalReview_projectSort';
 const SK_KEYWORDS         = 'gitLocalReview_keywords';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
+
+/**
+ * Hunk review statuses (issue #51). A hunk's stored value in `reviews` is one
+ * of these strings, or absent entirely for "unreviewed". Order here also
+ * defines the Space-key cycle order and the number-key shortcuts (1/2/3).
+ */
+const REVIEW_STATUSES = [
+  { value: 'approved',      label: '承認',   icon: '✓', key: '1' },
+  { value: 'needs_changes', label: '要修正', icon: '✎', key: '2' },
+  { value: 'on_hold',       label: '保留',   icon: '⏸', key: '3' },
+];
+const VALID_REVIEW_STATUS_VALUES = REVIEW_STATUSES.map(s => s.value);
+const VALID_REVIEW_FILTERS = ['all', 'unreviewed', 'needs_changes'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -1343,29 +1405,46 @@ const app = {
   fileProgressEls: new Map(),
   /** @type {'unified'|'split'} Current diff view mode ('split' = side-by-side) */
   viewMode: 'unified',
-  /** When true, renderDiff() hides fully-reviewed hunks/files so only remaining work is shown */
-  unreviewedOnly: loadUnreviewedOnlyPref(),
+  /** @type {'all'|'unreviewed'|'needs_changes'} Which hunks renderDiff() shows; see loadReviewFilter() */
+  reviewFilter: loadReviewFilter(),
   /** Index into the flat, document-order list of currently rendered hunk cards
-   *  that has keyboard focus (j/k to move, Space to toggle). -1 = none. */
+   *  that has keyboard focus (j/k to move, Space to cycle its review status). -1 = none. */
   focusedHunkIndex: -1,
 };
 
-/** Read the "未レビューのみ表示" preference from localStorage (defaults to off). */
-function loadUnreviewedOnlyPref() {
+/**
+ * Read the diff-list review filter from localStorage (defaults to 'all').
+ * Migrates the pre-#51 boolean-only "未レビューのみ表示" toggle on first read,
+ * writing the migrated value to SK_REVIEW_FILTER and removing the legacy key
+ * so the migration only needs to run once, not on every page load.
+ */
+function loadReviewFilter() {
   try {
-    return localStorage.getItem(SK_UNREVIEWED_ONLY) === '1';
+    const v = localStorage.getItem(SK_REVIEW_FILTER);
+    if (VALID_REVIEW_FILTERS.includes(v)) return v;
   } catch (e) {
-    console.error('Failed to load unreviewed-only filter preference:', e);
-    return false;
+    console.error('Failed to load review filter preference:', e);
+    return 'all';
   }
+
+  try {
+    if (localStorage.getItem(SK_UNREVIEWED_ONLY_LEGACY) === '1') {
+      saveReviewFilter('unreviewed');
+      localStorage.removeItem(SK_UNREVIEWED_ONLY_LEGACY);
+      return 'unreviewed';
+    }
+  } catch (e) {
+    console.error('Failed to migrate legacy review filter preference:', e);
+  }
+  return 'all';
 }
 
-/** Persist the "未レビューのみ表示" preference. */
-function saveUnreviewedOnlyPref(enabled) {
+/** Persist the diff-list review filter. */
+function saveReviewFilter(filter) {
   try {
-    localStorage.setItem(SK_UNREVIEWED_ONLY, enabled ? '1' : '0');
+    localStorage.setItem(SK_REVIEW_FILTER, filter);
   } catch (e) {
-    console.error('Failed to save unreviewed-only filter preference:', e);
+    console.error('Failed to save review filter preference:', e);
   }
 }
 
@@ -1557,6 +1636,17 @@ function sortProjects(projects, sortKey) {
   }
 }
 
+/**
+ * Normalizes a stored review leaf value to a valid status string, or null
+ * for "unreviewed". Coerces the pre-#51 boolean format (`true` → the
+ * default 'approved' status) so old localStorage data and old exported
+ * JSON files keep working; anything else invalid is dropped.
+ */
+function normalizeReviewStatus(value) {
+  if (value === true) return 'approved';
+  return VALID_REVIEW_STATUS_VALUES.includes(value) ? value : null;
+}
+
 // Rebuild with null-prototype objects to prevent prototype pollution
 // from diff-derived (or imported) file paths used as object keys.
 function sanitizeReviewsData(parsed) {
@@ -1571,7 +1661,8 @@ function sanitizeReviewsData(parsed) {
         const hashMap = fileMap[fp];
         if (hashMap && typeof hashMap === 'object') {
           for (const h of Object.keys(hashMap)) {
-            safe[pid][fp][h] = hashMap[h];
+            const status = normalizeReviewStatus(hashMap[h]);
+            if (status) safe[pid][fp][h] = status;
           }
         }
       }
@@ -2721,28 +2812,38 @@ function renderDiff() {
   const allReviews     = loadAllReviews();
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
 
-  const filterActive = !!app.unreviewedOnly;
-  let totalHunks = 0, totalReviewed = 0;
+  const filter = app.reviewFilter;
+  const filterActive = filter !== 'all';
+  let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
   let renderedSections = 0;
 
-  // Collect files that will actually be rendered (respects filterActive)
+  // Collect files that will actually be rendered (respects the review filter)
   const visibleFiles = filterActive
     ? files.filter(f => {
         const rev = projectReviews[f.filePath] || Object.create(null);
-        return f.hunks.filter(h => rev[h.hash]).length < f.hunks.length;
+        return f.hunks.some(h => hunkPassesReviewFilter(rev[h.hash] || null, filter));
       })
     : files;
 
   renderStatSummary(visibleFiles.length > 0 ? visibleFiles : null);
 
   for (const file of files) {
-    const fileReviews  = projectReviews[file.filePath] || Object.create(null);
-    const reviewedCnt  = file.hunks.filter(h => fileReviews[h.hash]).length;
-    totalHunks    += file.hunks.length;
-    totalReviewed += reviewedCnt;
+    const fileReviews = projectReviews[file.filePath] || Object.create(null);
+    let reviewedCnt = 0, needsChangesCnt = 0, onHoldCnt = 0;
+    for (const h of file.hunks) {
+      const status = fileReviews[h.hash] || null;
+      if (status) reviewedCnt++;
+      if (status === 'needs_changes') needsChangesCnt++;
+      if (status === 'on_hold') onHoldCnt++;
+    }
+    totalHunks        += file.hunks.length;
+    totalReviewed      += reviewedCnt;
+    totalNeedsChanges  += needsChangesCnt;
+    totalOnHold        += onHoldCnt;
 
-    // In "未レビューのみ表示" mode, skip files where every hunk is already reviewed.
-    if (filterActive && reviewedCnt === file.hunks.length) continue;
+    // Skip files with no hunk matching the active filter.
+    const hasVisibleHunk = !filterActive || file.hunks.some(h => hunkPassesReviewFilter(fileReviews[h.hash] || null, filter));
+    if (!hasVisibleHunk) continue;
 
     const section = document.createElement('div');
     section.className = 'file-section';
@@ -2764,12 +2865,12 @@ function renderDiff() {
     fileHeader.appendChild(progressEl);
     section.appendChild(fileHeader);
 
-    // Hunks (skip already-reviewed ones while the filter is active)
+    // Hunks (skip ones that don't match the active filter)
     const fileLanguage = detectLanguage(file.filePath);
     for (const hunk of file.hunks) {
-      const hunkReviewed = !!fileReviews[hunk.hash];
-      if (filterActive && hunkReviewed) continue;
-      section.appendChild(buildHunkCard(file.filePath, hunk, hunkReviewed, fileLanguage));
+      const status = fileReviews[hunk.hash] || null;
+      if (filterActive && !hunkPassesReviewFilter(status, filter)) continue;
+      section.appendChild(buildHunkCard(file.filePath, hunk, status, fileLanguage));
     }
 
     container.appendChild(section);
@@ -2779,17 +2880,32 @@ function renderDiff() {
   if (filterActive && renderedSections === 0) {
     const msg = document.createElement('div');
     msg.className = 'empty-state';
-    msg.innerHTML = totalHunks > 0
-      ? '<span class="icon" aria-hidden="true">🎉</span>すべてのハンクがレビュー済みです'
-      : '<span class="icon" aria-hidden="true">📄</span>表示できるハンクがありません';
+    if (filter === 'needs_changes') {
+      msg.innerHTML = '<span class="icon" aria-hidden="true">🎉</span>「要修正」のハンクはありません';
+    } else {
+      msg.innerHTML = totalHunks > 0
+        ? '<span class="icon" aria-hidden="true">🎉</span>すべてのハンクがレビュー済みです'
+        : '<span class="icon" aria-hidden="true">📄</span>表示できるハンクがありません';
+    }
     container.appendChild(msg);
   }
 
-  setOverallProgress(totalReviewed, totalHunks);
+  setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
 
   // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
   // (the previous focus index may point at an element that no longer exists).
   setFocusedHunk(0, { scroll: false });
+}
+
+/**
+ * Whether a hunk with the given review status should be shown under the
+ * current review filter. `status` is one of REVIEW_STATUSES' values, or
+ * null/undefined for "unreviewed".
+ */
+function hunkPassesReviewFilter(status, filter) {
+  if (filter === 'unreviewed') return !status;
+  if (filter === 'needs_changes') return status === 'needs_changes';
+  return true; // 'all'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3016,9 +3132,10 @@ function buildSplitTbody(hunk, hlLines, keywordGroups) {
   return tbody;
 }
 
-function buildHunkCard(filePath, hunk, isReviewed, language = null) {
+function buildHunkCard(filePath, hunk, status, language = null) {
   const card = document.createElement('div');
-  card.className = 'hunk-card' + (isReviewed ? ' reviewed collapsed' : '');
+  const startsCollapsed = status === 'approved';
+  card.className = 'hunk-card' + (status ? ' status-' + status : '') + (startsCollapsed ? ' collapsed' : '');
   card.dataset.filePath = filePath;
   card.dataset.hunkHash = hunk.hash;
 
@@ -3028,8 +3145,8 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
 
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'hunk-toggle-btn';
-  toggleBtn.title = isReviewed ? '展開' : '折りたたむ';
-  toggleBtn.textContent = isReviewed ? '▶' : '▼';
+  toggleBtn.title = startsCollapsed ? '展開' : '折りたたむ';
+  toggleBtn.textContent = startsCollapsed ? '▶' : '▼';
   toggleBtn.addEventListener('click', () => {
     setHunkCollapsedState(card, !card.classList.contains('collapsed'));
   });
@@ -3038,19 +3155,28 @@ function buildHunkCard(filePath, hunk, isReviewed, language = null) {
   headerText.className = 'hunk-header-text';
   headerText.textContent = hunk.header;
 
-  const label = document.createElement('label');
-  label.className = 'review-label';
+  const statusGroup = document.createElement('div');
+  statusGroup.className = 'review-status-group';
+  statusGroup.setAttribute('role', 'group');
+  statusGroup.setAttribute('aria-label', 'レビュー状態');
+  for (const s of REVIEW_STATUSES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'review-status-btn status-' + s.value + (status === s.value ? ' active' : '');
+    btn.dataset.status = s.value;
+    btn.title = `${s.label}（キーボード: ${s.key}）`;
+    btn.setAttribute('aria-pressed', String(status === s.value));
+    btn.textContent = `${s.icon} ${s.label}`;
+    btn.addEventListener('click', () => {
+      const nextStatus = btn.classList.contains('active') ? null : s.value;
+      setHunkReviewStatus(card, filePath, hunk.hash, nextStatus);
+    });
+    statusGroup.appendChild(btn);
+  }
 
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = isReviewed;
-  cb.addEventListener('change', onCheckboxChange);
-
-  label.appendChild(cb);
-  label.appendChild(document.createTextNode(' レビュー済み'));
   bar.appendChild(toggleBtn);
   bar.appendChild(headerText);
-  bar.appendChild(label);
+  bar.appendChild(statusGroup);
   card.appendChild(bar);
 
   // ── Diff table ──────────────────────────────────────
@@ -3120,33 +3246,42 @@ function setHunkCollapsedState(card, collapsed) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Checkbox change handler
+// Review status change (issue #51)
 // ─────────────────────────────────────────────────────────────────────────────
-function onCheckboxChange(e) {
-  const cb       = e.target;
-  const card     = cb.closest('.hunk-card');
-  const filePath = card.dataset.filePath;
-  const hash     = card.dataset.hunkHash;
-
+/**
+ * Sets (or clears, if `newStatus` is null) a hunk's review status, persists
+ * it, updates the card's DOM in place (status classes, status buttons,
+ * collapse state), and refreshes progress/filtering.
+ * @param {HTMLElement} card
+ * @param {string} filePath
+ * @param {string} hash
+ * @param {string|null} newStatus - one of REVIEW_STATUSES' values, or null for "unreviewed"
+ */
+function setHunkReviewStatus(card, filePath, hash, newStatus) {
   const allReviews = loadAllReviews();
   if (!allReviews[app.currentProjectId])           allReviews[app.currentProjectId] = Object.create(null);
   if (!allReviews[app.currentProjectId][filePath]) allReviews[app.currentProjectId][filePath] = Object.create(null);
 
-  if (cb.checked) {
-    allReviews[app.currentProjectId][filePath][hash] = true;
-    card.classList.add('reviewed');
-    setHunkCollapsedState(card, true);
+  if (newStatus) {
+    allReviews[app.currentProjectId][filePath][hash] = newStatus;
   } else {
     delete allReviews[app.currentProjectId][filePath][hash];
-    card.classList.remove('reviewed');
-    setHunkCollapsedState(card, false);
   }
-
   saveAllReviews(allReviews);
   scheduleSettingsAutoSave();
 
-  if (app.unreviewedOnly) {
-    // The "未レビューのみ表示" filter needs hunks/files to appear or disappear
+  for (const s of REVIEW_STATUSES) card.classList.remove('status-' + s.value);
+  if (newStatus) card.classList.add('status-' + newStatus);
+
+  for (const btn of card.querySelectorAll('.review-status-btn')) {
+    const isActive = btn.dataset.status === newStatus;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
+  }
+  setHunkCollapsedState(card, newStatus === 'approved');
+
+  if (app.reviewFilter !== 'all') {
+    // The review filter needs hunks/files to appear or disappear
     // immediately, so re-run the full render rather than a lightweight update.
     renderDiff();
   } else {
@@ -3161,14 +3296,22 @@ function refreshProgress() {
   if (!app.parsedDiff || !app.currentProjectId) return;
 
   const projectReviews = (loadAllReviews()[app.currentProjectId]) || Object.create(null);
-  let totalHunks = 0, totalReviewed = 0;
+  let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
 
   for (const file of app.parsedDiff) {
     const fileReviews = projectReviews[file.filePath] || Object.create(null);
-    const rev   = file.hunks.filter(h => fileReviews[h.hash]).length;
+    let rev = 0, needsChanges = 0, onHold = 0;
+    for (const h of file.hunks) {
+      const status = fileReviews[h.hash] || null;
+      if (status) rev++;
+      if (status === 'needs_changes') needsChanges++;
+      if (status === 'on_hold') onHold++;
+    }
     const total = file.hunks.length;
-    totalHunks    += total;
-    totalReviewed += rev;
+    totalHunks        += total;
+    totalReviewed      += rev;
+    totalNeedsChanges  += needsChanges;
+    totalOnHold        += onHold;
 
     const el = app.fileProgressEls.get(file.filePath);
     if (el) {
@@ -3177,12 +3320,17 @@ function refreshProgress() {
     }
   }
 
-  setOverallProgress(totalReviewed, totalHunks);
+  setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
 }
 
-function setOverallProgress(reviewed, total) {
+function setOverallProgress(reviewed, total, needsChanges = 0, onHold = 0) {
   const el = document.getElementById('overall-progress');
-  el.textContent = `全体: ${reviewed} / ${total} hunk レビュー済み`;
+  let text = `全体: ${reviewed} / ${total} hunk レビュー済み`;
+  const breakdown = [];
+  if (needsChanges > 0) breakdown.push(`要修正 ${needsChanges}`);
+  if (onHold > 0) breakdown.push(`保留 ${onHold}`);
+  if (breakdown.length > 0) text += `（${breakdown.join('・')}）`;
+  el.textContent = text;
   el.classList.toggle('has-progress', reviewed > 0);
 }
 
@@ -3443,20 +3591,31 @@ function moveHunkFocus(delta) {
   setFocusedHunk(current + delta);
 }
 
-// Toggles the "レビュー済み" checkbox of the currently focused hunk by
-// flipping its checked state and dispatching a change event, so the
-// existing onCheckboxChange logic (state persistence, progress refresh,
-// collapsing) is reused rather than duplicated here. Flipping `checked`
-// directly (instead of calling .click()) avoids moving DOM focus onto the
-// checkbox, which would otherwise make the next keydown look like "typing"
-// and disable further j/k/Space shortcuts.
-function toggleFocusedHunkReviewed() {
+/** Reads the currently focused hunk card's review status from its DOM classes, or null. */
+function getHunkStatus(card) {
+  for (const s of REVIEW_STATUSES) {
+    if (card.classList.contains('status-' + s.value)) return s.value;
+  }
+  return null;
+}
+
+/** Space: cycles the focused hunk's status unreviewed → approved → needs_changes → on_hold → unreviewed. */
+function cycleFocusedHunkStatus() {
   const cards = getHunkCards();
   if (app.focusedHunkIndex < 0 || app.focusedHunkIndex >= cards.length) return;
-  const cb = cards[app.focusedHunkIndex].querySelector('.review-label input[type="checkbox"]');
-  if (!cb) return;
-  cb.checked = !cb.checked;
-  cb.dispatchEvent(new Event('change', { bubbles: true }));
+  const card = cards[app.focusedHunkIndex];
+  const cycle = [null, ...REVIEW_STATUSES.map(s => s.value)];
+  const next = cycle[(cycle.indexOf(getHunkStatus(card)) + 1) % cycle.length];
+  setHunkReviewStatus(card, card.dataset.filePath, card.dataset.hunkHash, next);
+}
+
+/** Number keys (1/2/3): directly sets the focused hunk's status, toggling off if already set. */
+function setFocusedHunkStatus(value) {
+  const cards = getHunkCards();
+  if (app.focusedHunkIndex < 0 || app.focusedHunkIndex >= cards.length) return;
+  const card = cards[app.focusedHunkIndex];
+  const next = getHunkStatus(card) === value ? null : value;
+  setHunkReviewStatus(card, card.dataset.filePath, card.dataset.hunkHash, next);
 }
 
 function clearOverallProgress() {
@@ -3698,10 +3857,17 @@ function sanitizeImportedProjects(rawProjects) {
   return result;
 }
 
-/** Build the app-data payload shared by manual export and folder-based settings save. */
+/**
+ * Build the app-data payload shared by manual export and folder-based settings save.
+ * schemaVersion 2 (issue #51): `reviews` hunk values changed from a boolean
+ * to a status string (see REVIEW_STATUSES). Imports are version-agnostic —
+ * sanitizeReviewsData()/normalizeReviewStatus() coerce both the old boolean
+ * shape and the new string shape on read, so schemaVersion is informational
+ * only and isn't itself checked on import.
+ */
 function buildExportData() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
@@ -4459,8 +4625,9 @@ document.getElementById('memo-add-form').addEventListener('submit', (e) => {
 initMemoPanelResizer();
 
 // Close modal with ESC key for keyboard accessibility, and provide keyboard
-// shortcuts for hunk navigation: j/k move focus between hunks, Space toggles
-// レビュー済み on the focused hunk.
+// shortcuts for hunk navigation: j/k move focus between hunks, Space cycles
+// the focused hunk's review status, and 1/2/3 set it directly (see
+// REVIEW_STATUSES for the key-to-status mapping).
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
     hideModal();
@@ -4490,7 +4657,14 @@ document.addEventListener('keydown', (e) => {
   } else if (e.key === ' ' || e.code === 'Space') {
     e.preventDefault();
     if (e.repeat) return; // ignore key-repeat from holding Space down
-    toggleFocusedHunkReviewed();
+    cycleFocusedHunkStatus();
+  } else {
+    const statusForKey = REVIEW_STATUSES.find(s => s.key === e.key);
+    if (statusForKey) {
+      e.preventDefault();
+      if (e.repeat) return;
+      setFocusedHunkStatus(statusForKey.value);
+    }
   }
 });
 
@@ -4673,11 +4847,11 @@ document.getElementById('keyword-category-add-btn').addEventListener('click', ad
   app.viewMode = loadViewMode();
   updateViewModeButtons();
 
-  const unreviewedFilterToggle = document.getElementById('unreviewed-filter-toggle');
-  unreviewedFilterToggle.checked = app.unreviewedOnly;
-  unreviewedFilterToggle.addEventListener('change', () => {
-    app.unreviewedOnly = unreviewedFilterToggle.checked;
-    saveUnreviewedOnlyPref(app.unreviewedOnly);
+  const reviewFilterSelect = document.getElementById('review-filter-select');
+  reviewFilterSelect.value = app.reviewFilter;
+  reviewFilterSelect.addEventListener('change', () => {
+    app.reviewFilter = reviewFilterSelect.value;
+    saveReviewFilter(app.reviewFilter);
     renderDiff();
   });
 
