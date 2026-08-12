@@ -137,7 +137,7 @@ test/                ← テスト用 .diff サンプルファイル
           │
           ├─ generateProjectId()       新規 ID を生成
           │
-          ├─ computeHunkHashes()       各ハンクに SHA-256 ハッシュを付与
+          ├─ computeAllHashes(files)   各ハンクに SHA-256 ハッシュを付与
           │
           ├─ saveProjects() / saveFileContent()  localStorage に保存
           │
@@ -260,7 +260,7 @@ parseDiff(text: string): Array<{filePath, hunks}>
 
 `splitLargeHunk(hunk)` は、1 ハンクの行数が多い場合に「変更なし行のまとまり」を境にサブハンクへ分割します。これにより UI 上で大量の unchanged 行を持つハンクが扱いやすくなります。
 
-分割後の各サブハンクには、元のハンクヘッダ情報から正確な `@@ -oldStart,oldCount +newStart,newCount @@` が再計算されます（`recomputeSubHunkHeaders()` 内）。
+分割後の各サブハンクには、元のハンクヘッダ情報から正確な `@@ -oldStart,oldCount +newStart,newCount @@` が再計算されます（`splitLargeHunk()` 内のインラインロジックで処理されます）。
 
 ---
 
@@ -289,11 +289,13 @@ highlightHunkLines(lines: string[], language: string, filePath: string): string[
 各ハンクの同一性判定に使うハッシュは、**ハンクの内容行（`@@` ヘッダを除く）のテキスト**を入力として計算されます。
 
 ```javascript
-async computeHunkHash(lines: string[]): Promise<string>
+async sha256hex(text: string): Promise<string>   // Web Crypto または djb2hex フォールバック
+async computeAllHashes(files: Array): Promise<void>  // 全ハンクに hash を付与
 ```
 
-- Web Crypto API (`crypto.subtle`) が使える環境では SHA-256 を使用
+- `sha256hex()` は Web Crypto API (`crypto.subtle`) が使える環境では SHA-256 を使用
 - `file://` プロトコルなど Crypto API が使えない場合は `djb2hex()` にフォールバック
+- `computeAllHashes(files)` が `parsedDiff` の全ファイル・全ハンクに対して `sha256hex()` を呼び出し、`hunk.hash` にセットします
 
 同じ内容のハンクは行番号が変わっても同じハッシュになるため、diff が更新されてもレビュー済み状態が引き継がれます。
 
@@ -393,11 +395,12 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ### Export / Import
 
-`exportProjects()` は以下の JSON 構造をファイルとしてダウンロードします。
+`exportAppData()` は `buildExportData()` で組み立てた以下の JSON 構造をファイルとしてダウンロードします。
 
 ```json
 {
-  "version": 1,
+  "schemaVersion": 1,
+  "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "reviews": { ... },
   "memos": { ... }
@@ -406,7 +409,7 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 > **注意:** `gitLocalReview_files`（各プロジェクトの diff 本文）はエクスポートに含まれません。インポート後は元の diff ファイルを再度読み込む必要があります。
 
-`importProjects()` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。
+`importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。
 
 ---
 
@@ -444,11 +447,13 @@ const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function'
 ```
 diff 読み込み / レビュー変更 / プロジェクト削除
           │
-          └─ debouncedAutoSave()
+          └─ scheduleSettingsAutoSave()   (デバウンス)
                 │
-                ├─ 外部変更チェック（前回保存ハッシュと比較）
-                │     └─ 変更あり → 上書きをスキップして通知
-                └─ saveSettingsToFolder() → git-local-review-settings.json に書き込み
+                └─ autoSaveSettingsToFolder()
+                      │
+                      ├─ 外部変更チェック（前回保存ハッシュと比較）
+                      │     └─ 変更あり → 上書きをスキップして通知
+                      └─ buildExportData() → git-local-review-settings.json に書き込み
 ```
 
 外部変更の検知は `startSettingsExternalChangeWatcher()` が 1 分ごとに行います。
@@ -458,10 +463,11 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 ### File loading
 
 ```javascript
-async loadFile(file: File, fileHandle?: FileSystemFileHandle, encodingPref?: string)
+async loadDiffFiles(files: File[], encodingPref?: string, fileHandles?: FileSystemFileHandle[]): Promise<void>
+async loadFile(file: File, fileHandle?: FileSystemFileHandle, encodingPref?: string): Promise<void>
 ```
 
-ファイル選択・ドロップ・設定復元など、すべての読み込み経路はこの関数に集約されます。
+各イベントリスナー（ファイル選択・ドロップ・再読み込みボタン）が個別に `loadDiffFiles()` を呼び出し、`loadDiffFiles()` がループで各ファイルに対して `loadFile()` を呼び出す構成です。設定ファイルからの復元など一部の経路は直接 `loadFile()` を呼び出します。
 
 **同名ファイルの衝突検出:**
 
@@ -545,8 +551,8 @@ diff ファイルが更新されると行番号がずれることがあります
 ```
 hunk.lines（例: ["-old line", "+new line", " context"]）
      │
-     └─ SHA-256 (Web Crypto) または djb2hex (フォールバック)
-           │
+     └─ sha256hex(text)  ← Web Crypto または djb2hex (フォールバック)
+           │              ※ computeAllHashes(files) が全ハンクに適用
            └─ hex 文字列 → hunk.hash として保存
 
 レビュー状態の保存形式:
@@ -571,7 +577,7 @@ diff 行                旧ファイル列       新ファイル列
 "+added"              （空）             行番号 + テキスト
 ```
 
-`-` 行と `+` 行が連続して現れる場合は同一行の変更とみなし、同じ `<tr>` の左右に並べます（`buildSplitRows()` 内のペアリングロジック）。
+`-` 行と `+` 行が連続して現れる場合は同一行の変更とみなし、同じ `<tr>` の左右に並べます（`buildSplitTbody()` 内のペアリングロジック）。
 
 ---
 
@@ -583,10 +589,12 @@ diff 行                旧ファイル列       新ファイル列
 │ (file input) │  │ (drop event) │  │ (handle)     │
 └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
        │                 │                 │
+       │          filesFromDataTransfer()  │
+       │                 │                 │
        └─────────────────┴─────────────────┘
                          │
                          ▼
-               handleFiles(fileList)
+               loadDiffFiles(files, encodingPref, handles)
                          │
                     for each file
                          │
@@ -600,6 +608,8 @@ diff 行                旧ファイル列       新ファイル列
               │                     │
               └──────────┬──────────┘
                          │
+              ├─ computeAllHashes()  ハンクハッシュ計算
+              │
               projectsByFileName() で衝突確認
                          │
               ┌──────────┴──────────┐
