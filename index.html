@@ -79,6 +79,14 @@
       z-index: 190;
     }
 
+    #autosave-warning-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
     .view-mode-toggle {
       display: flex;
       border: 1px solid #444c56;
@@ -4211,7 +4219,12 @@ function hideSettingsExternalUpdateNotice() {
 function showAutoSaveWarning(message) {
   const banner = document.getElementById('autosave-warning-banner');
   const textEl = document.getElementById('autosave-warning-text');
-  if (textEl) textEl.textContent = message;
+  if (textEl) {
+    textEl.textContent = message;
+    // The text is truncated with an ellipsis on narrow viewports/long
+    // messages (e.g. an error's message text) — title exposes the full text.
+    textEl.title = message;
+  }
   if (banner) banner.style.display = 'flex';
   document.documentElement.style.setProperty('--autosave-warning-height', `${AUTOSAVE_WARNING_HEIGHT_PX}px`);
 }
