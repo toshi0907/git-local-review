@@ -65,7 +65,8 @@ test/                ← テスト用 .diff サンプルファイル
         <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・進捗）
         <div id="diff-container"> ← diff 表示エリア（JS で動的生成）
         <div id="empty-state">  ← 未読み込み時の案内テキスト
-    <aside id="memo-panel">     ← レビューメモスライドパネル
+      <aside id="memo-panel">   ← レビューメモパネル（狭い画面はスライドオーバーレイ、
+                                   1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
@@ -404,7 +405,7 @@ setFocusedHunkStatus(value)  // 1/2/3 の処理
 
 ### Review memos
 
-スライドパネル (`#memo-panel`) で管理されるプロジェクト単位のチェックリストメモです。
+`#memo-panel`（`.layout` 内、`.main` の右隣に配置）で管理されるプロジェクト単位のチェックリストメモです。
 
 ```
 MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedAt: number }
@@ -412,7 +413,9 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 `loadAllMemos()` / `saveAllMemos()` で `SK_MEMOS` キーに保存されます。メモは diff の特定ファイルやハンクには紐付いておらず、プロジェクト全体に対するフリーメモです。
 
-メモ入力欄は複数行入力に対応した `<textarea>`（`maxlength="5000"`）で、長文やコードの貼り付けにも対応します。パネル左端の `#memo-panel-resizer` ハンドルをドラッグすると Pointer Events（`initMemoPanelResizer()`）でパネル幅を変更できます（幅は `localStorage` には保存されず、セッション内のみ有効）。
+メモ入力欄は複数行入力に対応した `<textarea>`（`maxlength="5000"`）で、長文やコードの貼り付けにも対応します。`Ctrl+Enter`（macOS では `Cmd+Enter`）でも「追加」ボタンと同じくメモを追加できます（`#memo-input` の `keydown` リスナーが `#memo-add-form` を `requestSubmit()`）。パネル左端の `#memo-panel-resizer` ハンドルをドラッグすると Pointer Events（`initMemoPanelResizer()`）でパネル幅を変更できます（幅は `localStorage` には保存されず、セッション内のみ有効）。
+
+**表示モード（issue #57）:** ビューポート幅が `WIDE_LAYOUT_MEDIA_QUERY`（`(min-width: 1200px)`、CSS 側は同値の `@media (min-width: 1200px)`）以上のときはスライドオーバーレイではなく、`.layout` の3番目のflexカラムとして右側に常時ドッキング表示されます。この場合 `#memo-toggle-btn` と `#memo-panel-close` は CSS で非表示になり（`.open` クラスの有無に関わらず常に表示）、`isMemoPanelOpen()` は `WIDE_LAYOUT_MEDIA_QUERY.matches` を優先して true を返します。ブレークポイントをまたいだ際は `WIDE_LAYOUT_MEDIA_QUERY` の `change` イベントで `refreshMemoUI()` を呼び直し、パネル内容を最新化します。ドッキング表示中は Escape キーでのクローズを無効化し（常時表示のため閉じる概念がない）、j/k/Space のハンク操作ショートカットは「フォーカスが `#memo-panel` 内にあるか」で判定するよう変更されています（`isMemoPanelOpen()` ではなく `document.getElementById('memo-panel').contains(e.target)`）。これは、ドッキング時は常時 `isMemoPanelOpen() === true` になるため、パネル外にフォーカスがあってもハンク操作を無効化してしまわないようにするためです。
 
 ---
 
