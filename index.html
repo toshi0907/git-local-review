@@ -1210,6 +1210,30 @@
       background: #f6f8fa;
     }
 
+    /* ===== Wide-viewport memo panel docking (issue #57) =====
+       On viewports at least 1200px wide there's enough room to keep the memo
+       panel permanently visible as a third flex column inside .layout instead
+       of a slide-in overlay. Keep this breakpoint in sync with
+       WIDE_LAYOUT_MEDIA_QUERY in the script below. */
+    @media (min-width: 1200px) {
+      .memo-panel-overlay { display: none !important; }
+
+      .memo-toggle-btn { display: none; }
+
+      .memo-panel {
+        /* relative (not static) so it stays the containing block for the
+           absolutely-positioned .memo-panel-resizer handle. */
+        position: relative;
+        transform: none !important;
+        visibility: visible !important;
+        box-shadow: none;
+        border-left: 1px solid #d0d7de;
+        flex-shrink: 0;
+      }
+
+      .memo-panel-close { display: none; }
+    }
+
     /* ===== Scrollbar ===== */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -1321,6 +1345,25 @@
     <div id="diff-container"></div>
   </div>
 
+  <!-- Review memo panel: per-project checklist notes, unrelated to any specific
+       file/hunk. Lives inside .layout (rather than as a page-level overlay) so
+       that on wide viewports (see WIDE_LAYOUT_MEDIA_QUERY) it can dock as a
+       permanently visible third flex column instead of a slide-in overlay. -->
+  <div class="memo-panel-overlay" id="memo-panel-overlay"></div>
+  <aside class="memo-panel" id="memo-panel" aria-hidden="true" aria-label="レビューメモ">
+    <div class="memo-panel-resizer" id="memo-panel-resizer" aria-hidden="true"></div>
+    <div class="memo-panel-header">
+      <h2>📝 レビューメモ</h2>
+      <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
+    </div>
+    <form class="memo-add-form" id="memo-add-form">
+      <textarea id="memo-input" placeholder="メモを追加（Ctrl+Enterで追加）" maxlength="5000"></textarea>
+      <button type="submit" class="memo-add-btn">追加</button>
+    </form>
+    <div class="memo-empty" id="memo-empty" style="display:none;"></div>
+    <ul class="memo-list" id="memo-list"></ul>
+  </aside>
+
 </div>
 
 <!-- Drag & drop overlay, shown while a file is being dragged over the window -->
@@ -1341,23 +1384,6 @@
       <button class="modal-btn modal-btn-primary" id="modal-btn-update">選択したプロジェクトを更新</button>
     </div>
   </div>
-</div>
-
-<!-- Review memo panel: per-project checklist notes, unrelated to any specific file/hunk -->
-<div class="memo-panel-overlay" id="memo-panel-overlay"></div>
-<aside class="memo-panel" id="memo-panel" aria-hidden="true" aria-label="レビューメモ">
-  <div class="memo-panel-resizer" id="memo-panel-resizer" aria-hidden="true"></div>
-  <div class="memo-panel-header">
-    <h2>📝 レビューメモ</h2>
-    <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
-  </div>
-  <form class="memo-add-form" id="memo-add-form">
-    <textarea id="memo-input" placeholder="メモを追加" maxlength="5000"></textarea>
-    <button type="submit" class="memo-add-btn">追加</button>
-  </form>
-  <div class="memo-empty" id="memo-empty" style="display:none;"></div>
-  <ul class="memo-list" id="memo-list"></ul>
-</aside>
 
 <script>
 'use strict';
@@ -3522,14 +3548,31 @@ function deleteMemosForProject(projectId) {
   saveAllMemos(all);
 }
 
+/**
+ * Matches the CSS breakpoint (issue #57) at which the memo panel docks
+ * permanently as a third flex column instead of behaving as a slide-in
+ * overlay. Kept in sync with the `@media (min-width: 1200px)` rule above.
+ */
+const WIDE_LAYOUT_MEDIA_QUERY = window.matchMedia('(min-width: 1200px)');
+
 function isMemoPanelOpen() {
-  return document.getElementById('memo-panel').classList.contains('open');
+  return WIDE_LAYOUT_MEDIA_QUERY.matches || document.getElementById('memo-panel').classList.contains('open');
 }
 
-/** Called whenever the active project changes, to keep the badge/panel in sync. */
+/**
+ * Called whenever the active project changes (and on init, and when crossing
+ * the WIDE_LAYOUT_MEDIA_QUERY breakpoint) to keep the badge/panel in sync.
+ * Also keeps aria-hidden correct: while docked open on a wide viewport,
+ * openMemoPanel() is never called (its trigger, #memo-toggle-btn, is
+ * CSS-hidden there), so nothing else clears the markup's default
+ * aria-hidden="true" — without this, assistive tech would treat the
+ * always-visible panel as hidden.
+ */
 function refreshMemoUI() {
+  const open = isMemoPanelOpen();
+  document.getElementById('memo-panel').setAttribute('aria-hidden', open ? 'false' : 'true');
   refreshMemoBadge();
-  if (isMemoPanelOpen()) renderMemoList();
+  if (open) renderMemoList();
 }
 
 function openMemoPanel() {
@@ -4667,7 +4710,21 @@ document.getElementById('memo-add-form').addEventListener('submit', (e) => {
   input.value = '';
   input.focus();
 });
+// Ctrl+Enter (Cmd+Enter on macOS) in the memo textarea submits the add-memo
+// form without requiring a mouse click on the "追加" button.
+document.getElementById('memo-input').addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    const form = document.getElementById('memo-add-form');
+    if (typeof form.requestSubmit === 'function') form.requestSubmit();
+    else form.dispatchEvent(new Event('submit', { cancelable: true }));
+  }
+});
 initMemoPanelResizer();
+// Keep the panel's content in sync when the viewport crosses the
+// WIDE_LAYOUT_MEDIA_QUERY breakpoint (e.g. the memo list wasn't rendered
+// while narrow and closed, but must be populated once it docks open).
+WIDE_LAYOUT_MEDIA_QUERY.addEventListener('change', refreshMemoUI);
 
 // Close modal with ESC key for keyboard accessibility, and provide keyboard
 // shortcuts for hunk navigation: j/k move focus between hunks, Space cycles
@@ -4680,18 +4737,22 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  if (e.key === 'Escape' && isMemoPanelOpen()) {
+  if (e.key === 'Escape' && !WIDE_LAYOUT_MEDIA_QUERY.matches && isMemoPanelOpen()) {
     closeMemoPanel();
     return;
   }
 
   // Don't hijack keys while the user is typing into a form field, while the
-  // file-conflict modal is open, or while the memo panel is open (its close/
-  // delete buttons can hold focus without being an INPUT, which would
-  // otherwise let j/k/Space leak through to hunk navigation behind it).
+  // file-conflict modal is open, or while focus is inside the memo panel
+  // (its close/delete buttons can hold focus without being an INPUT, which
+  // would otherwise let j/k/Space leak through to hunk navigation behind
+  // it). Checking focus rather than isMemoPanelOpen() matters once the panel
+  // is permanently docked open on wide viewports — j/k/Space must still work
+  // for hunk navigation whenever focus isn't actually inside the panel.
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
-  if (isTyping || modalOverlay.classList.contains('active') || isMemoPanelOpen()) return;
+  const focusInMemoPanel = document.getElementById('memo-panel').contains(e.target);
+  if (isTyping || modalOverlay.classList.contains('active') || focusInMemoPanel) return;
 
   if (e.key === 'j') {
     e.preventDefault();
