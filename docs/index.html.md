@@ -425,19 +425,24 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "reviews": {
     "projectId": { "filePath": { "hunkHash": "needs_changes" } }
   },
-  "memos": { ... }
+  "memos": { ... },
+  "keywordCategories": [
+    { "id": "kwcat_...", "keywords": "TODO,FIXME", "color": "#fff000" }
+  ]
 }
 ```
 
 > **注意:** `gitLocalReview_files`（各プロジェクトの diff 本文）はエクスポートに含まれません。インポート後は元の diff ファイルを再度読み込む必要があります。
 
 `importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。`reviews` の値は `sanitizeReviewsData()` / `normalizeReviewStatus()` を経由するため、`schemaVersion: 1` 時代の古いエクスポート（値が真偽値 `true`）もインポート時に自動的に `'approved'` へ変換されます。`schemaVersion` 自体はインポート処理で参照されておらず、あくまで記録用の情報です。
+
+`keywordCategories`（issue #58 で追加、`schemaVersion: 3`）はキーワードハイライトのカテゴリ／色設定（`SK_KEYWORDS`、`loadKeywordCategories()`/`saveKeywordCategories()` 参照）です。`mergeImportedKeywordCategories()` が同じ `id` のカテゴリを上書きし、それ以外の既存カテゴリはそのまま保持します（プロジェクトと同じマージ方針）。`schemaVersion: 2` 以前のエクスポートには `keywordCategories` が存在しませんが、`sanitizeKeywordCategories()` が非配列を空配列として扱うため、インポート時は何もマージされずスキップされるだけで安全です。この処理はプロジェクト件数に依存しないため、インポートするプロジェクトが0件のファイル（例: プロジェクトを読み込む前に自動保存された設定ファイル）でもキーワードカテゴリだけは復元されます。
 
 ---
 

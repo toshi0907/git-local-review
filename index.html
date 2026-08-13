@@ -3948,31 +3948,52 @@ function sanitizeImportedProjects(rawProjects) {
 /**
  * Build the app-data payload shared by manual export and folder-based settings save.
  * schemaVersion 2 (issue #51): `reviews` hunk values changed from a boolean
- * to a status string (see REVIEW_STATUSES). Imports are version-agnostic —
- * sanitizeReviewsData()/normalizeReviewStatus() coerce both the old boolean
- * shape and the new string shape on read, so schemaVersion is informational
- * only and isn't itself checked on import.
+ * to a status string (see REVIEW_STATUSES). schemaVersion 3 (issue #58):
+ * added `keywordCategories` (the SK_KEYWORDS category/color list). Imports
+ * are version-agnostic — sanitizeReviewsData()/normalizeReviewStatus() coerce
+ * both the old boolean shape and the new string shape on read, and
+ * `keywordCategories` is simply absent from pre-#58 exports — so
+ * schemaVersion is informational only and isn't itself checked on import.
  */
 function buildExportData() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
     memos: loadAllMemos(),
+    keywordCategories: loadKeywordCategories(),
   };
 }
 
 /**
- * Merge parsed app-data (projects + reviews) into localStorage: same-ID
- * projects are overwritten, other existing projects are kept. Shared by
- * importAppData() and the settings-folder load flow.
+ * Merge imported keyword categories (issue #58) into localStorage: same-ID
+ * categories are overwritten, other existing categories are kept — same
+ * merge policy as projects in mergeImportedData(). `raw` is absent on
+ * pre-#58 exports, in which case this is a no-op.
+ */
+function mergeImportedKeywordCategories(raw) {
+  const importedCategories = sanitizeKeywordCategories(raw);
+  if (importedCategories.length === 0) return;
+
+  const byId = new Map(loadKeywordCategories().map(c => [c.id, c]));
+  for (const c of importedCategories) byId.set(c.id, c);
+  saveKeywordCategories([...byId.values()]);
+}
+
+/**
+ * Merge parsed app-data (projects + reviews + keyword categories) into
+ * localStorage: same-ID projects/categories are overwritten, other existing
+ * ones are kept. Shared by importAppData() and the settings-folder load flow.
  * @returns {number} number of projects merged in
  */
 function mergeImportedData(data) {
   const importedProjects = sanitizeImportedProjects(data.projects);
   const importedReviews  = sanitizeReviewsData(data.reviews);
   const importedMemos    = sanitizeMemosData(data.memos);
+  // Independent of projects, so merge it even when there's nothing else to import
+  // (e.g. an auto-saved settings file written before any project was loaded).
+  mergeImportedKeywordCategories(data.keywordCategories);
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
