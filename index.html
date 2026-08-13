@@ -132,7 +132,7 @@
       cursor: pointer;
     }
 
-    .memo-toggle-btn {
+    .memo-toggle-btn, .settings-toggle-btn {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -148,8 +148,8 @@
       transition: background 0.15s;
     }
 
-    .memo-toggle-btn:hover { background: #373e47; }
-    .memo-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
+    .memo-toggle-btn:hover, .settings-toggle-btn:hover { background: #373e47; }
+    .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
 
     .memo-badge {
       display: inline-flex;
@@ -1075,6 +1075,43 @@
     }
     .modal-btn-secondary:hover { background: #e7eaef; }
 
+    /* ===== Settings modal (issue #61) ===== */
+    .settings-modal {
+      max-width: 480px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
+    .settings-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px 12px;
+      flex-shrink: 0;
+    }
+
+    .settings-modal-header h2 { margin-bottom: 0; }
+
+    .settings-modal-close {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      font-size: 16px;
+      color: #57606a;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .settings-modal-close:hover { background: #f0f2f5; color: #24292e; }
+
+    .settings-modal-body {
+      overflow-y: auto;
+      padding: 0 24px 24px;
+    }
+
     /* ===== Review memo panel =====
        z-index stays below .drop-overlay (400) so the drag & drop guide is
        never hidden behind the panel while it's open. */
@@ -1306,6 +1343,9 @@
     <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-needs_changes">要修正</label>
     <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-on_hold">保留</label>
   </div>
+  <button type="button" class="settings-toggle-btn" id="settings-modal-open-btn" title="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">⚙️</span> 設定
+  </button>
   <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
     <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
   </button>
@@ -1332,12 +1372,6 @@
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
-      <div class="folder-row" id="open-folder-row">
-        <span class="folder-label">既定のフォルダ:</span>
-        <span class="folder-name" id="open-folder-name">未設定</span>
-        <button type="button" class="folder-btn" id="open-folder-set-btn" title="Diffファイルを開く際の既定のフォルダを設定">選択</button>
-        <button type="button" class="folder-btn" id="open-folder-clear-btn" title="既定のフォルダ設定を解除">解除</button>
-      </div>
       <div class="io-btn-row">
         <input type="file" id="import-input" accept="application/json,.json">
         <button class="io-btn" id="export-btn" title="プロジェクトとレビュー状態をJSONファイルに保存">
@@ -1346,38 +1380,6 @@
         <button class="io-btn" id="import-btn" title="エクスポートしたJSONファイルから復元">
           <span aria-hidden="true">📥</span> インポート
         </button>
-      </div>
-      <div class="settings-save-section" id="settings-save-section">
-        <div class="folder-row" id="settings-folder-row">
-          <span class="folder-label">保存先フォルダ:</span>
-          <span class="folder-name" id="settings-folder-name">未設定</span>
-          <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
-          <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
-        </div>
-        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
-          <span aria-hidden="true">💾</span> 設定を保存
-        </button>
-        <div class="folder-status-msg" id="settings-save-status"></div>
-        <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
-          ⚠️ 保存先フォルダのデータが他の環境で更新されています。
-          <button type="button" class="folder-btn" id="settings-reload-btn">読み込む</button>
-        </div>
-      </div>
-      <div class="encoding-row">
-        <label for="encoding-select">文字コード</label>
-        <select id="encoding-select" title="読み込むdiffファイルの文字コード">
-          <option value="auto">自動判定</option>
-          <option value="utf-8">UTF-8</option>
-          <option value="shift_jis">Shift_JIS</option>
-          <option value="euc-jp">EUC-JP</option>
-        </select>
-      </div>
-      <div class="keyword-row">
-        <div class="keyword-row-header">
-          <label>キーワード（カテゴリ別）</label>
-          <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
-        </div>
-        <div id="keyword-categories" class="keyword-categories"></div>
       </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
@@ -1442,6 +1444,60 @@
       <button class="modal-btn modal-btn-primary" id="modal-btn-update">選択したプロジェクトを更新</button>
     </div>
   </div>
+</div>
+
+<!-- Settings modal (issue #61): consolidates settings previously scattered
+     across the sidebar — default open folder, settings auto-save folder,
+     encoding detection, and keyword categories — behind a single "⚙️ 設定"
+     button, opened/closed independently of the conflict modal above. -->
+<div class="modal-overlay" id="settings-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+  <div class="modal settings-modal">
+    <div class="settings-modal-header">
+      <h2 id="settings-modal-title">⚙️ 設定</h2>
+      <button type="button" class="settings-modal-close" id="settings-modal-close" aria-label="閉じる">✕</button>
+    </div>
+    <div class="settings-modal-body">
+      <div class="folder-row" id="open-folder-row">
+        <span class="folder-label">既定のフォルダ:</span>
+        <span class="folder-name" id="open-folder-name">未設定</span>
+        <button type="button" class="folder-btn" id="open-folder-set-btn" title="Diffファイルを開く際の既定のフォルダを設定">選択</button>
+        <button type="button" class="folder-btn" id="open-folder-clear-btn" title="既定のフォルダ設定を解除">解除</button>
+      </div>
+      <div class="settings-save-section" id="settings-save-section">
+        <div class="folder-row" id="settings-folder-row">
+          <span class="folder-label">保存先フォルダ:</span>
+          <span class="folder-name" id="settings-folder-name">未設定</span>
+          <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
+          <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
+        </div>
+        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
+          <span aria-hidden="true">💾</span> 設定を保存
+        </button>
+        <div class="folder-status-msg" id="settings-save-status"></div>
+        <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
+          ⚠️ 保存先フォルダのデータが他の環境で更新されています。
+          <button type="button" class="folder-btn" id="settings-reload-btn">読み込む</button>
+        </div>
+      </div>
+      <div class="encoding-row">
+        <label for="encoding-select">文字コード</label>
+        <select id="encoding-select" title="読み込むdiffファイルの文字コード">
+          <option value="auto">自動判定</option>
+          <option value="utf-8">UTF-8</option>
+          <option value="shift_jis">Shift_JIS</option>
+          <option value="euc-jp">EUC-JP</option>
+        </select>
+      </div>
+      <div class="keyword-row">
+        <div class="keyword-row-header">
+          <label>キーワード（カテゴリ別）</label>
+          <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
+        </div>
+        <div id="keyword-categories" class="keyword-categories"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -4863,6 +4919,36 @@ modalOverlay.addEventListener('click', (e) => {
   }
 });
 
+// Settings modal (issue #61): consolidates the default-open-folder,
+// settings-auto-save-folder, encoding, and keyword-category controls
+// (moved here from the sidebar) behind a single dialog. Independent of the
+// conflict modal above — its own overlay/backdrop-click/Escape handling.
+const settingsModalOverlay = document.getElementById('settings-modal-overlay');
+
+function isSettingsModalOpen() {
+  return settingsModalOverlay.classList.contains('active');
+}
+
+function openSettingsModal() {
+  settingsModalOverlay.classList.add('active');
+  document.getElementById('settings-modal-open-btn').setAttribute('aria-expanded', 'true');
+}
+
+function closeSettingsModal() {
+  settingsModalOverlay.classList.remove('active');
+  const openBtn = document.getElementById('settings-modal-open-btn');
+  openBtn.setAttribute('aria-expanded', 'false');
+  // Return focus to the trigger button so it doesn't stay stranded on a
+  // now-hidden element inside the modal (e.g. after Escape or a backdrop click).
+  if (settingsModalOverlay.contains(document.activeElement)) openBtn.focus();
+}
+
+document.getElementById('settings-modal-open-btn').addEventListener('click', openSettingsModal);
+document.getElementById('settings-modal-close').addEventListener('click', closeSettingsModal);
+settingsModalOverlay.addEventListener('click', (e) => {
+  if (e.target === settingsModalOverlay) closeSettingsModal();
+});
+
 // Review memo panel: toggle button, close button, backdrop click, and the
 // add-memo form.
 document.getElementById('memo-toggle-btn').addEventListener('click', () => {
@@ -4904,22 +4990,28 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && isSettingsModalOpen()) {
+    closeSettingsModal();
+    return;
+  }
+
   if (e.key === 'Escape' && !WIDE_LAYOUT_MEDIA_QUERY.matches && isMemoPanelOpen()) {
     closeMemoPanel();
     return;
   }
 
   // Don't hijack keys while the user is typing into a form field, while the
-  // file-conflict modal is open, or while focus is inside the memo panel
-  // (its close/delete buttons can hold focus without being an INPUT, which
-  // would otherwise let j/k/Space leak through to hunk navigation behind
-  // it). Checking focus rather than isMemoPanelOpen() matters once the panel
-  // is permanently docked open on wide viewports — j/k/Space must still work
-  // for hunk navigation whenever focus isn't actually inside the panel.
+  // file-conflict or settings modal is open, or while focus is inside the
+  // memo panel (its close/delete buttons can hold focus without being an
+  // INPUT, which would otherwise let j/k/Space leak through to hunk
+  // navigation behind it). Checking focus rather than isMemoPanelOpen()
+  // matters once the panel is permanently docked open on wide viewports —
+  // j/k/Space must still work for hunk navigation whenever focus isn't
+  // actually inside the panel.
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
   const focusInMemoPanel = document.getElementById('memo-panel').contains(e.target);
-  if (isTyping || modalOverlay.classList.contains('active') || focusInMemoPanel) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || focusInMemoPanel) return;
 
   if (e.key === 'j') {
     e.preventDefault();
@@ -5004,8 +5096,8 @@ window.addEventListener('drop', async (e) => {
   dragCounter = 0;
   dropOverlay.classList.remove('active');
 
-  // Avoid stacking a new load on top of an already-open conflict modal.
-  if (modalOverlay.classList.contains('active')) return;
+  // Avoid stacking a new load on top of an already-open conflict or settings modal.
+  if (modalOverlay.classList.contains('active') || isSettingsModalOpen()) return;
 
   const { files, handles } = await filesFromDataTransfer(e.dataTransfer);
   if (files.length === 0) return;
