@@ -4932,6 +4932,10 @@ function isSettingsModalOpen() {
 function openSettingsModal() {
   settingsModalOverlay.classList.add('active');
   document.getElementById('settings-modal-open-btn').setAttribute('aria-expanded', 'true');
+  // Move focus into the dialog (matching the conflict modal's behavior of
+  // focusing its primary button) so keyboard/screen-reader users land inside
+  // it rather than on a now-hidden-behind-the-overlay trigger button.
+  document.getElementById('settings-modal-close').focus();
 }
 
 function closeSettingsModal() {
