@@ -1221,7 +1221,9 @@
       .memo-toggle-btn { display: none; }
 
       .memo-panel {
-        position: static;
+        /* relative (not static) so it stays the containing block for the
+           absolutely-positioned .memo-panel-resizer handle. */
+        position: relative;
         transform: none !important;
         visibility: visible !important;
         box-shadow: none;
@@ -3557,10 +3559,20 @@ function isMemoPanelOpen() {
   return WIDE_LAYOUT_MEDIA_QUERY.matches || document.getElementById('memo-panel').classList.contains('open');
 }
 
-/** Called whenever the active project changes, to keep the badge/panel in sync. */
+/**
+ * Called whenever the active project changes (and on init, and when crossing
+ * the WIDE_LAYOUT_MEDIA_QUERY breakpoint) to keep the badge/panel in sync.
+ * Also keeps aria-hidden correct: while docked open on a wide viewport,
+ * openMemoPanel() is never called (its trigger, #memo-toggle-btn, is
+ * CSS-hidden there), so nothing else clears the markup's default
+ * aria-hidden="true" — without this, assistive tech would treat the
+ * always-visible panel as hidden.
+ */
 function refreshMemoUI() {
+  const open = isMemoPanelOpen();
+  document.getElementById('memo-panel').setAttribute('aria-hidden', open ? 'false' : 'true');
   refreshMemoBadge();
-  if (isMemoPanelOpen()) renderMemoList();
+  if (open) renderMemoList();
 }
 
 function openMemoPanel() {
