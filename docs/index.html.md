@@ -442,7 +442,9 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 `importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。`reviews` の値は `sanitizeReviewsData()` / `normalizeReviewStatus()` を経由するため、`schemaVersion: 1` 時代の古いエクスポート（値が真偽値 `true`）もインポート時に自動的に `'approved'` へ変換されます。`schemaVersion` 自体はインポート処理で参照されておらず、あくまで記録用の情報です。
 
-`keywordCategories`（issue #58 で追加、`schemaVersion: 3`）はキーワードハイライトのカテゴリ／色設定（`SK_KEYWORDS`、`loadKeywordCategories()`/`saveKeywordCategories()` 参照）です。`mergeImportedKeywordCategories()` が同じ `id` のカテゴリを上書きし、それ以外の既存カテゴリはそのまま保持します（プロジェクトと同じマージ方針）。`schemaVersion: 2` 以前のエクスポートには `keywordCategories` が存在しませんが、`sanitizeKeywordCategories()` が非配列を空配列として扱うため、インポート時は何もマージされずスキップされるだけで安全です。この処理はプロジェクト件数に依存しないため、インポートするプロジェクトが0件のファイル（例: プロジェクトを読み込む前に自動保存された設定ファイル）でもキーワードカテゴリだけは復元されます。
+`keywordCategories`（issue #58 で追加、`schemaVersion: 3`）はキーワードハイライトのカテゴリ／色設定（`SK_KEYWORDS`、`loadKeywordCategories()`/`saveKeywordCategories()` 参照）です。`mergeImportedKeywordCategories()` が同じ `id` のカテゴリを上書きし、それ以外の既存カテゴリはそのまま保持します（プロジェクトと同じマージ方針）。`schemaVersion: 2` 以前のエクスポートには `keywordCategories` が存在しませんが、`sanitizeKeywordCategories()` が非配列を空配列として扱うため、インポート時は何もマージされずスキップされるだけで安全です。
+
+`mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
 ---
 
