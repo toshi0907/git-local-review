@@ -85,7 +85,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
-| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定） |
+| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能） |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
@@ -113,7 +113,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
 | **Event listeners** | UI イベントの登録 |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI |
+| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（一致回数カウントの表示・切り替えを含む） |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
@@ -185,7 +185,7 @@ const SK_PROJECT_SORT    = 'gitLocalReview_projectSort';
 const SK_KEYWORDS        = 'gitLocalReview_keywords';
 ```
 
-`SK_KEYWORDS` は JSON エンコードされたカテゴリ配列 `{ id, keywords, color }[]` を保持します（`loadKeywordCategories()` / `saveKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。
+`SK_KEYWORDS` は JSON エンコードされたカテゴリ配列 `{ id, keywords, color, countEnabled }[]` を保持します（`loadKeywordCategories()` / `saveKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。
 
 `SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
 

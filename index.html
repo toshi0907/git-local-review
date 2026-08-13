@@ -361,8 +361,32 @@
 
     .keyword-category-row {
       display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .keyword-category-main {
+      display: flex;
       align-items: center;
       gap: 6px;
+    }
+
+    .keyword-category-count-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding-left: 32px;
+      font-size: 11px;
+      color: #57606a;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .keyword-category-count-toggle { cursor: pointer; }
+
+    .keyword-category-count-badge {
+      font-weight: 600;
+      color: #24292e;
     }
 
     .keyword-category-color {
@@ -1858,7 +1882,12 @@ function generateKeywordCategoryId() {
   return `kwcat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-/** Keep only well-formed category entries; drop anything with an unexpected shape. */
+/**
+ * Keep only well-formed category entries; drop anything with an unexpected shape.
+ * `countEnabled` (issue #59) toggles whether this category's keyword-match
+ * count is shown; it defaults to false so pre-#59 data (and new categories)
+ * don't start counting unasked.
+ */
 function sanitizeKeywordCategories(rawCategories) {
   if (!Array.isArray(rawCategories)) return [];
   const result = [];
@@ -1866,7 +1895,8 @@ function sanitizeKeywordCategories(rawCategories) {
     if (!c || typeof c !== 'object' || typeof c.keywords !== 'string') continue;
     const color = typeof c.color === 'string' && /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : DEFAULT_KEYWORD_COLOR;
     const id = typeof c.id === 'string' && c.id ? c.id : generateKeywordCategoryId();
-    result.push({ id, keywords: c.keywords, color });
+    const countEnabled = c.countEnabled === true;
+    result.push({ id, keywords: c.keywords, color, countEnabled });
   }
   return result;
 }
@@ -1893,7 +1923,7 @@ function loadKeywordCategories() {
   // subsequent loads — otherwise every loadKeywordCategories() call would
   // mint a new id and break edits/deletes for these rows (they look up the
   // category by an id from a previous load).
-  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR }];
+  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false }];
   saveKeywordCategories(migrated);
   return migrated;
 }
@@ -1970,6 +2000,33 @@ function findRawKeywordRanges(text, keywords) {
     }
   }
   return mergeRanges(ranges);
+}
+
+/**
+ * Counts how many times a category's keywords occur across every line of the
+ * currently loaded diff (app.parsedDiff), regardless of the active review
+ * filter — this reflects "全差分" (issue #59), not just the currently
+ * rendered/filtered subset. Reuses findRawKeywordRanges() (case-insensitive,
+ * merged/non-overlapping) per line, so it counts the same matches
+ * applyKeywordHighlight() would find for this category on its own — unlike
+ * findKeywordRanges(), there's no cross-category overlap trimming here since
+ * each category's count is independent of the others.
+ * @param {string[]} keywords
+ * @returns {number}
+ */
+function countKeywordMatches(keywords) {
+  if (!keywords || keywords.length === 0 || !app.parsedDiff) return 0;
+  let total = 0;
+  for (const file of app.parsedDiff) {
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.startsWith('\\')) continue; // "\ No newline at end of file" marker, not diff content
+        const content = line.length > 1 ? line.slice(1) : '';
+        total += findRawKeywordRanges(content, keywords).length;
+      }
+    }
+  }
+  return total;
 }
 
 // Subtracts `claimed` (sorted, non-overlapping) intervals from `ranges`
@@ -2875,6 +2932,7 @@ function renderDiff() {
     clearOverallProgress();
     app.focusedHunkIndex = -1;
     renderStatSummary(null);
+    refreshKeywordCounts();
     return;
   }
 
@@ -2963,6 +3021,7 @@ function renderDiff() {
   }
 
   setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
+  refreshKeywordCounts();
 
   // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
   // (the previous focus index may point at an element that no longer exists).
@@ -4876,9 +4935,18 @@ window.addEventListener('drop', async (e) => {
 // list immediately (no debounce needed, and no in-progress input to lose
 // focus on).
 // ─────────────────────────────────────────────────────────────────────────────
+/** Count badge text for a category row: empty unless counting is on and a diff is loaded. */
+function keywordCategoryCountBadgeText(category) {
+  if (!category.countEnabled || !app.parsedDiff) return '';
+  return `${countKeywordMatches(parseKeywords(category.keywords))}件`;
+}
+
 function buildKeywordCategoryRow(category) {
   const row = document.createElement('div');
   row.className = 'keyword-category-row';
+
+  const main = document.createElement('div');
+  main.className = 'keyword-category-main';
 
   const colorInput = document.createElement('input');
   colorInput.type = 'color';
@@ -4909,9 +4977,38 @@ function buildKeywordCategoryRow(category) {
   removeBtn.textContent = '×';
   removeBtn.addEventListener('click', () => deleteKeywordCategory(category.id));
 
-  row.appendChild(colorInput);
-  row.appendChild(keywordsInput);
-  row.appendChild(removeBtn);
+  main.appendChild(colorInput);
+  main.appendChild(keywordsInput);
+  main.appendChild(removeBtn);
+
+  // Count toggle (issue #59): per-category opt-in match counter across the
+  // whole loaded diff, e.g. "TODO はカウントする、NOTE はカウントしない".
+  const countRow = document.createElement('label');
+  countRow.className = 'keyword-category-count-row';
+  countRow.title = '登録したキーワードが全差分内で一致した回数をカウントします';
+
+  const countToggle = document.createElement('input');
+  countToggle.type = 'checkbox';
+  countToggle.className = 'keyword-category-count-toggle';
+  countToggle.checked = !!category.countEnabled;
+  countToggle.setAttribute('aria-label', 'このカテゴリの一致回数をカウントする');
+
+  const countBadge = document.createElement('span');
+  countBadge.className = 'keyword-category-count-badge';
+  countBadge.dataset.categoryId = category.id;
+  countBadge.textContent = keywordCategoryCountBadgeText(category);
+
+  countToggle.addEventListener('change', () => {
+    updateKeywordCategory(category.id, { countEnabled: countToggle.checked });
+    countBadge.textContent = keywordCategoryCountBadgeText({ ...category, countEnabled: countToggle.checked });
+  });
+
+  countRow.appendChild(countToggle);
+  countRow.appendChild(document.createTextNode('カウント'));
+  countRow.appendChild(countBadge);
+
+  row.appendChild(main);
+  row.appendChild(countRow);
   return row;
 }
 
@@ -4931,10 +5028,22 @@ function renderKeywordCategoryList() {
   }
 }
 
+/**
+ * Recomputes and updates every rendered category's count badge in place
+ * (without rebuilding the rows/losing focus). Called after renderDiff() so
+ * counts stay in sync whenever the loaded diff changes.
+ */
+function refreshKeywordCounts() {
+  for (const category of loadKeywordCategories()) {
+    const badge = document.querySelector(`.keyword-category-count-badge[data-category-id="${category.id}"]`);
+    if (badge) badge.textContent = keywordCategoryCountBadgeText(category);
+  }
+}
+
 function addKeywordCategory() {
   const categories = loadKeywordCategories();
   const color = KEYWORD_CATEGORY_COLOR_PALETTE[categories.length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
-  categories.push({ id: generateKeywordCategoryId(), keywords: '', color });
+  categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false });
   saveKeywordCategories(categories);
   renderKeywordCategoryList();
 }
