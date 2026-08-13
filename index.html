@@ -87,23 +87,24 @@
     .view-mode-btn:hover:not(.active) { background: #373e47; }
     .view-mode-btn.active { background: #58a6ff; color: #0b1116; }
 
-    .filter-select-label {
+    .filter-checkbox-group {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 10px;
       font-size: 13px;
       color: #c9d1d9;
       user-select: none;
       white-space: nowrap;
     }
 
-    .filter-select-label select {
-      padding: 3px 6px;
-      border: 1px solid #444c56;
-      border-radius: 5px;
-      background: #2d333b;
-      color: #c9d1d9;
-      font-size: 12px;
+    .filter-checkbox-group-label {
+      white-space: nowrap;
+    }
+
+    .filter-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       cursor: pointer;
     }
 
@@ -1226,14 +1227,13 @@
     <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
     <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
   </div>
-  <label class="filter-select-label" for="review-filter-select">
-    表示:
-    <select id="review-filter-select" title="表示するハンクをレビュー状態で絞り込みます">
-      <option value="all">すべて表示</option>
-      <option value="unreviewed">未レビューのみ表示</option>
-      <option value="needs_changes">要修正のみ表示</option>
-    </select>
-  </label>
+  <div class="filter-checkbox-group" id="review-filter-group" role="group" aria-label="表示するハンクをレビュー状態で絞り込みます">
+    <span class="filter-checkbox-group-label">表示:</span>
+    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-unreviewed">未レビュー</label>
+    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-approved">承認</label>
+    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-needs_changes">要修正</label>
+    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-on_hold">保留</label>
+  </div>
   <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
     <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
   </button>
@@ -1391,7 +1391,26 @@ const REVIEW_STATUSES = [
   { value: 'on_hold',       label: '保留',   icon: '⏸', key: '3' },
 ];
 const VALID_REVIEW_STATUS_VALUES = REVIEW_STATUSES.map(s => s.value);
-const VALID_REVIEW_FILTERS = ['all', 'unreviewed', 'needs_changes'];
+
+/**
+ * Review-filter checkbox keys shown in the top bar (issue #56). 'unreviewed'
+ * represents hunks with no stored status; the rest match REVIEW_STATUSES'
+ * values. app.reviewFilter is a { [key]: boolean } map — a hunk is shown
+ * when the key matching its status is true (OR across all checked keys).
+ */
+const REVIEW_FILTER_KEYS = ['unreviewed', ...VALID_REVIEW_STATUS_VALUES];
+
+/** All review-filter checkboxes checked = no filtering applied. */
+function defaultReviewFilter() {
+  const filter = Object.create(null);
+  for (const key of REVIEW_FILTER_KEYS) filter[key] = true;
+  return filter;
+}
+
+/** Whether any review-filter checkbox is unchecked (i.e. filtering is in effect). */
+function isReviewFilterActive(filter) {
+  return REVIEW_FILTER_KEYS.some(key => !filter[key]);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application state
@@ -1405,7 +1424,7 @@ const app = {
   fileProgressEls: new Map(),
   /** @type {'unified'|'split'} Current diff view mode ('split' = side-by-side) */
   viewMode: 'unified',
-  /** @type {'all'|'unreviewed'|'needs_changes'} Which hunks renderDiff() shows; see loadReviewFilter() */
+  /** @type {{[key: string]: boolean}} Which review-status hunks renderDiff() shows, keyed by REVIEW_FILTER_KEYS; see loadReviewFilter() */
   reviewFilter: loadReviewFilter(),
   /** Index into the flat, document-order list of currently rendered hunk cards
    *  that has keyboard focus (j/k to move, Space to cycle its review status). -1 = none. */
@@ -1413,36 +1432,57 @@ const app = {
 };
 
 /**
- * Read the diff-list review filter from localStorage (defaults to 'all').
- * Migrates the pre-#51 boolean-only "未レビューのみ表示" toggle on first read,
- * writing the migrated value to SK_REVIEW_FILTER and removing the legacy key
- * so the migration only needs to run once, not on every page load.
+ * Read the diff-list review filter checkboxes from localStorage (defaults to
+ * all keys checked, i.e. no filtering). Migrates two older formats on first
+ * read, writing the migrated value back to SK_REVIEW_FILTER so migration
+ * only needs to run once, not on every page load:
+ *  - pre-#56 single-select string ('all' | 'unreviewed' | 'needs_changes')
+ *  - pre-#51 boolean-only "未レビューのみ表示" toggle (SK_UNREVIEWED_ONLY_LEGACY)
  */
 function loadReviewFilter() {
   try {
-    const v = localStorage.getItem(SK_REVIEW_FILTER);
-    if (VALID_REVIEW_FILTERS.includes(v)) return v;
+    const raw = localStorage.getItem(SK_REVIEW_FILTER);
+    if (raw === 'all' || raw === 'unreviewed' || raw === 'needs_changes') {
+      const migrated = defaultReviewFilter();
+      if (raw !== 'all') {
+        for (const key of REVIEW_FILTER_KEYS) migrated[key] = (key === raw);
+      }
+      saveReviewFilter(migrated);
+      return migrated;
+    }
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const filter = defaultReviewFilter();
+        for (const key of REVIEW_FILTER_KEYS) {
+          if (typeof parsed[key] === 'boolean') filter[key] = parsed[key];
+        }
+        return filter;
+      }
+    }
   } catch (e) {
     console.error('Failed to load review filter preference:', e);
-    return 'all';
+    return defaultReviewFilter();
   }
 
   try {
     if (localStorage.getItem(SK_UNREVIEWED_ONLY_LEGACY) === '1') {
-      saveReviewFilter('unreviewed');
+      const migrated = defaultReviewFilter();
+      for (const key of REVIEW_FILTER_KEYS) migrated[key] = (key === 'unreviewed');
+      saveReviewFilter(migrated);
       localStorage.removeItem(SK_UNREVIEWED_ONLY_LEGACY);
-      return 'unreviewed';
+      return migrated;
     }
   } catch (e) {
     console.error('Failed to migrate legacy review filter preference:', e);
   }
-  return 'all';
+  return defaultReviewFilter();
 }
 
-/** Persist the diff-list review filter. */
+/** Persist the diff-list review filter checkboxes. */
 function saveReviewFilter(filter) {
   try {
-    localStorage.setItem(SK_REVIEW_FILTER, filter);
+    localStorage.setItem(SK_REVIEW_FILTER, JSON.stringify(filter));
   } catch (e) {
     console.error('Failed to save review filter preference:', e);
   }
@@ -2813,7 +2853,7 @@ function renderDiff() {
   const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
 
   const filter = app.reviewFilter;
-  const filterActive = filter !== 'all';
+  const filterActive = isReviewFilterActive(filter);
   let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
   let renderedSections = 0;
 
@@ -2880,11 +2920,12 @@ function renderDiff() {
   if (filterActive && renderedSections === 0) {
     const msg = document.createElement('div');
     msg.className = 'empty-state';
-    if (filter === 'needs_changes') {
+    const onlyNeedsChanges = filter.needs_changes && !filter.unreviewed && !filter.approved && !filter.on_hold;
+    if (onlyNeedsChanges) {
       msg.innerHTML = '<span class="icon" aria-hidden="true">🎉</span>「要修正」のハンクはありません';
     } else {
       msg.innerHTML = totalHunks > 0
-        ? '<span class="icon" aria-hidden="true">🎉</span>すべてのハンクがレビュー済みです'
+        ? '<span class="icon" aria-hidden="true">🎉</span>フィルタ条件に一致するハンクはありません'
         : '<span class="icon" aria-hidden="true">📄</span>表示できるハンクがありません';
     }
     container.appendChild(msg);
@@ -2900,12 +2941,11 @@ function renderDiff() {
 /**
  * Whether a hunk with the given review status should be shown under the
  * current review filter. `status` is one of REVIEW_STATUSES' values, or
- * null/undefined for "unreviewed".
+ * null/undefined for "unreviewed". `filter` is an app.reviewFilter-shaped
+ * { [key]: boolean } map.
  */
 function hunkPassesReviewFilter(status, filter) {
-  if (filter === 'unreviewed') return !status;
-  if (filter === 'needs_changes') return status === 'needs_changes';
-  return true; // 'all'
+  return !!filter[status || 'unreviewed'];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3280,7 +3320,7 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
   }
   setHunkCollapsedState(card, newStatus === 'approved');
 
-  if (app.reviewFilter !== 'all') {
+  if (isReviewFilterActive(app.reviewFilter)) {
     // The review filter needs hunks/files to appear or disappear
     // immediately, so re-run the full render rather than a lightweight update.
     renderDiff();
@@ -4847,13 +4887,15 @@ document.getElementById('keyword-category-add-btn').addEventListener('click', ad
   app.viewMode = loadViewMode();
   updateViewModeButtons();
 
-  const reviewFilterSelect = document.getElementById('review-filter-select');
-  reviewFilterSelect.value = app.reviewFilter;
-  reviewFilterSelect.addEventListener('change', () => {
-    app.reviewFilter = reviewFilterSelect.value;
-    saveReviewFilter(app.reviewFilter);
-    renderDiff();
-  });
+  for (const key of REVIEW_FILTER_KEYS) {
+    const checkbox = document.getElementById(`review-filter-${key}`);
+    checkbox.checked = !!app.reviewFilter[key];
+    checkbox.addEventListener('change', () => {
+      app.reviewFilter[key] = checkbox.checked;
+      saveReviewFilter(app.reviewFilter);
+      renderDiff();
+    });
+  }
 
   document.getElementById('project-sort-select').value = loadProjectSort();
   await refreshHandleIndex();

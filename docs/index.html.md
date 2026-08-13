@@ -160,7 +160,7 @@ test/                ← テスト用 .diff サンプルファイル
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
           ├─ collapsed は status === 'approved' のときだけ true に
-          └─ app.reviewFilter === 'all' なら refreshProgress() のみ、
+          └─ isReviewFilterActive(app.reviewFilter) が false（全チェックON）なら refreshProgress() のみ、
              それ以外はハンクの表示/非表示が変わるため renderDiff() 全体を再実行
 ```
 
@@ -188,7 +188,7 @@ const SK_KEYWORDS        = 'gitLocalReview_keywords';
 
 `SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
 
-`SK_REVIEW_FILTER` は `'all' | 'unreviewed' | 'needs_changes'` のいずれかです。#51 で追加され、それ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは初回読み込み時に `'unreviewed'`（`true` の場合）または `'all'` へ移行されます（`loadReviewFilter()`）。
+`SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のときはフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
 
 ---
 
@@ -202,7 +202,7 @@ const app = {
   parsedDiff: null,          // parseDiff() の戻り値（構造化 diff データ）
   fileProgressEls: new Map(),// filePath → <span> 要素（進捗バッジ）
   viewMode: 'unified',       // 'unified' | 'split'
-  reviewFilter: 'all',       // 'all' | 'unreviewed' | 'needs_changes'（表示するハンクの絞り込み）
+  reviewFilter: { unreviewed: true, approved: true, needs_changes: true, on_hold: true }, // 表示するハンクをステータス別に絞り込むチェックボックス群の状態
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
 ```
@@ -338,8 +338,8 @@ renderDiff()
   ├─ app.parsedDiff が null → 空状態表示して終了
   │
   ├─ for each file:
-  │     ├─ app.reviewFilter !== 'all' かつ、絞り込み条件に合うハンクが1つも無い → ファイルごとスキップ
-  │     │  （'unreviewed' = 未レビューのハンクのみ表示 / 'needs_changes' = 要修正のみ表示）
+  │     ├─ isReviewFilterActive(filter) が true かつ、絞り込み条件に合うハンクが1つも無い → ファイルごとスキップ
+  │     │  （表示フィルタのチェックボックス「未レビュー/承認/要修正/保留」で選ばれたステータスのみ表示）
   │     ├─ file-section > file-header を生成
   │     └─ for each hunk:
   │           ├─ hunkPassesReviewFilter(status, filter) が false → スキップ
