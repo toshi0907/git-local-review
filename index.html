@@ -5000,7 +5000,10 @@ function buildKeywordCategoryRow(category) {
 
   countToggle.addEventListener('change', () => {
     updateKeywordCategory(category.id, { countEnabled: countToggle.checked });
-    countBadge.textContent = keywordCategoryCountBadgeText({ ...category, countEnabled: countToggle.checked });
+    // Use keywordsInput.value (not category.keywords, which is a snapshot from
+    // when this row was built) so a keyword edited just before toggling counts
+    // with the current text rather than briefly showing a stale count.
+    countBadge.textContent = keywordCategoryCountBadgeText({ keywords: keywordsInput.value, countEnabled: countToggle.checked });
   });
 
   countRow.appendChild(countToggle);
@@ -5034,8 +5037,16 @@ function renderKeywordCategoryList() {
  * counts stay in sync whenever the loaded diff changes.
  */
 function refreshKeywordCounts() {
+  // Match badges by dataset.categoryId in JS rather than interpolating
+  // category.id into a querySelector() string — ids can come from imported
+  // JSON (sanitizeKeywordCategories() accepts any non-empty string), and one
+  // containing '"' or ']' would otherwise throw a DOMException.
+  const badgesById = new Map();
+  for (const el of document.querySelectorAll('.keyword-category-count-badge')) {
+    badgesById.set(el.dataset.categoryId, el);
+  }
   for (const category of loadKeywordCategories()) {
-    const badge = document.querySelector(`.keyword-category-count-badge[data-category-id="${category.id}"]`);
+    const badge = badgesById.get(category.id);
     if (badge) badge.textContent = keywordCategoryCountBadgeText(category);
   }
 }
