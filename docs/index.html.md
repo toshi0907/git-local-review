@@ -62,10 +62,11 @@ test/                ← テスト用 .diff サンプルファイル
     <div id="app">
       <aside id="sidebar">      ← 左サイドバー（プロジェクト一覧・設定）
       <main id="main">
-        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・進捗）
+        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・進捗。実装では class="topbar"）
+        <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）
         <div id="diff-container"> ← diff 表示エリア（JS で動的生成）
         <div id="empty-state">  ← 未読み込み時の案内テキスト
-      <aside id="memo-panel">   ← レビューメモパネル（狭い画面はスライドオーバーレイ、
+      <aside class="memo-panel" id="memo-panel">   ← レビューメモパネル（狭い画面はスライドオーバーレイ、
                                    1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
     <script>                    ← highlight.js (minified, インライン)
@@ -108,7 +109,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |
 | **Export / Import** | JSON エクスポート / インポート |
-| **Settings folder** | 設定フォルダへの自動保存・読み込み |
+| **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
 | **Conflict modal** | ファイル名衝突ダイアログ |
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
 | **Event listeners** | UI イベントの登録 |
@@ -486,12 +487,23 @@ diff 読み込み / レビュー変更 / プロジェクト削除
                 │
                 └─ autoSaveSettingsToFolder()
                       │
-                      ├─ 外部変更チェック（前回保存ハッシュと比較）
-                      │     └─ 変更あり → 上書きをスキップして通知
+                      ├─ 書き込み権限チェック（未許可） → showAutoSaveWarning() で警告表示、終了
+                      ├─ 外部変更チェック（settingsFileKnownModified に保持している前回の mtime と比較）
+                      │     └─ 変更あり → 上書きをスキップして通知（showSettingsExternalUpdateNotice()）
                       └─ buildExportData() → git-local-review-settings.json に書き込み
+                            ├─ 成功 → hideAutoSaveWarning()
+                            └─ 例外 → showAutoSaveWarning()
 ```
 
 外部変更の検知は `startSettingsExternalChangeWatcher()` が 1 分ごとに行います。
+
+**自動保存状態の警告（issue #60）:** `#autosave-warning-banner`（トップバー直下・画面上部に常時表示可能なバナー）は、保存先フォルダが設定されているにもかかわらず自動保存が実行できていない場合（書き込み権限が許可されていない、または書き込み時に例外が発生した場合）に表示されます。`showAutoSaveWarning(message)` / `hideAutoSaveWarning()` が表示・非表示とメッセージ文言を切り替え、バナーが占める高さ（`AUTOSAVE_WARNING_HEIGHT_PX`）は CSS カスタムプロパティ `--autosave-warning-height` 経由で `.layout` の高さ計算に反映されます。以下の経路で状態が更新されます。
+
+- `autoSaveSettingsToFolder()`: 書き込み権限が無い、または書き込みが例外で失敗した場合に表示。成功時は非表示
+- `saveSettingsToFolder()`（サイドバーの「設定を保存」ボタンによる手動保存）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
+- `refreshSettingsFolderUI()`: フォルダ選択・解除時、および `init()` 起動時に、実際の保存試行を待たずプロアクティブに書き込み権限を確認し、表示状態を同期
+
+このバナーは「保存先フォルダが未設定」の場合や、外部変更検知による意図的なスキップ（`showSettingsExternalUpdateNotice()` が既に専用の通知とアクションを提供している）では表示されません。前者は警告対象外、後者は失敗ではなく想定内の一時停止のためです。
 
 ---
 

@@ -63,6 +63,30 @@
 
     #overall-progress.has-progress { color: #58a6ff; }
 
+    /* ===== Auto-save failure warning (issue #60) ===== */
+    .autosave-warning-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 32px;
+      padding: 0 20px;
+      background: #7d4e00;
+      color: #fff;
+      font-size: 13px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 50px;
+      z-index: 190;
+    }
+
+    #autosave-warning-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
     .view-mode-toggle {
       display: flex;
       border: 1px solid #444c56;
@@ -148,7 +172,7 @@
       display: flex;
       flex: 1;
       overflow: hidden;
-      height: calc(100vh - 50px);
+      height: calc(100vh - 50px - var(--autosave-warning-height, 0px));
     }
 
     /* ===== Sidebar ===== */
@@ -1288,6 +1312,16 @@
   <span id="overall-progress"></span>
 </div>
 
+<!-- Auto-save failure warning (issue #60): shown only while a settings
+     auto-save folder is configured AND the last save attempt (or a
+     proactive permission check) failed. Not shown for "no folder
+     configured" or for the external-change notice, which already has its
+     own dedicated sidebar notice/action. -->
+<div class="autosave-warning-banner" id="autosave-warning-banner" role="alert" style="display:none;">
+  <span aria-hidden="true">⚠️</span>
+  <span id="autosave-warning-text">保存先フォルダへの自動保存に失敗しています。</span>
+</div>
+
 <!-- Main layout -->
 <div class="layout">
 
@@ -2278,6 +2312,8 @@ const SETTINGS_FILE_NAME  = 'git-local-review-settings.json';
 const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 1500;
 /** How often to poll the settings file for edits made from another environment. */
 const SETTINGS_EXTERNAL_CHECK_INTERVAL_MS = 60000;
+/** Height (px) the top-of-page auto-save warning banner occupies when visible; kept in sync with .autosave-warning-banner's CSS height. */
+const AUTOSAVE_WARNING_HEIGHT_PX = 32;
 
 /**
  * mtime (ms) of the settings file as last seen by this tab, because we
@@ -4136,6 +4172,17 @@ async function refreshSettingsFolderUI() {
   const handle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
   nameEl.textContent = handle ? handle.name : '未設定';
   nameEl.title = handle ? handle.name : '';
+
+  // Proactively surface the auto-save warning (issue #60) as soon as we know
+  // a folder is configured but write permission isn't currently granted —
+  // rather than waiting for the next debounced auto-save attempt to notice.
+  if (!handle) {
+    hideAutoSaveWarning();
+  } else if (!(await verifyHandlePermission(handle, 'readwrite', /* requestIfNeeded */ false))) {
+    showAutoSaveWarning('保存先フォルダへの書き込みアクセスが許可されていません。自動保存は実行されません。');
+  } else {
+    hideAutoSaveWarning();
+  }
 }
 
 /** mtime (ms) of the settings file in `dirHandle`, or null if it doesn't exist. */
@@ -4158,6 +4205,34 @@ function showSettingsExternalUpdateNotice() {
 function hideSettingsExternalUpdateNotice() {
   const el = document.getElementById('settings-external-update-notice');
   if (el) el.style.display = 'none';
+}
+
+/**
+ * Top-of-page warning (issue #60), shown only while a settings auto-save
+ * folder is configured AND auto-save isn't actually able to run — write
+ * permission was lost/never granted, or the last write attempt threw. It is
+ * deliberately separate from showSettingsExternalUpdateNotice() above: an
+ * externally-changed file is an intentional, already-explained skip (its own
+ * sidebar notice tells the user why and offers a "読み込む" action), not a
+ * failure to warn about here.
+ */
+function showAutoSaveWarning(message) {
+  const banner = document.getElementById('autosave-warning-banner');
+  const textEl = document.getElementById('autosave-warning-text');
+  if (textEl) {
+    textEl.textContent = message;
+    // The text is truncated with an ellipsis on narrow viewports/long
+    // messages (e.g. an error's message text) — title exposes the full text.
+    textEl.title = message;
+  }
+  if (banner) banner.style.display = 'flex';
+  document.documentElement.style.setProperty('--autosave-warning-height', `${AUTOSAVE_WARNING_HEIGHT_PX}px`);
+}
+
+function hideAutoSaveWarning() {
+  const banner = document.getElementById('autosave-warning-banner');
+  if (banner) banner.style.display = 'none';
+  document.documentElement.style.setProperty('--autosave-warning-height', '0px');
 }
 
 /** Write current projects + review state to the settings file in the chosen folder. */
@@ -4184,6 +4259,7 @@ async function saveSettingsToFolder() {
     await writable.close();
     settingsFileKnownModified = (await fileHandle.getFile()).lastModified;
     hideSettingsExternalUpdateNotice();
+    hideAutoSaveWarning();
     if (statusEl) {
       const stamp = new Date().toLocaleString('ja-JP', {
         year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -4193,6 +4269,10 @@ async function saveSettingsToFolder() {
   } catch (err) {
     console.error('Failed to save settings to folder', err);
     alert(`設定の保存に失敗しました:\n${err.message}`);
+    // A manual save uses the same write path auto-save does, so a failure
+    // here means auto-save would fail the same way — keep the top warning
+    // up as a persistent reminder beyond this one-time alert.
+    showAutoSaveWarning(`保存先フォルダへの自動保存に失敗しています（${err.message}）。`);
   }
 }
 
@@ -4221,12 +4301,17 @@ function scheduleSettingsAutoSave() {
 async function autoSaveSettingsToFolder() {
   const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
   if (!dirHandle) return;
-  if (!(await verifyHandlePermission(dirHandle, 'readwrite', /* requestIfNeeded */ false))) return;
+  if (!(await verifyHandlePermission(dirHandle, 'readwrite', /* requestIfNeeded */ false))) {
+    showAutoSaveWarning('保存先フォルダへの書き込みアクセスが許可されていません。自動保存は実行されません。');
+    return;
+  }
 
   const currentModified = await statSettingsFile(dirHandle);
   if (currentModified !== settingsFileKnownModified) {
     // Covers both "changed since we last saw it" and "we've never seen it
-    // but it now exists" (e.g. another environment created it first).
+    // but it now exists" (e.g. another environment created it first). This
+    // is an intentional, already-explained skip (see showSettingsExternalUpdateNotice()),
+    // not a failure, so it doesn't trigger showAutoSaveWarning().
     showSettingsExternalUpdateNotice();
     return;
   }
@@ -4238,6 +4323,7 @@ async function autoSaveSettingsToFolder() {
     await writable.close();
     settingsFileKnownModified = (await fileHandle.getFile()).lastModified;
     hideSettingsExternalUpdateNotice();
+    hideAutoSaveWarning();
     const statusEl = document.getElementById('settings-save-status');
     if (statusEl) {
       const stamp = new Date().toLocaleString('ja-JP', {
@@ -4247,6 +4333,7 @@ async function autoSaveSettingsToFolder() {
     }
   } catch (err) {
     console.error('Failed to auto-save settings to folder', err);
+    showAutoSaveWarning(`保存先フォルダへの自動保存に失敗しています（${err.message}）。`);
   }
 }
 
