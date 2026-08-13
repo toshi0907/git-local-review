@@ -60,15 +60,18 @@ test/                ← テスト用 .diff サンプルファイル
     <style>                     ← アプリ全体の CSS
   <body>
     <div id="app">
-      <aside id="sidebar">      ← 左サイドバー（プロジェクト一覧・設定）
+      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・エクスポート/インポート・プロジェクト一覧。
+                                   設定項目は #61 で設定モーダルへ移動済み）
       <main id="main">
-        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・進捗。実装では class="topbar"）
+        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）
         <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）
         <div id="diff-container"> ← diff 表示エリア（JS で動的生成）
         <div id="empty-state">  ← 未読み込み時の案内テキスト
       <aside class="memo-panel" id="memo-panel">   ← レビューメモパネル（狭い画面はスライドオーバーレイ、
                                    1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
+    <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（既定のフォルダ・保存先フォルダ・
+                                   文字コード・キーワードカテゴリをまとめて表示。#61）
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
 ```
@@ -112,7 +115,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
 | **Conflict modal** | ファイル名衝突ダイアログ |
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| **Event listeners** | UI イベントの登録 |
+| **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
 | **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（一致回数カウントの表示・切り替えを含む） |
 | **Initialise** | `init()` — 起動時初期化 |
@@ -500,7 +503,7 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 **自動保存状態の警告（issue #60）:** `#autosave-warning-banner`（トップバー直下・画面上部に常時表示可能なバナー）は、保存先フォルダが設定されているにもかかわらず自動保存が実行できていない場合（書き込み権限が許可されていない、または書き込み時に例外が発生した場合）に表示されます。`showAutoSaveWarning(message)` / `hideAutoSaveWarning()` が表示・非表示とメッセージ文言を切り替え、バナーが占める高さ（`AUTOSAVE_WARNING_HEIGHT_PX`）は CSS カスタムプロパティ `--autosave-warning-height` 経由で `.layout` の高さ計算に反映されます。以下の経路で状態が更新されます。
 
 - `autoSaveSettingsToFolder()`: 書き込み権限が無い、または書き込みが例外で失敗した場合に表示。成功時は非表示
-- `saveSettingsToFolder()`（サイドバーの「設定を保存」ボタンによる手動保存）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
+- `saveSettingsToFolder()`（設定モーダル内の「設定を保存」ボタンによる手動保存。#61 でサイドバーからモーダルへ移動）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
 - `refreshSettingsFolderUI()`: フォルダ選択・解除時、および `init()` 起動時に、実際の保存試行を待たずプロアクティブに書き込み権限を確認し、表示状態を同期
 
 このバナーは「保存先フォルダが未設定」の場合や、外部変更検知による意図的なスキップ（`showSettingsExternalUpdateNotice()` が既に専用の通知とアクションを提供している）では表示されません。前者は警告対象外、後者は失敗ではなく想定内の一時停止のためです。
@@ -693,6 +696,14 @@ diff 行                旧ファイル列       新ファイル列
 ### レビュー状態の構造を変更する
 
 `REVIEW_STATUSES` / `VALID_REVIEW_STATUS_VALUES`、`normalizeReviewStatus()`、`sanitizeReviewsData()` のバリデーションロジックを同時に変更してください。`setHunkReviewStatus()` / `buildHunkCard()`（ステータスボタン生成・カードの `status-*` クラス）、`renderDiff()` の `hunkPassesReviewFilter()`、`refreshProgress()` / `setOverallProgress()` の集計ロジックも合わせて確認が必要です。旧形式からの移行が必要な場合は `normalizeReviewStatus()` に変換ルールを追加し、`buildExportData()` の `schemaVersion` を上げて変更点をコメントに残すと良いでしょう（`schemaVersion` 自体はインポート時に参照されず記録用です）。
+
+### 設定モーダルへ新しい設定項目を追加する（issue #61）
+
+既定のフォルダ・保存先フォルダ・文字コード・キーワードカテゴリの設定 UI は `#settings-modal-overlay`（`.settings-modal-body` 内）にまとまっています。新しい設定項目を追加する場合:
+
+1. 対象の要素（行）を `.settings-modal-body` 内に追加する。既存要素は `id` をそのまま維持しているため、対応するイベントリスナーは DOM 上の位置に関わらずそのまま動作する（`getElementById()` ベースのため）
+2. モーダルの開閉自体は `openSettingsModal()` / `closeSettingsModal()` / `isSettingsModalOpen()` が管理しており、新しい設定項目側で個別に開閉処理を書く必要はない
+3. モーダルを開いた状態でキーボードショートカット（j/k/Space 等）や Escape キーが正しく無効化/有効化されるかは、`isSettingsModalOpen()` を参照している箇所（`keydown` リスナー、ドラッグ&ドロップの読み込みガード）で担保されている。新しい設定項目の追加だけであれば、通常この部分の変更は不要
 
 ---
 
