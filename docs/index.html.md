@@ -160,7 +160,7 @@ test/                ← テスト用 .diff サンプルファイル
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
           ├─ collapsed は status === 'approved' のときだけ true に
-          └─ isReviewFilterActive(app.reviewFilter) が false（全チェックON）なら refreshProgress() のみ、
+          └─ isReviewFilterActive(app.reviewFilter) が false（全チェックON、または全チェックOFF）なら refreshProgress() のみ、
              それ以外はハンクの表示/非表示が変わるため renderDiff() 全体を再実行
 ```
 
@@ -188,7 +188,7 @@ const SK_KEYWORDS        = 'gitLocalReview_keywords';
 
 `SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
 
-`SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のときはフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
+`SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のとき、および全キーが `false`（何もチェックしていない状態）のときは、いずれもフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
 
 ---
 
