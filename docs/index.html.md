@@ -513,7 +513,7 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 - `autoSaveSettingsToFolder()`: 書き込み権限が無い、または書き込みが例外で失敗した場合に表示。成功時は非表示
 - `saveSettingsToFolder()`（設定モーダル内の「設定を保存」ボタンによる手動保存。#61 でサイドバーからモーダルへ移動）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
 
-**手動保存時の外部変更チェック（issue #70）:** `saveSettingsToFolder()` は書き込み直前に `statSettingsFile()` で現在の設定ファイルの `lastModified` を取得し、`settingsFileKnownModified`（前回このタブが保存/読込した時点の値）と比較します。一致しなければ「他の環境で更新されている」ということなので `confirm()` で上書きの可否をユーザーに確認します。
+**手動保存時の外部変更チェック（issue #70）:** `saveSettingsToFolder()` は書き込み直前に `statSettingsFile()` で現在の設定ファイルの `lastModified`（ファイルが無ければ `null`）を取得し、`settingsFileKnownModified`（前回このタブが保存/読込した時点の値。未読込なら `null`）と比較します。一致しなければ `confirm()` で上書きの可否をユーザーに確認します。この不一致は「他の環境で更新された」だけでなく、`currentModified === null` なら「他の環境で削除された」、`settingsFileKnownModified === null` なら「他の環境で新規作成された」ケースもあり得るため、ダイアログの文言は3パターンを判定して出し分けます。
 
 - キャンセルした場合: 保存を中止し、`showSettingsExternalUpdateNotice()` を呼んでサイドバーの外部変更通知（「読み込む」導線）を表示する
 - 続行した場合: 通常通り上書き保存する
