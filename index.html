@@ -2057,13 +2057,26 @@ function saveGlobalKeywordCategories(categories) {
   }
 }
 
+// Rebuild with a null-prototype object and per-project sanitizeKeywordCategories(),
+// mirroring sanitizeReviewsData()'s/sanitizeMemosData()'s prototype-pollution
+// defense — project IDs and category arrays here may originate from imported
+// JSON. Projects left with no valid categories are dropped.
+function sanitizeProjectKeywordCategoriesMap(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+  for (const pid of Object.keys(parsed)) {
+    const categories = sanitizeKeywordCategories(parsed[pid]);
+    if (categories.length > 0) safe[pid] = categories;
+  }
+  return safe;
+}
+
 function loadAllProjectKeywordCategories() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(SK_PROJECT_KEYWORDS) || '{}');
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return sanitizeProjectKeywordCategoriesMap(JSON.parse(localStorage.getItem(SK_PROJECT_KEYWORDS) || '{}'));
   } catch (e) {
     console.error('Failed to load project keywords from localStorage:', e);
-    return {};
+    return Object.create(null);
   }
 }
 
@@ -2078,7 +2091,8 @@ function saveAllProjectKeywordCategories(byProjectId) {
 
 function loadProjectKeywordCategories(projectId) {
   if (!projectId) return [];
-  return sanitizeKeywordCategories(loadAllProjectKeywordCategories()[projectId]);
+  // loadAllProjectKeywordCategories() already sanitizes each project's list.
+  return loadAllProjectKeywordCategories()[projectId] || [];
 }
 
 function saveProjectKeywordCategories(projectId, categories) {
@@ -4225,13 +4239,16 @@ function mergeImportedKeywordCategories(rawGlobal, rawByProjectId) {
     saveGlobalKeywordCategories([...byId.values()]);
   }
 
-  if (!rawByProjectId || typeof rawByProjectId !== 'object') return;
+  // sanitizeProjectKeywordCategoriesMap() rejects arrays/non-plain-objects
+  // (so e.g. a stray top-level array doesn't get treated as a projectId map
+  // via its numeric indices) and rebuilds into a null-prototype object,
+  // guarding against a "__proto__"-named project id in the imported JSON.
+  const importedByProject = sanitizeProjectKeywordCategoriesMap(rawByProjectId);
+  if (Object.keys(importedByProject).length === 0) return;
   const allProjectCategories = loadAllProjectKeywordCategories();
-  for (const pid of Object.keys(rawByProjectId)) {
-    const importedForProject = sanitizeKeywordCategories(rawByProjectId[pid]);
-    if (importedForProject.length === 0) continue;
+  for (const pid of Object.keys(importedByProject)) {
     const byId = new Map((allProjectCategories[pid] || []).map(c => [c.id, c]));
-    for (const c of importedForProject) byId.set(c.id, c);
+    for (const c of importedByProject[pid]) byId.set(c.id, c);
     allProjectCategories[pid] = [...byId.values()];
   }
   saveAllProjectKeywordCategories(allProjectCategories);
