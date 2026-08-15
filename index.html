@@ -395,6 +395,22 @@
       gap: 6px;
     }
 
+    .keyword-category-scope-row {
+      display: flex;
+      align-items: center;
+      padding-left: 32px;
+    }
+
+    .keyword-category-scope-select {
+      padding: 2px 4px;
+      border: 1px solid #d0d7de;
+      border-radius: 4px;
+      background: #fff;
+      color: #57606a;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
     .keyword-category-count-row {
       display: flex;
       align-items: center;
@@ -1516,6 +1532,8 @@ const SK_REVIEW_FILTER    = 'gitLocalReview_reviewFilter';
 const SK_UNREVIEWED_ONLY_LEGACY = 'gitLocalReview_unreviewedOnly';
 const SK_PROJECT_SORT     = 'gitLocalReview_projectSort';
 const SK_KEYWORDS         = 'gitLocalReview_keywords';
+/** Per-project keyword categories (issue #68): { [projectId]: category[] }, same category shape as SK_KEYWORDS. */
+const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -1949,7 +1967,7 @@ function sanitizeFilesData(parsed) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Keyword highlight (issue #10, categorised in issue #50)
+// Keyword highlight (issue #10, categorised in issue #50, scoped in issue #68)
 //
 // Users can register any number of keyword categories in the sidebar, each
 // with its own comma-separated keyword list and background color. Any diff
@@ -1960,10 +1978,22 @@ function sanitizeFilesData(parsed) {
 // case-insensitive substring search (no RegExp), so there is no need to
 // escape user input and no ReDoS risk.
 //
+// Each category has a scope, chosen per-category in the sidebar:
+// - 'global'  — applies to every project, stored in SK_KEYWORDS.
+// - 'project' — applies only while the category's owning project is active,
+//               stored in SK_PROJECT_KEYWORDS under that project's id.
+// loadKeywordCategories() returns the merged, scope-tagged view (global +
+// the current project's own categories) that highlighting/rendering use;
+// loadGlobalKeywordCategories()/loadProjectKeywordCategories() read the two
+// stores individually and are what settings UI writes (add/edit/delete/move
+// between scopes) go through.
+//
 // Storage: SK_KEYWORDS holds a JSON-encoded array of
 // { id, keywords, color } category objects. Older data was a bare
-// comma-separated keyword string (pre-#50); loadKeywordCategories()
+// comma-separated keyword string (pre-#50); loadGlobalKeywordCategories()
 // transparently migrates that into a single yellow category on read.
+// SK_PROJECT_KEYWORDS holds a JSON-encoded { [projectId]: category[] } map
+// using the same category shape.
 // ─────────────────────────────────────────────────────────────────────────────
 const DEFAULT_KEYWORD_COLOR = '#fff000';
 const KEYWORD_CATEGORY_COLOR_PALETTE = ['#fff000', '#ffadad', '#a0c4ff', '#caffbf', '#ffd6a5', '#bdb2ff'];
@@ -1991,7 +2021,7 @@ function sanitizeKeywordCategories(rawCategories) {
   return result;
 }
 
-function loadKeywordCategories() {
+function loadGlobalKeywordCategories() {
   let raw;
   try {
     raw = localStorage.getItem(SK_KEYWORDS);
@@ -2010,21 +2040,73 @@ function loadKeywordCategories() {
 
   // Legacy format (pre-#50): a bare comma-separated keyword string. Persist
   // the migrated array immediately so its generated id stays stable across
-  // subsequent loads — otherwise every loadKeywordCategories() call would
-  // mint a new id and break edits/deletes for these rows (they look up the
-  // category by an id from a previous load).
+  // subsequent loads — otherwise every loadGlobalKeywordCategories() call
+  // would mint a new id and break edits/deletes for these rows (they look up
+  // the category by an id from a previous load).
   const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false }];
-  saveKeywordCategories(migrated);
+  saveGlobalKeywordCategories(migrated);
   return migrated;
 }
 
-function saveKeywordCategories(categories) {
+function saveGlobalKeywordCategories(categories) {
   try {
     localStorage.setItem(SK_KEYWORDS, JSON.stringify(categories));
   } catch (e) {
     console.error('Failed to save keywords to localStorage:', e);
     alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
   }
+}
+
+function loadAllProjectKeywordCategories() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SK_PROJECT_KEYWORDS) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    console.error('Failed to load project keywords from localStorage:', e);
+    return {};
+  }
+}
+
+function saveAllProjectKeywordCategories(byProjectId) {
+  try {
+    localStorage.setItem(SK_PROJECT_KEYWORDS, JSON.stringify(byProjectId));
+  } catch (e) {
+    console.error('Failed to save project keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function loadProjectKeywordCategories(projectId) {
+  if (!projectId) return [];
+  return sanitizeKeywordCategories(loadAllProjectKeywordCategories()[projectId]);
+}
+
+function saveProjectKeywordCategories(projectId, categories) {
+  if (!projectId) return;
+  const all = loadAllProjectKeywordCategories();
+  all[projectId] = categories;
+  saveAllProjectKeywordCategories(all);
+}
+
+/** Drops a deleted project's own keyword categories; its global categories are untouched. */
+function deleteProjectKeywordCategories(projectId) {
+  const all = loadAllProjectKeywordCategories();
+  if (!(projectId in all)) return;
+  delete all[projectId];
+  saveAllProjectKeywordCategories(all);
+}
+
+/**
+ * Merged, scope-tagged view used by highlighting and the settings list:
+ * every global category, plus (when a project is active) that project's own
+ * categories. `scope` on each entry ('global'|'project') tells the settings
+ * UI which store an edit/delete/move should go through.
+ */
+function loadKeywordCategories() {
+  const global = loadGlobalKeywordCategories().map(c => ({ ...c, scope: 'global' }));
+  if (!app.currentProjectId) return global;
+  const project = loadProjectKeywordCategories(app.currentProjectId).map(c => ({ ...c, scope: 'project' }));
+  return [...global, ...project];
 }
 
 // Parses a category's raw comma-separated input into a de-duplicated list of
@@ -3917,6 +3999,9 @@ async function activateProject(projectId) {
   app.parsedDiff = null;
   localStorage.setItem(SK_CURRENT, projectId);
   refreshMemoUI();
+  // The active project's own keyword categories (issue #68) join the global
+  // ones in the merged view, so the sidebar list changes with the project.
+  renderKeywordCategoryList();
 
   renderProjectList();
   // Clear the previous project's diff (and its checkboxes) immediately so
@@ -3987,6 +4072,7 @@ function deleteProject(projectId) {
   delete allReviews[projectId];
   saveAllReviews(allReviews);
   deleteMemosForProject(projectId);
+  deleteProjectKeywordCategories(projectId);
   deleteFileContent(projectId);
   deleteFileHandleRecord(projectId);
 
@@ -3998,6 +4084,7 @@ function deleteProject(projectId) {
     app.parsedDiff = null;
     localStorage.removeItem(SK_CURRENT);
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
+    renderKeywordCategoryList();
   }
   refreshMemoUI();
 
@@ -4024,6 +4111,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, id);
   refreshMemoUI();
+  renderKeywordCategoryList();
 
   renderProjectList();
   renderDiff();
@@ -4047,6 +4135,7 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, projectId);
   refreshMemoUI();
+  renderKeywordCategoryList();
 
   renderProjectList();
   renderDiff();
@@ -4100,36 +4189,52 @@ function sanitizeImportedProjects(rawProjects) {
  * Build the app-data payload shared by manual export and folder-based settings save.
  * schemaVersion 2 (issue #51): `reviews` hunk values changed from a boolean
  * to a status string (see REVIEW_STATUSES). schemaVersion 3 (issue #58):
- * added `keywordCategories` (the SK_KEYWORDS category/color list). Imports
- * are version-agnostic — sanitizeReviewsData()/normalizeReviewStatus() coerce
- * both the old boolean shape and the new string shape on read, and
- * `keywordCategories` is simply absent from pre-#58 exports — so
+ * added `keywordCategories` (the SK_KEYWORDS category/color list).
+ * schemaVersion 4 (issue #68): added `projectKeywordCategories` (the
+ * SK_PROJECT_KEYWORDS per-project category map) alongside `keywordCategories`,
+ * which now holds only global-scoped categories. Imports are version-agnostic
+ * — sanitizeReviewsData()/normalizeReviewStatus() coerce both the old boolean
+ * shape and the new string shape on read, and `keywordCategories`/
+ * `projectKeywordCategories` are simply absent from pre-#58/#68 exports — so
  * schemaVersion is informational only and isn't itself checked on import.
  */
 function buildExportData() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
     memos: loadAllMemos(),
-    keywordCategories: loadKeywordCategories(),
+    keywordCategories: loadGlobalKeywordCategories(),
+    projectKeywordCategories: loadAllProjectKeywordCategories(),
   };
 }
 
 /**
- * Merge imported keyword categories (issue #58) into localStorage: same-ID
- * categories are overwritten, other existing categories are kept — same
- * merge policy as projects in mergeImportedData(). `raw` is absent on
- * pre-#58 exports, in which case this is a no-op.
+ * Merge imported keyword categories (issue #58, scoped per-project in #68)
+ * into localStorage: same-ID categories are overwritten, other existing
+ * categories are kept — same merge policy as projects in mergeImportedData().
+ * `rawGlobal`/`rawByProjectId` are absent on pre-#58/#68 exports, in which
+ * case the corresponding merge is a no-op.
  */
-function mergeImportedKeywordCategories(raw) {
-  const importedCategories = sanitizeKeywordCategories(raw);
-  if (importedCategories.length === 0) return;
+function mergeImportedKeywordCategories(rawGlobal, rawByProjectId) {
+  const importedGlobal = sanitizeKeywordCategories(rawGlobal);
+  if (importedGlobal.length > 0) {
+    const byId = new Map(loadGlobalKeywordCategories().map(c => [c.id, c]));
+    for (const c of importedGlobal) byId.set(c.id, c);
+    saveGlobalKeywordCategories([...byId.values()]);
+  }
 
-  const byId = new Map(loadKeywordCategories().map(c => [c.id, c]));
-  for (const c of importedCategories) byId.set(c.id, c);
-  saveKeywordCategories([...byId.values()]);
+  if (!rawByProjectId || typeof rawByProjectId !== 'object') return;
+  const allProjectCategories = loadAllProjectKeywordCategories();
+  for (const pid of Object.keys(rawByProjectId)) {
+    const importedForProject = sanitizeKeywordCategories(rawByProjectId[pid]);
+    if (importedForProject.length === 0) continue;
+    const byId = new Map((allProjectCategories[pid] || []).map(c => [c.id, c]));
+    for (const c of importedForProject) byId.set(c.id, c);
+    allProjectCategories[pid] = [...byId.values()];
+  }
+  saveAllProjectKeywordCategories(allProjectCategories);
 }
 
 /**
@@ -4144,7 +4249,7 @@ function mergeImportedData(data) {
   const importedMemos    = sanitizeMemosData(data.memos);
   // Independent of projects, so merge it even when there's nothing else to import
   // (e.g. an auto-saved settings file written before any project was loaded).
-  mergeImportedKeywordCategories(data.keywordCategories);
+  mergeImportedKeywordCategories(data.keywordCategories, data.projectKeywordCategories);
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
@@ -5111,12 +5216,14 @@ window.addEventListener('drop', async (e) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Keyword categories (issue #10, #50): each category row lets the user edit
-// its keyword list and background color; persists across reloads/projects
-// and re-renders the currently displayed diff (debounced) whenever a
-// category's content changes. Adding/removing a category rebuilds the row
-// list immediately (no debounce needed, and no in-progress input to lose
-// focus on).
+// Keyword categories (issue #10, #50, scoped in #68): each category row lets
+// the user edit its keyword list, background color, and scope (global vs.
+// the active project only); persists across reloads/projects and re-renders
+// the currently displayed diff (debounced) whenever a category's content
+// changes. Adding/removing/moving a category rebuilds the row list
+// immediately (no debounce needed, and no in-progress input to lose focus
+// on); the sidebar list itself is also rebuilt on project switch, since
+// project-scoped categories change with the active project.
 // ─────────────────────────────────────────────────────────────────────────────
 /** Count badge text for a category row: empty unless counting is on and a diff is loaded. */
 function keywordCategoryCountBadgeText(category) {
@@ -5164,6 +5271,38 @@ function buildKeywordCategoryRow(category) {
   main.appendChild(keywordsInput);
   main.appendChild(removeBtn);
 
+  // Scope selector (issue #68): choose whether this category is shared by
+  // every project ('global', stored in SK_KEYWORDS) or private to the
+  // currently active project ('project', stored in SK_PROJECT_KEYWORDS).
+  // The "このプロジェクトのみ" option is disabled with no active project —
+  // a category can only move into a project's own store while that project
+  // is selected.
+  const scopeRow = document.createElement('div');
+  scopeRow.className = 'keyword-category-scope-row';
+
+  const scopeSelect = document.createElement('select');
+  scopeSelect.className = 'keyword-category-scope-select';
+  scopeSelect.setAttribute('aria-label', '適用範囲');
+  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
+
+  const globalOption = document.createElement('option');
+  globalOption.value = 'global';
+  globalOption.textContent = '全体設定';
+  scopeSelect.appendChild(globalOption);
+
+  const projectOption = document.createElement('option');
+  projectOption.value = 'project';
+  projectOption.textContent = 'このプロジェクトのみ';
+  projectOption.disabled = !app.currentProjectId;
+  scopeSelect.appendChild(projectOption);
+
+  scopeSelect.value = category.scope;
+  scopeSelect.addEventListener('change', () => {
+    moveKeywordCategoryScope(category.id, scopeSelect.value);
+  });
+
+  scopeRow.appendChild(scopeSelect);
+
   // Count toggle (issue #59): per-category opt-in match counter across the
   // whole loaded diff, e.g. "TODO はカウントする、NOTE はカウントしない".
   const countRow = document.createElement('label');
@@ -5194,6 +5333,7 @@ function buildKeywordCategoryRow(category) {
   countRow.appendChild(countBadge);
 
   row.appendChild(main);
+  row.appendChild(scopeRow);
   row.appendChild(countRow);
   return row;
 }
@@ -5234,11 +5374,12 @@ function refreshKeywordCounts() {
   }
 }
 
+/** New categories always start global; move them to the active project via the scope selector afterwards. */
 function addKeywordCategory() {
-  const categories = loadKeywordCategories();
-  const color = KEYWORD_CATEGORY_COLOR_PALETTE[categories.length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
+  const color = KEYWORD_CATEGORY_COLOR_PALETTE[loadKeywordCategories().length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
+  const categories = loadGlobalKeywordCategories();
   categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false });
-  saveKeywordCategories(categories);
+  saveGlobalKeywordCategories(categories);
   renderKeywordCategoryList();
 }
 
@@ -5250,19 +5391,75 @@ function scheduleKeywordDiffRerender() {
   }, 200);
 }
 
+/** Which store (global or the active project's own) a category id currently lives in, or null if neither. */
+function findKeywordCategoryScope(id) {
+  if (loadGlobalKeywordCategories().some(c => c.id === id)) return 'global';
+  if (app.currentProjectId && loadProjectKeywordCategories(app.currentProjectId).some(c => c.id === id)) return 'project';
+  return null;
+}
+
 /** Updates a single category's fields in place without rebuilding the row list, so the input being edited keeps focus. */
 function updateKeywordCategory(id, patch) {
-  const categories = loadKeywordCategories();
-  const category = categories.find(c => c.id === id);
-  if (!category) return;
-  Object.assign(category, patch);
-  saveKeywordCategories(categories);
+  const scope = findKeywordCategoryScope(id);
+  if (!scope) return;
+  if (scope === 'global') {
+    const categories = loadGlobalKeywordCategories();
+    const category = categories.find(c => c.id === id);
+    if (!category) return;
+    Object.assign(category, patch);
+    saveGlobalKeywordCategories(categories);
+  } else {
+    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    const category = categories.find(c => c.id === id);
+    if (!category) return;
+    Object.assign(category, patch);
+    saveProjectKeywordCategories(app.currentProjectId, categories);
+  }
+  scheduleKeywordDiffRerender();
+}
+
+/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled. */
+function moveKeywordCategoryScope(id, newScope) {
+  const fromScope = findKeywordCategoryScope(id);
+  if (!fromScope || fromScope === newScope) return;
+  if (newScope === 'project' && !app.currentProjectId) return;
+
+  let category;
+  if (fromScope === 'global') {
+    const categories = loadGlobalKeywordCategories();
+    const idx = categories.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    [category] = categories.splice(idx, 1);
+    saveGlobalKeywordCategories(categories);
+  } else {
+    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    const idx = categories.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    [category] = categories.splice(idx, 1);
+    saveProjectKeywordCategories(app.currentProjectId, categories);
+  }
+
+  if (newScope === 'global') {
+    const categories = loadGlobalKeywordCategories();
+    categories.push(category);
+    saveGlobalKeywordCategories(categories);
+  } else {
+    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    categories.push(category);
+    saveProjectKeywordCategories(app.currentProjectId, categories);
+  }
+
+  renderKeywordCategoryList();
   scheduleKeywordDiffRerender();
 }
 
 function deleteKeywordCategory(id) {
-  const categories = loadKeywordCategories().filter(c => c.id !== id);
-  saveKeywordCategories(categories);
+  const scope = findKeywordCategoryScope(id);
+  if (scope === 'global') {
+    saveGlobalKeywordCategories(loadGlobalKeywordCategories().filter(c => c.id !== id));
+  } else if (scope === 'project') {
+    saveProjectKeywordCategories(app.currentProjectId, loadProjectKeywordCategories(app.currentProjectId).filter(c => c.id !== id));
+  }
   renderKeywordCategoryList();
   scheduleKeywordDiffRerender();
 }
@@ -5310,6 +5507,10 @@ document.getElementById('keyword-category-add-btn').addEventListener('click', ad
     if (proj) {
       app.currentProjectId = lastId;
       renderProjectList();
+      // The restored project may have its own keyword categories (issue #68),
+      // which the initial (pre-currentProjectId) renderKeywordCategoryList()
+      // call at script load couldn't have shown yet.
+      renderKeywordCategoryList();
       await restoreProjectDiff(proj);
     }
   } else {
