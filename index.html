@@ -4427,6 +4427,22 @@ async function saveSettingsToFolder() {
     return;
   }
 
+  // Same external-change guard autoSaveSettingsToFolder() applies, but as a
+  // confirm() rather than a silent skip — a manual save is an explicit user
+  // action, so the user gets the final call instead of always being blocked.
+  const currentModified = await statSettingsFile(dirHandle);
+  if (currentModified !== settingsFileKnownModified) {
+    const proceed = confirm(
+      '設定ファイルが他の環境で更新されています。上書きすると、その変更が失われる可能性があります。\n' +
+      '先に「読み込む」で最新の内容を反映してから保存し直すことをおすすめします。\n\n' +
+      'このまま上書きしますか？'
+    );
+    if (!proceed) {
+      showSettingsExternalUpdateNotice();
+      return;
+    }
+  }
+
   clearTimeout(settingsAutoSaveTimer);
   settingsAutoSaveTimer = null;
 
