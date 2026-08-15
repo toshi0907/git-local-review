@@ -27,7 +27,14 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #f0f2f5;
       color: #24292e;
-      min-height: 100vh;
+      /* Definite height (not just min-height) so .layout's "flex: 1" resolves
+         against a bounded free space instead of growing to fit its tallest
+         child's content (e.g. a long memo list). Without this, the page
+         itself becomes scrollable and the docked memo panel — whose z-index
+         sits above the sticky topbar — slides up over the header on scroll,
+         blocking the settings button (issue #72). */
+      height: 100vh;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
     }
