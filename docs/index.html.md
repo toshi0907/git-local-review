@@ -89,7 +89,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
-| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能） |
+| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能） |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
@@ -117,7 +117,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
 | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（一致回数カウントの表示・切り替え、全体設定／プロジェクト毎の設定の切り替えを含む） |
+| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（一致回数カウントの表示・切り替え、ハイライト自体の有効/無効切り替え、全体設定／プロジェクト毎の設定の切り替えを含む） |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
@@ -190,7 +190,7 @@ const SK_KEYWORDS        = 'gitLocalReview_keywords';
 const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
 ```
 
-`SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。
+`SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。
 
 `SK_PROJECT_KEYWORDS`（#68 で追加）はプロジェクト毎のキーワードカテゴリを保持する JSON エンコードされたマップ `{ [projectId]: category[] }` で、各プロジェクトの配列は `SK_KEYWORDS` と同じカテゴリ形状です（`loadProjectKeywordCategories(projectId)` / `saveProjectKeywordCategories(projectId, categories)`）。カテゴリ1件ずつに「全体設定」か「このプロジェクトのみ」かの適用範囲（scope）があり、サイドバーのセレクトで切り替えると `moveKeywordCategoryScope()` が該当カテゴリを `SK_KEYWORDS` と `SK_PROJECT_KEYWORDS` の間で移動させます。`loadKeywordCategories()` は現在アクティブなプロジェクトの文脈で実際にハイライト・表示に使う「全体設定 + アクティブプロジェクト自身のカテゴリ」をマージした一覧を返し、各要素に `scope: 'global' | 'project'` を付与します（設定UIやカテゴリの移動先判定はこの `scope` を見て行います）。プロジェクトが削除されると、そのプロジェクト用のエントリは `deleteProjectKeywordCategories()` により `SK_PROJECT_KEYWORDS` から削除されます（全体設定のカテゴリは影響を受けません）。
 

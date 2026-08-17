@@ -439,6 +439,11 @@
       color: #24292e;
     }
 
+    .keyword-category-enabled-toggle {
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
     .keyword-category-color {
       flex-shrink: 0;
       width: 26px;
@@ -448,6 +453,11 @@
       border-radius: 5px;
       background: #fff;
       cursor: pointer;
+    }
+
+    .keyword-category-row.keyword-category-disabled .keyword-category-color,
+    .keyword-category-row.keyword-category-disabled .keyword-category-keywords {
+      opacity: 0.5;
     }
 
     .keyword-category-keywords {
@@ -1999,9 +2009,14 @@ function sanitizeFilesData(parsed) {
 // between scopes) go through.
 //
 // Storage: SK_KEYWORDS holds a JSON-encoded array of
-// { id, keywords, color } category objects. Older data was a bare
-// comma-separated keyword string (pre-#50); loadGlobalKeywordCategories()
-// transparently migrates that into a single yellow category on read.
+// { id, keywords, color, countEnabled, enabled } category objects. Older
+// data was a bare comma-separated keyword string (pre-#50);
+// loadGlobalKeywordCategories() transparently migrates that into a single
+// yellow category on read. `enabled` (issue #71) toggles whether the
+// category's keywords are actually highlighted in the diff, independent of
+// its `keywords` text — unchecking it hides that category's highlight
+// without losing the typed keyword list; it defaults to true so pre-#71 data
+// keeps highlighting as before.
 // SK_PROJECT_KEYWORDS holds a JSON-encoded { [projectId]: category[] } map
 // using the same category shape.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2017,6 +2032,9 @@ function generateKeywordCategoryId() {
  * `countEnabled` (issue #59) toggles whether this category's keyword-match
  * count is shown; it defaults to false so pre-#59 data (and new categories)
  * don't start counting unasked.
+ * `enabled` (issue #71) toggles whether this category's keywords are
+ * highlighted at all; it defaults to true so pre-#71 data (and new
+ * categories) keep highlighting as before.
  */
 function sanitizeKeywordCategories(rawCategories) {
   if (!Array.isArray(rawCategories)) return [];
@@ -2026,7 +2044,8 @@ function sanitizeKeywordCategories(rawCategories) {
     const color = typeof c.color === 'string' && /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : DEFAULT_KEYWORD_COLOR;
     const id = typeof c.id === 'string' && c.id ? c.id : generateKeywordCategoryId();
     const countEnabled = c.countEnabled === true;
-    result.push({ id, keywords: c.keywords, color, countEnabled });
+    const enabled = c.enabled !== false;
+    result.push({ id, keywords: c.keywords, color, countEnabled, enabled });
   }
   return result;
 }
@@ -2053,7 +2072,7 @@ function loadGlobalKeywordCategories() {
   // subsequent loads — otherwise every loadGlobalKeywordCategories() call
   // would mint a new id and break edits/deletes for these rows (they look up
   // the category by an id from a previous load).
-  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false }];
+  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false, enabled: true }];
   saveGlobalKeywordCategories(migrated);
   return migrated;
 }
@@ -2151,14 +2170,15 @@ function parseKeywords(raw) {
 
 /**
  * Returns the active keyword categories with their raw keyword string
- * already parsed, dropping categories with no keywords. Order matches the
- * saved category order and determines highlight priority when two
- * categories match overlapping text (earlier category wins — see
- * findKeywordRanges).
+ * already parsed, dropping categories with no keywords and categories whose
+ * `enabled` toggle (issue #71) is off. Order matches the saved category
+ * order and determines highlight priority when two categories match
+ * overlapping text (earlier category wins — see findKeywordRanges).
  * @returns {Array<{color:string, keywords:string[]}>}
  */
 function getActiveKeywordGroups() {
   return loadKeywordCategories()
+    .filter(cat => cat.enabled)
     .map(cat => ({ color: cat.color, keywords: parseKeywords(cat.keywords) }))
     .filter(g => g.keywords.length > 0);
 }
@@ -5268,13 +5288,15 @@ window.addEventListener('drop', async (e) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Keyword categories (issue #10, #50, scoped in #68): each category row lets
-// the user edit its keyword list, background color, and scope (global vs.
-// the active project only); persists across reloads/projects and re-renders
-// the currently displayed diff (debounced) whenever a category's content
-// changes. Adding/removing/moving a category rebuilds the row list
-// immediately (no debounce needed, and no in-progress input to lose focus
-// on); the sidebar list itself is also rebuilt on project switch, since
-// project-scoped categories change with the active project.
+// the user edit its keyword list, background color, scope (global vs. the
+// active project only), and — via the leading checkbox (issue #71) — whether
+// the category's highlight is enabled at all; persists across
+// reloads/projects and re-renders the currently displayed diff (debounced)
+// whenever a category's content changes. Adding/removing/moving a category
+// rebuilds the row list immediately (no debounce needed, and no in-progress
+// input to lose focus on); the sidebar list itself is also rebuilt on
+// project switch, since project-scoped categories change with the active
+// project.
 // ─────────────────────────────────────────────────────────────────────────────
 /** Count badge text for a category row: empty unless counting is on and a diff is loaded. */
 function keywordCategoryCountBadgeText(category) {
@@ -5285,9 +5307,25 @@ function keywordCategoryCountBadgeText(category) {
 function buildKeywordCategoryRow(category) {
   const row = document.createElement('div');
   row.className = 'keyword-category-row';
+  if (category.enabled === false) row.classList.add('keyword-category-disabled');
 
   const main = document.createElement('div');
   main.className = 'keyword-category-main';
+
+  // Enabled toggle (issue #71): lets a category's highlight be switched off
+  // without clearing its keyword text, e.g. to temporarily silence a noisy
+  // category while reviewing. Purely a highlight switch — it does not affect
+  // the count toggle/badge below, which keeps counting regardless.
+  const enabledToggle = document.createElement('input');
+  enabledToggle.type = 'checkbox';
+  enabledToggle.className = 'keyword-category-enabled-toggle';
+  enabledToggle.checked = category.enabled !== false;
+  enabledToggle.title = 'このカテゴリのハイライトを有効にする';
+  enabledToggle.setAttribute('aria-label', 'このカテゴリのハイライトを有効にする');
+  enabledToggle.addEventListener('change', () => {
+    updateKeywordCategory(category.id, { enabled: enabledToggle.checked });
+    row.classList.toggle('keyword-category-disabled', !enabledToggle.checked);
+  });
 
   const colorInput = document.createElement('input');
   colorInput.type = 'color';
@@ -5318,6 +5356,7 @@ function buildKeywordCategoryRow(category) {
   removeBtn.textContent = '×';
   removeBtn.addEventListener('click', () => deleteKeywordCategory(category.id));
 
+  main.appendChild(enabledToggle);
   main.appendChild(colorInput);
   main.appendChild(keywordsInput);
   main.appendChild(removeBtn);
@@ -5429,7 +5468,7 @@ function refreshKeywordCounts() {
 function addKeywordCategory() {
   const color = KEYWORD_CATEGORY_COLOR_PALETTE[loadKeywordCategories().length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
   const categories = loadGlobalKeywordCategories();
-  categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false });
+  categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false, enabled: true });
   saveGlobalKeywordCategories(categories);
   renderKeywordCategoryList();
 }
@@ -5469,7 +5508,7 @@ function updateKeywordCategory(id, patch) {
   scheduleKeywordDiffRerender();
 }
 
-/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled. */
+/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled/enabled. */
 function moveKeywordCategoryScope(id, newScope) {
   const fromScope = findKeywordCategoryScope(id);
   if (!fromScope || fromScope === newScope) return;
