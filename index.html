@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- 本アプリは全処理をブラウザ内で完結させ、外部サーバーと通信しない。
+       CSP で connect-src 等を封じ、通信コードの混入を検知・防止する。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';">
   <title>Git Local Review</title>
   <!-- highlight.js (v11.9.0, minified and bundled for offline use) -->
   <style>
