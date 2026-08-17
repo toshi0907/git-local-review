@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+language: "ja-JP"
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!node_modules/**"
+  path_instructions:
+    - path: "index.html"
+      instructions: >
+        このリポジトリは CLAUDE.md のルールに従うシングルファイルの静的Webアプリです。
+        index.html の変更をレビューする際は、以下を必ず確認してください。
+
+        1. fetch / XMLHttpRequest / WebSocket / sendBeacon / EventSource、または
+           http(s) を指す <script src> / <link href> / <img src> など、外部通信や外部リソース
+           読み込みにつながるコードが実行コードとして追加されていないこと（コメントや文字列
+           リテラルは対象外）。このアプリは差分レビューをブラウザ内・ローカルのみで完結させる
+           前提で、外部サーバーとの通信を一切行いません。
+        2. <head> に設定されている Content-Security-Policy（connect-src 'none' など）を
+           緩める変更が含まれていないこと。含まれる場合は事前のユーザー確認が必須である旨を
+           指摘すること。
+        3. 新しいセクション（// ──…── 区切り）の追加・削除・改名、app オブジェクトへの
+           プロパティ追加・削除、localStorage キー／IndexedDB ストアの追加・変更、diff
+           パーサーやハンクハッシュの計算方法・エクスポート JSON 構造の変更など、
+           アーキテクチャや外部インターフェースに影響する変更を行った場合は、対応する
+           docs/index.html.md の更新が同じ変更セットに含まれているか確認すること。
+        4. 新しい localStorage キーは必ず SK_ プレフィックスの定数として追加されていること。
+        5. ビルドプロセス・外部モジュール・バンドラー・トランスパイラを新たに導入する
+           変更が含まれていないこと。
+    - path: "docs/index.html.md"
+      instructions: >
+        index.html の実装内容と齟齬がないかを確認してください。特にセクション構成・
+        データ構造・Storage keys の説明が実装と一致しているかを重視します。
+
+chat:
+  auto_reply: true
