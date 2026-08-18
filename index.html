@@ -3763,6 +3763,7 @@ function buildMemoEditForm(memo) {
   const textarea = document.createElement('textarea');
   textarea.maxLength = 5000;
   textarea.value = memo.text;
+  textarea.setAttribute('aria-label', 'メモ本文を編集');
   form.appendChild(textarea);
 
   const actions = document.createElement('div');
@@ -3790,13 +3791,15 @@ function buildMemoEditForm(memo) {
     e.preventDefault();
     editMemo(memo.id, textarea.value);
   });
-  textarea.addEventListener('keydown', (e) => {
+  form.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       form.requestSubmit();
     } else if (e.key === 'Escape') {
       // Cancel just this edit rather than letting the keystroke bubble up
       // to the document-level handler that closes the whole memo panel.
+      // Listening on the form (not just the textarea) so Escape also works
+      // when focus is on the save/cancel button.
       e.preventDefault();
       e.stopPropagation();
       editingMemoId = null;
