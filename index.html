@@ -1310,6 +1310,7 @@
       color: #8b949e;
     }
 
+    .memo-item-edit,
     .memo-item-delete {
       flex-shrink: 0;
       background: none;
@@ -1321,7 +1322,50 @@
       border-radius: 4px;
     }
 
+    .memo-item-edit:hover { background: #eef6ff; color: #0969da; }
     .memo-item-delete:hover { background: #ffeef0; color: #cf222e; }
+
+    .memo-item.editing { align-items: stretch; }
+
+    .memo-edit-form {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .memo-edit-form textarea {
+      width: 100%;
+      min-height: 60px;
+      padding: 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 13px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+
+    .memo-edit-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .memo-edit-save,
+    .memo-edit-cancel {
+      border: none;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .memo-edit-save { background: #0969da; color: #fff; }
+    .memo-edit-save:hover { background: #0550ae; }
+    .memo-edit-cancel { background: #eaeef2; color: #24292e; }
+    .memo-edit-cancel:hover { background: #dde3ea; }
 
     .memo-list-divider {
       padding: 6px 16px;
@@ -3704,7 +3748,72 @@ function refreshMemoBadge() {
   badge.hidden = openCount === 0;
 }
 
+/** id of the memo currently being edited inline, or null. Reset whenever
+ *  the list is rebuilt for a different reason (project switch, panel
+ *  close) so a stale edit form never reappears for the wrong memo. */
+let editingMemoId = null;
+
+function buildMemoEditForm(memo) {
+  const li = document.createElement('li');
+  li.className = 'memo-item editing';
+
+  const form = document.createElement('form');
+  form.className = 'memo-edit-form';
+
+  const textarea = document.createElement('textarea');
+  textarea.maxLength = 5000;
+  textarea.value = memo.text;
+  textarea.setAttribute('aria-label', 'メモ本文を編集');
+  form.appendChild(textarea);
+
+  const actions = document.createElement('div');
+  actions.className = 'memo-edit-actions';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'memo-edit-cancel';
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.addEventListener('click', () => {
+    editingMemoId = null;
+    renderMemoList();
+  });
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'submit';
+  saveBtn.className = 'memo-edit-save';
+  saveBtn.textContent = '保存';
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  form.appendChild(actions);
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    editMemo(memo.id, textarea.value);
+  });
+  form.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      form.requestSubmit();
+    } else if (e.key === 'Escape') {
+      // Cancel just this edit rather than letting the keystroke bubble up
+      // to the document-level handler that closes the whole memo panel.
+      // Listening on the form (not just the textarea) so Escape also works
+      // when focus is on the save/cancel button.
+      e.preventDefault();
+      e.stopPropagation();
+      editingMemoId = null;
+      renderMemoList();
+    }
+  });
+
+  li.appendChild(form);
+  return li;
+}
+
 function buildMemoItem(memo) {
+  if (memo.id === editingMemoId) return buildMemoEditForm(memo);
+
   const li = document.createElement('li');
   li.className = 'memo-item' + (memo.done ? ' done' : '');
 
@@ -3721,6 +3830,17 @@ function buildMemoItem(memo) {
   label.appendChild(cb);
   label.appendChild(text);
 
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'memo-item-edit';
+  editBtn.title = '編集';
+  editBtn.setAttribute('aria-label', 'メモを編集');
+  editBtn.textContent = '✏';
+  editBtn.addEventListener('click', () => {
+    editingMemoId = memo.id;
+    renderMemoList();
+  });
+
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
   delBtn.className = 'memo-item-delete';
@@ -3730,6 +3850,7 @@ function buildMemoItem(memo) {
   delBtn.addEventListener('click', () => deleteMemo(memo.id));
 
   li.appendChild(label);
+  li.appendChild(editBtn);
   li.appendChild(delBtn);
   return li;
 }
@@ -3771,6 +3892,14 @@ function renderMemoList() {
     listEl.appendChild(divider);
     for (const m of done) listEl.appendChild(buildMemoItem(m));
   }
+
+  if (editingMemoId) {
+    const editTextarea = listEl.querySelector('.memo-edit-form textarea');
+    if (editTextarea) {
+      editTextarea.focus();
+      editTextarea.setSelectionRange(editTextarea.value.length, editTextarea.value.length);
+    }
+  }
 }
 
 function addMemo(text) {
@@ -3799,6 +3928,24 @@ function toggleMemoDone(memoId, done) {
   saveAllMemos(all);
   scheduleSettingsAutoSave();
 
+  renderMemoList();
+  refreshMemoBadge();
+}
+
+function editMemo(memoId, text) {
+  if (!app.currentProjectId) return;
+  const trimmed = text.trim();
+  if (!trimmed) return;
+  const all  = loadAllMemos();
+  const list = all[app.currentProjectId] || [];
+  const memo = list.find(m => m.id === memoId);
+  if (!memo) return;
+  memo.text = trimmed;
+  memo.updatedAt = Date.now();
+  saveAllMemos(all);
+  scheduleSettingsAutoSave();
+
+  editingMemoId = null;
   renderMemoList();
   refreshMemoBadge();
 }
@@ -3846,6 +3993,7 @@ function isMemoPanelOpen() {
  * always-visible panel as hidden.
  */
 function refreshMemoUI() {
+  editingMemoId = null;
   const open = isMemoPanelOpen();
   document.getElementById('memo-panel').setAttribute('aria-hidden', open ? 'false' : 'true');
   refreshMemoBadge();
@@ -3863,6 +4011,7 @@ function openMemoPanel() {
 }
 
 function closeMemoPanel() {
+  editingMemoId = null;
   document.getElementById('memo-panel').classList.remove('open');
   document.getElementById('memo-panel').setAttribute('aria-hidden', 'true');
   document.getElementById('memo-panel-overlay').classList.remove('active');
