@@ -379,6 +379,78 @@
 
     .keyword-category-add-btn:hover { background: #ddf4ff; }
 
+    .keyword-row-header-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .keyword-bulk-form {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 8px;
+      padding: 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #f6f8fa;
+    }
+
+    /* Author-stylesheet display rules beat the UA stylesheet's [hidden]
+       default at equal specificity, so re-assert it explicitly here —
+       otherwise the form above would stay visible while hidden. */
+    .keyword-bulk-form[hidden] { display: none; }
+
+    .keyword-bulk-textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 70px;
+      padding: 6px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 12px;
+      font-family: inherit;
+      resize: vertical;
+    }
+
+    .keyword-bulk-textarea:focus {
+      outline: none;
+      border-color: #0969da;
+    }
+
+    .keyword-bulk-form-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .keyword-bulk-form-actions .keyword-category-scope-select { margin-right: auto; }
+
+    .keyword-bulk-cancel-btn {
+      padding: 3px 10px;
+      background: none;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      color: #57606a;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .keyword-bulk-cancel-btn:hover { background: #eaeef2; }
+
+    .keyword-bulk-submit-btn {
+      padding: 3px 10px;
+      background: #0969da;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #fff;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .keyword-bulk-submit-btn:hover { background: #0757ba; }
+
     .keyword-categories {
       display: flex;
       flex-direction: column;
@@ -391,22 +463,14 @@
       padding: 4px 0;
     }
 
+    /* Each category is a single horizontally-laid-out row (space-saving:
+       previously three stacked rows) that wraps onto extra lines only if the
+       sidebar/modal is too narrow to fit everything. */
     .keyword-category-row {
       display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .keyword-category-main {
-      display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 6px;
-    }
-
-    .keyword-category-scope-row {
-      display: flex;
-      align-items: center;
-      padding-left: 32px;
+      gap: 4px 6px;
     }
 
     .keyword-category-scope-select {
@@ -422,8 +486,7 @@
     .keyword-category-count-row {
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding-left: 32px;
+      gap: 3px;
       font-size: 11px;
       color: #57606a;
       cursor: pointer;
@@ -444,8 +507,8 @@
 
     .keyword-category-color {
       flex-shrink: 0;
-      width: 26px;
-      height: 26px;
+      width: 22px;
+      height: 22px;
       padding: 0;
       border: 1px solid #d0d7de;
       border-radius: 5px;
@@ -459,10 +522,10 @@
     }
 
     .keyword-category-keywords {
-      flex: 1;
-      min-width: 0;
+      flex: 1 1 70px;
+      min-width: 70px;
       box-sizing: border-box;
-      padding: 5px 6px;
+      padding: 4px 6px;
       border: 1px solid #d0d7de;
       border-radius: 5px;
       background: #fff;
@@ -1569,7 +1632,21 @@
       <div class="keyword-row">
         <div class="keyword-row-header">
           <label>キーワード（カテゴリ別）</label>
-          <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
+          <div class="keyword-row-header-actions">
+            <button type="button" id="keyword-category-bulk-btn" class="keyword-category-add-btn" title="複数のキーワードをまとめて登録">一括登録</button>
+            <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
+          </div>
+        </div>
+        <div id="keyword-bulk-form" class="keyword-bulk-form" hidden>
+          <textarea id="keyword-bulk-textarea" class="keyword-bulk-textarea" placeholder="1行に1キーワード（カンマ区切りで複数キーワードも指定できます）&#10;例:&#10;TODO&#10;FIXME, XXX" aria-label="一括登録するキーワード（1行につき1件）"></textarea>
+          <div class="keyword-bulk-form-actions">
+            <select id="keyword-bulk-scope-select" class="keyword-category-scope-select" title="全体設定にするか、現在のプロジェクトだけの設定にするかを選べます" aria-label="一括登録の適用範囲">
+              <option value="global">全体設定</option>
+              <option value="project">このプロジェクトのみ</option>
+            </select>
+            <button type="button" id="keyword-bulk-cancel-btn" class="keyword-bulk-cancel-btn">キャンセル</button>
+            <button type="button" id="keyword-bulk-submit-btn" class="keyword-bulk-submit-btn">登録</button>
+          </div>
         </div>
         <div id="keyword-categories" class="keyword-categories"></div>
       </div>
@@ -2067,6 +2144,40 @@ const KEYWORD_CATEGORY_COLOR_PALETTE = ['#fff000', '#ffadad', '#a0c4ff', '#caffb
 
 function generateKeywordCategoryId() {
   return `kwcat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Converts an HSL color (h in degrees, s/l in percent) to a lowercase '#rrggbb' hex string. */
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = x => Math.round(255 * x).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+/**
+ * Picks a color for a newly-registered keyword category that doesn't clash
+ * with any color already in use (case-insensitive). Tries the curated
+ * KEYWORD_CATEGORY_COLOR_PALETTE first so small keyword sets keep the
+ * original hand-picked look; once that's exhausted, generates further pastel
+ * colors by walking the hue wheel in golden-angle (~137.508°) steps, which
+ * spreads consecutive hues apart so their hex values stay distinct even
+ * across hundreds of categories.
+ * @param {string[]} existingColors
+ * @returns {string}
+ */
+function pickUnusedKeywordColor(existingColors) {
+  const used = new Set(existingColors.map(c => c.toLowerCase()));
+  for (const color of KEYWORD_CATEGORY_COLOR_PALETTE) {
+    if (!used.has(color.toLowerCase())) return color;
+  }
+  const GOLDEN_ANGLE = 137.508;
+  for (let i = 0; i < 100000; i++) {
+    const color = hslToHex((i * GOLDEN_ANGLE) % 360, 65, 78);
+    if (!used.has(color.toLowerCase())) return color;
+  }
+  return DEFAULT_KEYWORD_COLOR;
 }
 
 /**
@@ -5456,9 +5567,6 @@ function buildKeywordCategoryRow(category) {
   row.className = 'keyword-category-row';
   if (category.enabled === false) row.classList.add('keyword-category-disabled');
 
-  const main = document.createElement('div');
-  main.className = 'keyword-category-main';
-
   // Enabled toggle (issue #71): lets a category's highlight be switched off
   // without clearing its keyword text, e.g. to temporarily silence a noisy
   // category while reviewing. Purely a highlight switch — it does not affect
@@ -5503,33 +5611,32 @@ function buildKeywordCategoryRow(category) {
   removeBtn.textContent = '×';
   removeBtn.addEventListener('click', () => deleteKeywordCategory(category.id));
 
-  main.appendChild(enabledToggle);
-  main.appendChild(colorInput);
-  main.appendChild(keywordsInput);
-  main.appendChild(removeBtn);
+  row.appendChild(enabledToggle);
+  row.appendChild(colorInput);
+  row.appendChild(keywordsInput);
 
   // Scope selector (issue #68): choose whether this category is shared by
   // every project ('global', stored in SK_KEYWORDS) or private to the
   // currently active project ('project', stored in SK_PROJECT_KEYWORDS).
-  // The "このプロジェクトのみ" option is disabled with no active project —
-  // a category can only move into a project's own store while that project
-  // is selected.
-  const scopeRow = document.createElement('div');
-  scopeRow.className = 'keyword-category-scope-row';
-
+  // The "プロジェクト" option is disabled with no active project — a
+  // category can only move into a project's own store while that project
+  // is selected. Labels are kept short (vs. the bulk-registration form's
+  // spelled-out "全体設定"/"このプロジェクトのみ") since this row packs
+  // every control onto a single line; the title attribute carries the
+  // full explanation.
   const scopeSelect = document.createElement('select');
   scopeSelect.className = 'keyword-category-scope-select';
-  scopeSelect.setAttribute('aria-label', '適用範囲');
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
   scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
 
   const globalOption = document.createElement('option');
   globalOption.value = 'global';
-  globalOption.textContent = '全体設定';
+  globalOption.textContent = '全体';
   scopeSelect.appendChild(globalOption);
 
   const projectOption = document.createElement('option');
   projectOption.value = 'project';
-  projectOption.textContent = 'このプロジェクトのみ';
+  projectOption.textContent = 'プロジェクト';
   projectOption.disabled = !app.currentProjectId;
   scopeSelect.appendChild(projectOption);
 
@@ -5538,7 +5645,7 @@ function buildKeywordCategoryRow(category) {
     moveKeywordCategoryScope(category.id, scopeSelect.value);
   });
 
-  scopeRow.appendChild(scopeSelect);
+  row.appendChild(scopeSelect);
 
   // Count toggle (issue #59): per-category opt-in match counter across the
   // whole loaded diff, e.g. "TODO はカウントする、NOTE はカウントしない".
@@ -5566,12 +5673,11 @@ function buildKeywordCategoryRow(category) {
   });
 
   countRow.appendChild(countToggle);
-  countRow.appendChild(document.createTextNode('カウント'));
+  countRow.appendChild(document.createTextNode('件数'));
   countRow.appendChild(countBadge);
 
-  row.appendChild(main);
-  row.appendChild(scopeRow);
   row.appendChild(countRow);
+  row.appendChild(removeBtn);
   return row;
 }
 
@@ -5613,11 +5719,45 @@ function refreshKeywordCounts() {
 
 /** New categories always start global; move them to the active project via the scope selector afterwards. */
 function addKeywordCategory() {
-  const color = KEYWORD_CATEGORY_COLOR_PALETTE[loadKeywordCategories().length % KEYWORD_CATEGORY_COLOR_PALETTE.length];
+  const color = pickUnusedKeywordColor(loadKeywordCategories().map(c => c.color));
   const categories = loadGlobalKeywordCategories();
   categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false, enabled: true });
   saveGlobalKeywordCategories(categories);
   renderKeywordCategoryList();
+}
+
+/**
+ * Bulk-registers one new category per non-empty line of `text` (each line
+ * becomes a category's comma-separated `keywords` string, so a line can
+ * itself list several keywords sharing one color/settings). Every new
+ * category gets a color that doesn't clash with any existing category's
+ * color, nor with another category created earlier in the same batch.
+ * `scope === 'project'` requires an active project (checked by the caller,
+ * which disables that option otherwise) and puts every new category into
+ * that project's own store; anything else registers them as global.
+ * @returns {number} how many categories were created
+ */
+function bulkAddKeywordCategories(text, scope) {
+  const lines = text.split(/\r\n|\r|\n/).map(line => line.trim()).filter(line => line.length > 0);
+  if (lines.length === 0) return 0;
+
+  const usedColors = loadKeywordCategories().map(c => c.color);
+  const newCategories = lines.map(line => {
+    const color = pickUnusedKeywordColor(usedColors);
+    usedColors.push(color);
+    return { id: generateKeywordCategoryId(), keywords: line, color, countEnabled: false, enabled: true };
+  });
+
+  if (scope === 'project' && app.currentProjectId) {
+    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    categories.push(...newCategories);
+    saveProjectKeywordCategories(app.currentProjectId, categories);
+  } else {
+    const categories = loadGlobalKeywordCategories();
+    categories.push(...newCategories);
+    saveGlobalKeywordCategories(categories);
+  }
+  return newCategories.length;
 }
 
 let keywordDebounceTimer = null;
@@ -5703,6 +5843,40 @@ function deleteKeywordCategory(id) {
 
 renderKeywordCategoryList();
 document.getElementById('keyword-category-add-btn').addEventListener('click', addKeywordCategory);
+
+// Bulk keyword registration: a collapsible form (toggled by "一括登録") that
+// splits its textarea into one new category per line and registers them all
+// as either global or (if a project is active) that project's own categories.
+const keywordBulkForm = document.getElementById('keyword-bulk-form');
+const keywordBulkTextarea = document.getElementById('keyword-bulk-textarea');
+const keywordBulkScopeSelect = document.getElementById('keyword-bulk-scope-select');
+
+function openKeywordBulkForm() {
+  keywordBulkScopeSelect.querySelector('option[value="project"]').disabled = !app.currentProjectId;
+  if (!app.currentProjectId) keywordBulkScopeSelect.value = 'global';
+  keywordBulkTextarea.value = '';
+  keywordBulkForm.hidden = false;
+  keywordBulkTextarea.focus();
+}
+
+function closeKeywordBulkForm() {
+  keywordBulkForm.hidden = true;
+}
+
+document.getElementById('keyword-category-bulk-btn').addEventListener('click', () => {
+  if (keywordBulkForm.hidden) openKeywordBulkForm(); else closeKeywordBulkForm();
+});
+
+document.getElementById('keyword-bulk-cancel-btn').addEventListener('click', closeKeywordBulkForm);
+
+document.getElementById('keyword-bulk-submit-btn').addEventListener('click', () => {
+  const scope = keywordBulkScopeSelect.value === 'project' && app.currentProjectId ? 'project' : 'global';
+  const count = bulkAddKeywordCategories(keywordBulkTextarea.value, scope);
+  if (count === 0) return;
+  closeKeywordBulkForm();
+  renderKeywordCategoryList();
+  scheduleKeywordDiffRerender();
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Initialise

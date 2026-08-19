@@ -91,7 +91,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
-| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能） |
+| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
@@ -119,7 +119,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
 | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（一致回数カウントの表示・切り替え、ハイライト自体の有効/無効切り替え、全体設定／プロジェクト毎の設定の切り替えを含む） |
+| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
