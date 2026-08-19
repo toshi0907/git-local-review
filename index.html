@@ -5717,9 +5717,26 @@ function refreshKeywordCounts() {
   }
 }
 
+/**
+ * Every color currently in use across the global category store and every
+ * project's own category store (not just the active project's). A new
+ * *global* category is merged into every project's view (see
+ * loadKeywordCategories()), so its auto-picked color has to avoid every
+ * project's own categories too, not only the ones visible right now —
+ * otherwise it could still collide once a different project is opened.
+ */
+function collectAllKeywordColors() {
+  const colors = loadGlobalKeywordCategories().map(c => c.color);
+  const allProjects = loadAllProjectKeywordCategories();
+  for (const pid of Object.keys(allProjects)) {
+    for (const c of allProjects[pid]) colors.push(c.color);
+  }
+  return colors;
+}
+
 /** New categories always start global; move them to the active project via the scope selector afterwards. */
 function addKeywordCategory() {
-  const color = pickUnusedKeywordColor(loadKeywordCategories().map(c => c.color));
+  const color = pickUnusedKeywordColor(collectAllKeywordColors());
   const categories = loadGlobalKeywordCategories();
   categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false, enabled: true });
   saveGlobalKeywordCategories(categories);
@@ -5734,21 +5751,25 @@ function addKeywordCategory() {
  * color, nor with another category created earlier in the same batch.
  * `scope === 'project'` requires an active project (checked by the caller,
  * which disables that option otherwise) and puts every new category into
- * that project's own store; anything else registers them as global.
+ * that project's own store — there, only global + that project's own colors
+ * matter, since that's everything ever shown together (loadKeywordCategories()).
+ * Anything else registers them as global, so it has to avoid every project's
+ * colors (collectAllKeywordColors()), not only the active one's.
  * @returns {number} how many categories were created
  */
 function bulkAddKeywordCategories(text, scope) {
   const lines = text.split(/\r\n|\r|\n/).map(line => line.trim()).filter(line => line.length > 0);
   if (lines.length === 0) return 0;
 
-  const usedColors = loadKeywordCategories().map(c => c.color);
+  const isProjectScope = scope === 'project' && app.currentProjectId;
+  const usedColors = isProjectScope ? loadKeywordCategories().map(c => c.color) : collectAllKeywordColors();
   const newCategories = lines.map(line => {
     const color = pickUnusedKeywordColor(usedColors);
     usedColors.push(color);
     return { id: generateKeywordCategoryId(), keywords: line, color, countEnabled: false, enabled: true };
   });
 
-  if (scope === 'project' && app.currentProjectId) {
+  if (isProjectScope) {
     const categories = loadProjectKeywordCategories(app.currentProjectId);
     categories.push(...newCategories);
     saveProjectKeywordCategories(app.currentProjectId, categories);
