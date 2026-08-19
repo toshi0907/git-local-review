@@ -291,9 +291,7 @@
       border-top: 1px solid #e1e4e8;
     }
 
-    .settings-save-section .folder-row { margin-top: 0; }
-
-    .settings-save-btn { width: 100%; margin-top: 8px; }
+    .settings-save-btn { width: 100%; }
 
     .folder-status-msg {
       margin-top: 6px;
@@ -1461,6 +1459,16 @@
           <span aria-hidden="true">📥</span> インポート
         </button>
       </div>
+      <div class="settings-save-section" id="settings-save-section">
+        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
+          <span aria-hidden="true">💾</span> 設定を保存
+        </button>
+        <div class="folder-status-msg" id="settings-save-status"></div>
+        <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
+          ⚠️ 保存先フォルダのデータが他の環境で更新されています。
+          <button type="button" class="folder-btn" id="settings-reload-btn">読み込む</button>
+        </div>
+      </div>
     </div>
     <div class="sidebar-section-title">プロジェクト一覧</div>
     <div class="sort-row">
@@ -1543,21 +1551,11 @@
         <button type="button" class="folder-btn" id="open-folder-set-btn" title="Diffファイルを開く際の既定のフォルダを設定">選択</button>
         <button type="button" class="folder-btn" id="open-folder-clear-btn" title="既定のフォルダ設定を解除">解除</button>
       </div>
-      <div class="settings-save-section" id="settings-save-section">
-        <div class="folder-row" id="settings-folder-row">
-          <span class="folder-label">保存先フォルダ:</span>
-          <span class="folder-name" id="settings-folder-name">未設定</span>
-          <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
-          <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
-        </div>
-        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
-          <span aria-hidden="true">💾</span> 設定を保存
-        </button>
-        <div class="folder-status-msg" id="settings-save-status"></div>
-        <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
-          ⚠️ 保存先フォルダのデータが他の環境で更新されています。
-          <button type="button" class="folder-btn" id="settings-reload-btn">読み込む</button>
-        </div>
+      <div class="folder-row" id="settings-folder-row">
+        <span class="folder-label">保存先フォルダ:</span>
+        <span class="folder-name" id="settings-folder-name">未設定</span>
+        <button type="button" class="folder-btn" id="settings-folder-set-btn" title="設定の保存先フォルダを選択">選択</button>
+        <button type="button" class="folder-btn" id="settings-folder-clear-btn" title="保存先フォルダの設定を解除">解除</button>
       </div>
       <div class="encoding-row">
         <label for="encoding-select">文字コード</label>
@@ -5733,6 +5731,7 @@ document.getElementById('keyword-category-add-btn').addEventListener('click', ad
     startSettingsExternalChangeWatcher();
   } else {
     document.getElementById('open-folder-row').style.display = 'none';
+    document.getElementById('settings-folder-row').style.display = 'none';
     document.getElementById('settings-save-section').style.display = 'none';
   }
 
