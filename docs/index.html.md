@@ -60,8 +60,9 @@ test/                ← テスト用 .diff サンプルファイル
     <style>                     ← アプリ全体の CSS
   <body>
     <div id="app">
-      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・エクスポート/インポート・プロジェクト一覧。
-                                   設定項目は #61 で設定モーダルへ移動済み）
+      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・エクスポート/インポート・「設定を保存」ボタン（保存状態表示・
+                                   外部変更通知「読み込む」導線を含む）・プロジェクト一覧。
+                                   フォルダ選択等の設定項目は #61 で設定モーダルへ移動済み）
       <main id="main">
         <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）
         <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）
@@ -71,7 +72,8 @@ test/                ← テスト用 .diff サンプルファイル
                                    1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
     <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（既定のフォルダ・保存先フォルダ・
-                                   文字コード・キーワードカテゴリをまとめて表示。#61）
+                                   文字コード・キーワードカテゴリをまとめて表示。#61。「設定を保存」ボタン自体は
+                                   サイドバー（メイン画面）に配置）
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
 ```
@@ -513,7 +515,7 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 **自動保存状態の警告（issue #60）:** `#autosave-warning-banner`（トップバー直下・画面上部に常時表示可能なバナー）は、保存先フォルダが設定されているにもかかわらず自動保存が実行できていない場合（書き込み権限が許可されていない、または書き込み時に例外が発生した場合）に表示されます。`showAutoSaveWarning(message)` / `hideAutoSaveWarning()` が表示・非表示とメッセージ文言を切り替え、バナーが占める高さ（`AUTOSAVE_WARNING_HEIGHT_PX`）は CSS カスタムプロパティ `--autosave-warning-height` 経由で `.layout` の高さ計算に反映されます。以下の経路で状態が更新されます。
 
 - `autoSaveSettingsToFolder()`: 書き込み権限が無い、または書き込みが例外で失敗した場合に表示。成功時は非表示
-- `saveSettingsToFolder()`（設定モーダル内の「設定を保存」ボタンによる手動保存。#61 でサイドバーからモーダルへ移動）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
+- `saveSettingsToFolder()`（サイドバー（メイン画面）の「設定を保存」ボタンによる手動保存。#61 でサイドバーから設定モーダルへ一時移動していたが、その後サイドバーへ戻された）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
 
 **手動保存時の外部変更チェック（issue #70）:** `saveSettingsToFolder()` は書き込み直前に `statSettingsFile()` で現在の設定ファイルの `lastModified`（ファイルが無ければ `null`）を取得し、`settingsFileKnownModified`（前回このタブが保存/読込した時点の値。未読込なら `null`）と比較します。一致しなければ `confirm()` で上書きの可否をユーザーに確認します。この不一致は「他の環境で更新された」だけでなく、`currentModified === null` なら「他の環境で削除された」、`settingsFileKnownModified === null` なら「他の環境で新規作成された」ケースもあり得るため、ダイアログの文言は3パターンを判定して出し分けます。
 
