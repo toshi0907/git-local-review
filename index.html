@@ -5050,10 +5050,10 @@ function hideModal() {
  *
  * In normal (interactive) mode a conflict opens the confirmation modal and
  * waits for the user's choice. In batch mode (used when multiple files are
- * uploaded at once) the modal is skipped and a new project is always
- * created automatically, so a whole batch can be processed without
- * blocking on per-file dialogs; the caller is told a conflict occurred so
- * it can summarize this for the user afterwards.
+ * uploaded at once) the modal is skipped and the most recently updated
+ * same-named project is updated automatically, so a whole batch can be
+ * processed without blocking on per-file dialogs; the caller is told a
+ * conflict occurred so it can summarize this for the user afterwards.
  *
  * @returns {Promise<{conflict: boolean}>}
  */
@@ -5086,9 +5086,14 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
 
   if (existing.length > 0) {
     if (batchMode) {
-      // Don't block a multi-file upload on a per-file modal: always add as
-      // a new project, and let the caller inform the user afterwards.
-      createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+      // Don't block a multi-file upload on a per-file modal: update the
+      // most recently updated same-named project automatically (matching
+      // the modal's default pre-selection), and let the caller inform the
+      // user afterwards.
+      const mostRecent = [...existing].sort(
+        (a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt)
+      )[0];
+      updateExistingProject(mostRecent.id, parsed, text, fileHandle, encodingPref, encoding);
       return { conflict: true };
     }
     await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
@@ -5107,9 +5112,9 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
  * A single file is delegated straight to loadDiffFile() in its normal
  * interactive mode, leaving that existing single-file flow (including the
  * conflict modal) completely untouched. For two or more files, conflicts
- * are auto-resolved (see loadDiffFile's batchMode) and summarized in one
- * alert at the end, so the user is always told what happened and no file
- * is silently dropped.
+ * are auto-resolved by updating the matching existing project (see
+ * loadDiffFile's batchMode) and summarized in one alert at the end, so the
+ * user is always told what happened and no file is silently dropped.
  */
 async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
   if (files.length === 0) return;
@@ -5119,21 +5124,21 @@ async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
     return;
   }
 
-  const autoRenamed = [];
+  const autoUpdated = [];
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     const handle = fileHandles ? fileHandles[i] : null;
     const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true });
-    if (result && result.conflict) autoRenamed.push(file.name);
+    if (result && result.conflict) autoUpdated.push(file.name);
   }
 
   renderProjectList();
 
-  if (autoRenamed.length > 0) {
+  if (autoUpdated.length > 0) {
     alert(
       `${files.length} 件のファイルを読み込みました。\n` +
-      `うち ${autoRenamed.length} 件は同名の既存プロジェクトがあったため、新規プロジェクトとして追加しました:\n` +
-      autoRenamed.map(n => `・${n}`).join('\n')
+      `うち ${autoUpdated.length} 件は同名の既存プロジェクトがあったため、そのプロジェクトを更新しました:\n` +
+      autoUpdated.map(n => `・${n}`).join('\n')
     );
   } else {
     alert(`${files.length} 件のファイルをすべて新規プロジェクトとして読み込みました。`);
