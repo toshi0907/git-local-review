@@ -4417,6 +4417,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
 
   renderProjectList();
   renderDiff();
+  return id;
 }
 
 /** Update an existing project's metadata and display its (new) diff */
@@ -5055,9 +5056,15 @@ function hideModal() {
  * processed without blocking on per-file dialogs; the caller is told a
  * conflict occurred so it can summarize this for the user afterwards.
  *
+ * `batchCreatedIds`, when given, is a Set (shared across the whole batch by
+ * the caller) of project IDs already created earlier in this same batch.
+ * Those projects are excluded from auto-update candidates so that two
+ * files sharing a name within one batch still become two separate
+ * projects, instead of the second silently overwriting the first.
+ *
  * @returns {Promise<{conflict: boolean}>}
  */
-async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { batchMode = false } = {}) {
+async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { batchMode = false, batchCreatedIds = null } = {}) {
   let buffer;
   try {
     buffer = await file.arrayBuffer();
@@ -5089,18 +5096,27 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
       // Don't block a multi-file upload on a per-file modal: update the
       // most recently updated same-named project automatically (matching
       // the modal's default pre-selection), and let the caller inform the
-      // user afterwards.
-      const mostRecent = [...existing].sort(
-        (a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt)
-      )[0];
-      updateExistingProject(mostRecent.id, parsed, text, fileHandle, encodingPref, encoding);
+      // user afterwards. Projects created earlier in this same batch are
+      // excluded so same-named files within one batch don't overwrite
+      // each other.
+      const updatable = batchCreatedIds
+        ? existing.filter(p => !batchCreatedIds.has(p.id))
+        : existing;
+      if (updatable.length > 0) {
+        const mostRecent = [...updatable].sort(
+          (a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt)
+        )[0];
+        updateExistingProject(mostRecent.id, parsed, text, fileHandle, encodingPref, encoding);
+        return { conflict: true };
+      }
+    } else {
+      await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
       return { conflict: true };
     }
-    await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
-    return { conflict: true };
   }
 
-  createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  const newId = createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  if (batchCreatedIds) batchCreatedIds.add(newId);
   return { conflict: false };
 }
 
@@ -5125,10 +5141,11 @@ async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
   }
 
   const autoUpdated = [];
+  const batchCreatedIds = new Set();
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     const handle = fileHandles ? fileHandles[i] : null;
-    const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true });
+    const result = await loadDiffFile(file, handle, encodingPref, { batchMode: true, batchCreatedIds });
     if (result && result.conflict) autoUpdated.push(file.name);
   }
 
