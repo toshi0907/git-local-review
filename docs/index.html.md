@@ -60,9 +60,9 @@ test/                ← テスト用 .diff サンプルファイル
     <style>                     ← アプリ全体の CSS
   <body>
     <div id="app">
-      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・エクスポート/インポート・「設定を保存」ボタン（保存状態表示・
-                                   外部変更通知「読み込む」導線を含む）・プロジェクト一覧。
-                                   フォルダ選択等の設定項目は #61 で設定モーダルへ移動済み）
+      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・「設定を保存」/「設定を読み込み」ボタン（保存状態表示・
+                                   外部変更通知「読み込む」導線を含む）・プロジェクト一覧（#83 でコンパクト表示化）。
+                                   フォルダ選択等の設定項目は #61 で、エクスポート/インポートは #83 で設定モーダルへ移動済み）
       <main id="main">
         <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）
         <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）
@@ -71,9 +71,9 @@ test/                ← テスト用 .diff サンプルファイル
       <aside class="memo-panel" id="memo-panel">   ← レビューメモパネル（狭い画面はスライドオーバーレイ、
                                    1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
-    <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（既定のフォルダ・保存先フォルダ・
-                                   文字コード・キーワードカテゴリをまとめて表示。#61。「設定を保存」ボタン自体は
-                                   サイドバー（メイン画面）に配置）
+    <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（エクスポート/インポート（#83）・
+                                   既定のフォルダ・保存先フォルダ・文字コード・キーワードカテゴリをまとめて表示。#61。
+                                   「設定を保存」「設定を読み込み」ボタン自体はサイドバー（メイン画面）に配置）
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
 ```
@@ -93,7 +93,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Diff view mode** | Unified / Side-by-side モード保存 |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
 | **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
-| **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
+| **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
@@ -102,7 +102,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Hashing** | Web Crypto API / djb2 フォールバック |
 | **HTML escaping** | `esc()` ユーティリティ |
 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
-| **Render: sidebar project list** | `renderProjectList()` |
+| **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示） |
 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
 | **Render: full diff view** | `renderDiff()` |
 | **Build a single hunk card** | `buildHunkCard()` |
@@ -114,7 +114,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **View mode toggle** | Unified ↔ Split ボタン処理 |
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |
-| **Export / Import** | JSON エクスポート / インポート |
+| **Export / Import** | JSON エクスポート / インポート。UI（ボタン・ファイル入力）は #83 で設定モーダルへ移動したが、データ層のこのセクション自体は移動していない |
 | **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
 | **Conflict modal** | ファイル名衝突ダイアログ |
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
@@ -338,6 +338,10 @@ renderProjectList()
 
 `loadProjects()` で取得したリストを `sortProjects()` でソートし、サイドバーの `#project-list` に DOM を構築します。現在アクティブなプロジェクト (`app.currentProjectId`) には `active` クラスが付与されます。File System Access API が利用可能なプロジェクトには「🔃 再読み込み」ボタンが表示されます。
 
+**コンパクト表示（issue #83）:** 各項目は標準でファイル名・更新時間・（あれば）再読み込みボタンのみを表示し、それ以外（プロジェクトID・文字コード選択・リセット/削除ボタン）は `.proj-details`（`.project-item.expanded` のときだけ `display: block`）に格納されて折りたたまれています。開閉は項目ごとの `▸`/`▾` トグルボタン（`.proj-expand-toggle`）で行い、開閉状態はモジュール変数 `expandedProjectIds`（`Set<projectId>`）が保持します。`localStorage` には保存されない揮発性の UI 状態で、ページを再読み込みするとすべて折りたたみ状態に戻ります。
+
+**外部更新の可視化（issue #83）:** モジュール変数 `projectsWithExternalFileUpdate`（`Set<projectId>`、`checkProjectFileUpdates()` が更新）にプロジェクトIDが含まれる場合、ファイル名の先頭に 🆕 バッジ（`.proj-update-badge`）が付き、再読み込みボタンに `.btn-reload-update` クラスが付いて配色が変わります。いずれもクリックで「🔃 再読み込み」を実行すれば通常の見た目に戻ります（`reloadProjectFile()` → `updateExistingProject()` 経由で `recordProjectFileBaseline()` が呼ばれ、`projectsWithExternalFileUpdate` からも削除されます）。
+
 ---
 
 ### Render: full diff view
@@ -498,6 +502,16 @@ const supportsFileSystemAccess = typeof window.showOpenFilePicker === 'function'
 | `refreshHandleIndex()` | `projectIdsWithHandles` Set を IndexedDB から再構築 |
 | `verifyHandlePermission(handle, mode)` | パーミッション確認・要求 |
 
+**プロジェクトファイルの外部更新チェック（issue #83）:** ディスク上のファイルが（例えば `git diff` を再実行して同名ファイルに再度書き出すなど）アプリ外から更新されたことを、プロジェクト一覧の「🔃 再読み込み」を毎回手動で試さなくても気付けるようにする仕組みです。
+
+| 関数 | 説明 |
+|---|---|
+| `recordProjectFileBaseline(projectId, fileHandle)` | `fileHandle.getFile().lastModified` を読み取り、プロジェクトレコードの `fileLastModified` フィールドに保存（比較の基準値）。`createNewProject()` / `updateExistingProject()` が `fileHandle` 付きで呼ばれた際に `saveFileHandle().then(...)` のチェーンから毎回呼ばれる（新規作成・同名上書き・手動再読み込みのいずれの経路でも通る） |
+| `checkProjectFileUpdates()` | `projectIdsWithHandles` の各プロジェクトについて、権限が既に `granted`（`queryPermission()`。バックグラウンドタイマーからの呼び出しのためユーザー操作なしで `requestPermission()` は行わない）なら `handle.getFile().lastModified` を現在の `proj.fileLastModified` と比較し、不一致なら `projectsWithExternalFileUpdate` に追加して `renderProjectList()` を呼ぶ |
+| `startProjectFileUpdateWatcher()` | `checkProjectFileUpdates()` を `PROJECT_FILE_CHECK_INTERVAL_MS`（1分）ごとに実行するタイマーを開始。`init()` から File System Access 対応ブラウザでのみ呼ばれる |
+
+`fileLastModified` はプロジェクトレコード（`SK_PROJECTS`）自体のフィールドとして永続化されるため、ページの再読み込みをまたいでも基準値が失われず誤検知しません。`sanitizeImportedProjects()` はこの値もそのまま通しますが、対応する `FileSystemFileHandle` が同じ端末の IndexedDB に存在しない限り（＝手動でのJSONインポートでは通常存在しない）意味を持たない、無害なデータです。
+
 ---
 
 ### File System Access API — directory handles & settings folder
@@ -543,6 +557,8 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 
 このバナーは「保存先フォルダが未設定」の場合や、外部変更検知による意図的なスキップ（`showSettingsExternalUpdateNotice()` が既に専用の通知とアクションを提供している）では表示されません。前者は警告対象外、後者は失敗ではなく想定内の一時停止のためです。
 
+**任意タイミングでの読み込み（issue #83）:** `reloadSettingsFromFolderManually()` を呼ぶボタンは2つあります。`#settings-reload-btn`（`#settings-external-update-notice` 内、外部変更検知時のみ表示）に加えて、「設定を保存」ボタンの隣に常時表示の `#settings-load-btn`（「📥 設定を読み込み」）があり、外部変更の有無にかかわらず任意のタイミングで保存先フォルダから読み込み直せます。保存先フォルダが未設定の状態で `#settings-load-btn` を押した場合は `reloadSettingsFromFolderManually()` が `saveSettingsToFolder()` 同様のアラートで案内します（`#settings-reload-btn` 側は通知自体がフォルダ設定済みのときしか表示されないため、通常この分岐には到達しません）。
+
 ---
 
 ### File loading
@@ -582,7 +598,8 @@ init()
   │     ├─ refreshOpenFolderUI()
   │     ├─ refreshSettingsFolderUI()
   │     ├─ loadSettingsFromFolderOnStartup()   設定ファイルがあれば自動読み込み
-  │     └─ startSettingsExternalChangeWatcher()
+  │     ├─ startSettingsExternalChangeWatcher()
+  │     └─ startProjectFileUpdateWatcher()     プロジェクトファイルの外部更新監視（#83）
   ├─ renderProjectList()
   └─ 最後に開いていたプロジェクトを復元 (SK_CURRENT → restoreProjectDiff)
 ```

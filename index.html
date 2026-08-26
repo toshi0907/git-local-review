@@ -291,7 +291,21 @@
       border-top: 1px solid #e1e4e8;
     }
 
-    .settings-save-btn { width: 100%; }
+    .settings-save-btn-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .settings-save-btn { flex: 1; }
+
+    .io-section { margin-bottom: 10px; }
+    .io-section .io-btn-row { margin-top: 0; }
+
+    .io-section-label {
+      font-size: 11px;
+      color: #57606a;
+      margin-bottom: 6px;
+    }
 
     .folder-status-msg {
       margin-top: 6px;
@@ -589,6 +603,51 @@
       border-left-color: #0969da;
     }
 
+    /* Compact project list (issue #83): only the filename, updated time and
+       reload button show by default; id/encoding/reset/delete live inside
+       .proj-details, shown only for an expanded item. */
+    .proj-top-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+    }
+
+    .proj-quick-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .proj-expand-toggle {
+      flex-shrink: 0;
+      padding: 2px 5px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #57606a;
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .proj-expand-toggle:hover { background: #eaeef2; border-color: #d0d7de; }
+
+    .proj-details { display: none; }
+
+    .project-item.expanded .proj-details { display: block; }
+
+    .proj-update-badge {
+      margin-right: 4px;
+      font-size: 12px;
+    }
+
+    .btn-reload-update {
+      color: #b42318;
+      border-color: #fda29b;
+      background: #fef3f2;
+    }
+    .btn-reload-update:hover { background: #ffe0dd; }
+
     .proj-name {
       font-size: 13px;
       font-weight: 600;
@@ -597,6 +656,8 @@
       overflow: hidden;
       text-overflow: ellipsis;
       margin-bottom: 2px;
+      flex: 1;
+      min-width: 0;
     }
 
     .proj-id {
@@ -1664,19 +1725,15 @@
       <button class="load-btn" id="load-btn">
         <span aria-hidden="true">📂</span> Diffファイルを開く
       </button>
-      <div class="io-btn-row">
-        <input type="file" id="import-input" accept="application/json,.json">
-        <button class="io-btn" id="export-btn" title="プロジェクトとレビュー状態をJSONファイルに保存">
-          <span aria-hidden="true">💾</span> エクスポート
-        </button>
-        <button class="io-btn" id="import-btn" title="エクスポートしたJSONファイルから復元">
-          <span aria-hidden="true">📥</span> インポート
-        </button>
-      </div>
       <div class="settings-save-section" id="settings-save-section">
-        <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
-          <span aria-hidden="true">💾</span> 設定を保存
-        </button>
+        <div class="settings-save-btn-row">
+          <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
+            <span aria-hidden="true">💾</span> 設定を保存
+          </button>
+          <button class="io-btn settings-save-btn" id="settings-load-btn" title="今すぐ指定フォルダから読み込みます">
+            <span aria-hidden="true">📥</span> 設定を読み込み
+          </button>
+        </div>
         <div class="folder-status-msg" id="settings-save-status"></div>
         <div class="folder-status-msg folder-external-update-msg" id="settings-external-update-notice" style="display:none;">
           ⚠️ 保存先フォルダのデータが他の環境で更新されています。
@@ -1759,6 +1816,18 @@
       <button type="button" class="settings-modal-close" id="settings-modal-close" aria-label="閉じる">✕</button>
     </div>
     <div class="settings-modal-body">
+      <div class="io-section">
+        <div class="io-section-label">データのエクスポート・インポート</div>
+        <div class="io-btn-row">
+          <input type="file" id="import-input" accept="application/json,.json">
+          <button class="io-btn" id="export-btn" title="プロジェクトとレビュー状態をJSONファイルに保存">
+            <span aria-hidden="true">💾</span> エクスポート
+          </button>
+          <button class="io-btn" id="import-btn" title="エクスポートしたJSONファイルから復元">
+            <span aria-hidden="true">📥</span> インポート
+          </button>
+        </div>
+      </div>
       <div class="folder-row" id="open-folder-row">
         <span class="folder-label">既定のフォルダ:</span>
         <span class="folder-name" id="open-folder-name">未設定</span>
@@ -2883,6 +2952,15 @@ const FOLDER_STORE   = 'folderHandles';
 /** IDs of projects that currently have a stored file handle (kept in sync via refreshHandleIndex). */
 let projectIdsWithHandles = new Set();
 
+/**
+ * UI-only state for the compact project list (issue #83): IDs of projects
+ * whose collapsed details (ID, encoding, reset/delete) are expanded, and IDs
+ * flagged by checkProjectFileUpdates() as changed on disk since we last read
+ * them. Neither is persisted — both simply reset to empty on page load.
+ */
+let expandedProjectIds = new Set();
+let projectsWithExternalFileUpdate = new Set();
+
 function openHandleDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(HANDLE_DB_NAME, 2);
@@ -2960,6 +3038,84 @@ async function refreshHandleIndex() {
   }
 }
 
+/**
+ * Record the on-disk mtime of a project's file right after it was read (on
+ * create, update, or manual reload — anywhere createNewProject()/
+ * updateExistingProject() are given a fileHandle) as the baseline for
+ * checkProjectFileUpdates() below. Persisted on the project record itself
+ * (proj.fileLastModified) rather than kept only in memory, so a page reload
+ * doesn't lose the baseline and falsely flag an unchanged file as updated.
+ */
+async function recordProjectFileBaseline(projectId, fileHandle) {
+  let lastModified;
+  try {
+    lastModified = (await fileHandle.getFile()).lastModified;
+  } catch (e) {
+    return;
+  }
+  const projects = loadProjects();
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj) return;
+  proj.fileLastModified = lastModified;
+  saveProjects(projects);
+  projectsWithExternalFileUpdate.delete(projectId);
+}
+
+/**
+ * Poll every project with a remembered file handle for changes made outside
+ * this tab (issue #83) — e.g. re-running `git diff` and overwriting the same
+ * file. Only ever flags the project (🆕 badge + highlighted reload button in
+ * renderProjectList()); reloading the content stays an explicit user action
+ * via the existing "🔃 再読み込み" button. Never requests permission — a
+ * background timer has no user gesture to justify a prompt — so a project
+ * whose read permission isn't currently granted is silently skipped until
+ * the user next interacts with it.
+ */
+async function checkProjectFileUpdates() {
+  if (projectIdsWithHandles.size === 0) return;
+  const projects = loadProjects();
+  let changed = false;
+  for (const projectId of projectIdsWithHandles) {
+    if (projectsWithExternalFileUpdate.has(projectId)) continue;
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj || typeof proj.fileLastModified !== 'number') continue;
+
+    let handle;
+    try {
+      handle = await loadFileHandle(projectId);
+    } catch (e) {
+      continue;
+    }
+    if (!handle) continue;
+
+    let permission;
+    try {
+      permission = await handle.queryPermission({ mode: 'read' });
+    } catch (e) {
+      continue;
+    }
+    if (permission !== 'granted') continue;
+
+    let file;
+    try {
+      file = await handle.getFile();
+    } catch (e) {
+      continue; // likely moved/deleted; reloadProjectFile() surfaces that when the user acts
+    }
+
+    if (file.lastModified !== proj.fileLastModified) {
+      projectsWithExternalFileUpdate.add(projectId);
+      changed = true;
+    }
+  }
+  if (changed) renderProjectList();
+}
+
+function startProjectFileUpdateWatcher() {
+  clearInterval(projectFileCheckTimer);
+  projectFileCheckTimer = setInterval(checkProjectFileUpdates, PROJECT_FILE_CHECK_INTERVAL_MS);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // File System Access API — remembered directory handles (IndexedDB)
 //
@@ -2987,6 +3143,10 @@ const AUTOSAVE_WARNING_HEIGHT_PX = 32;
 let settingsFileKnownModified = null;
 let settingsAutoSaveTimer = null;
 let settingsExternalCheckTimer = null;
+
+/** How often to poll each project's remembered file handle for external changes (issue #83). */
+const PROJECT_FILE_CHECK_INTERVAL_MS = 60000;
+let projectFileCheckTimer = null;
 
 async function saveFolderHandle(key, handle) {
   try {
@@ -3448,17 +3608,41 @@ function renderProjectList() {
 
   for (const proj of sorted) {
     const isActive = proj.id === app.currentProjectId;
+    const isExpanded = expandedProjectIds.has(proj.id);
+    const hasExternalUpdate = projectsWithExternalFileUpdate.has(proj.id);
     const item = document.createElement('div');
-    item.className = 'project-item' + (isActive ? ' active' : '');
+    item.className = 'project-item' + (isActive ? ' active' : '') + (isExpanded ? ' expanded' : '');
 
     const updated = new Date(proj.lastUpdated || proj.createdAt).toLocaleString('ja-JP', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
     });
 
+    const topRowEl = document.createElement('div'); topRowEl.className = 'proj-top-row';
     const nameEl   = document.createElement('div'); nameEl.className = 'proj-name'; nameEl.title = proj.id; nameEl.textContent = proj.fileName;
+    if (hasExternalUpdate) {
+      const updateBadge = document.createElement('span');
+      updateBadge.className = 'proj-update-badge';
+      updateBadge.textContent = '🆕';
+      updateBadge.title = 'ファイルがディスク上で更新されています。再読み込みしてください。';
+      nameEl.prepend(updateBadge);
+    }
     const idEl     = document.createElement('div'); idEl.className = 'proj-id'; idEl.textContent = proj.id;
     const metaEl   = document.createElement('div'); metaEl.className = 'proj-meta'; metaEl.textContent = `更新: ${updated}`;
+    const detailsEl = document.createElement('div'); detailsEl.className = 'proj-details';
     const actEl    = document.createElement('div'); actEl.className = 'proj-actions';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'proj-expand-toggle';
+    toggleBtn.textContent = isExpanded ? '▾' : '▸';
+    toggleBtn.title = isExpanded ? '詳細を閉じる' : '詳細を表示（ID・文字コード・リセット・削除）';
+    toggleBtn.setAttribute('aria-expanded', String(isExpanded));
+    toggleBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (isExpanded) expandedProjectIds.delete(proj.id);
+      else expandedProjectIds.add(proj.id);
+      renderProjectList();
+    });
 
     const encEl = document.createElement('div');
     encEl.className = 'proj-encoding';
@@ -3499,22 +3683,34 @@ function renderProjectList() {
     delBtn.title = 'プロジェクトを削除';
     delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
 
+    // The reload button stays in the always-visible quick-actions row (not
+    // .proj-details) since it's the one action the compact list (#83) is
+    // meant to keep reachable without expanding — the badge above signals
+    // when it's actually worth pressing.
+    const quickActEl = document.createElement('div'); quickActEl.className = 'proj-quick-actions';
     if (projectIdsWithHandles.has(proj.id)) {
       const reloadBtn = document.createElement('button');
-      reloadBtn.className = 'btn btn-reload';
+      reloadBtn.className = 'btn btn-reload' + (hasExternalUpdate ? ' btn-reload-update' : '');
       reloadBtn.textContent = '🔃 再読み込み';
-      reloadBtn.title = '同じファイルをディスクから再読み込み';
+      reloadBtn.title = hasExternalUpdate
+        ? 'ディスク上のファイルが更新されています。クリックして再読み込み'
+        : '同じファイルをディスクから再読み込み';
       reloadBtn.addEventListener('click', e => { e.stopPropagation(); reloadProjectFile(proj.id); });
-      actEl.appendChild(reloadBtn);
+      quickActEl.appendChild(reloadBtn);
     }
+    quickActEl.appendChild(toggleBtn);
 
     actEl.appendChild(resetBtn);
     actEl.appendChild(delBtn);
-    item.appendChild(nameEl);
-    item.appendChild(idEl);
+    detailsEl.appendChild(idEl);
+    detailsEl.appendChild(encEl);
+    detailsEl.appendChild(actEl);
+
+    topRowEl.appendChild(nameEl);
+    topRowEl.appendChild(quickActEl);
+    item.appendChild(topRowEl);
     item.appendChild(metaEl);
-    item.appendChild(encEl);
-    item.appendChild(actEl);
+    item.appendChild(detailsEl);
 
     item.addEventListener('click', () => activateProject(proj.id));
     listEl.appendChild(item);
@@ -4742,7 +4938,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   saveProjects(projects);
   scheduleSettingsAutoSave();
   saveFileContent(id, rawText);
-  if (fileHandle) saveFileHandle(id, fileHandle).then(renderProjectList);
+  if (fileHandle) saveFileHandle(id, fileHandle).then(() => recordProjectFileBaseline(id, fileHandle)).then(renderProjectList);
 
   app.currentProjectId = id;
   app.parsedDiff = parsed;
@@ -4768,7 +4964,7 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
     scheduleSettingsAutoSave();
   }
   saveFileContent(projectId, rawText);
-  if (fileHandle) saveFileHandle(projectId, fileHandle).then(renderProjectList);
+  if (fileHandle) saveFileHandle(projectId, fileHandle).then(() => recordProjectFileBaseline(projectId, fileHandle)).then(renderProjectList);
 
   app.currentProjectId = projectId;
   app.parsedDiff = parsed;
@@ -4820,7 +5016,12 @@ function sanitizeImportedProjects(rawProjects) {
     const lastUpdated = typeof p.lastUpdated === 'number' ? p.lastUpdated : createdAt;
     const encoding = normalizeEncoding(p.encoding);
     const resolvedEncoding = ['utf-8', 'shift_jis', 'euc-jp'].includes(p.resolvedEncoding) ? p.resolvedEncoding : undefined;
-    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding });
+    // Only meaningful together with a FileSystemFileHandle for the same ID
+    // in this browser's IndexedDB (see checkProjectFileUpdates()) — carried
+    // through as-is so a same-machine settings-folder reload doesn't lose
+    // the external-update-check baseline; harmless dead data otherwise.
+    const fileLastModified = typeof p.fileLastModified === 'number' ? p.fileLastModified : undefined;
+    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding, fileLastModified });
   }
   return result;
 }
@@ -5286,7 +5487,13 @@ async function loadSettingsFromFolderOnStartup() {
  */
 async function reloadSettingsFromFolderManually() {
   const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
-  if (!dirHandle) return;
+  if (!dirHandle) {
+    // Reachable from the always-visible "設定を読み込み" button (issue #83),
+    // unlike the external-update notice's "読み込む" button, which only ever
+    // shows once a folder (and a file in it) is already known to exist.
+    alert('先に設定の保存先フォルダを選択してください。');
+    return;
+  }
 
   if (!(await verifyHandlePermission(dirHandle, 'read'))) {
     alert('フォルダへの読み取りアクセスが許可されませんでした。');
@@ -5681,6 +5888,7 @@ document.getElementById('settings-folder-clear-btn').addEventListener('click', a
 });
 
 document.getElementById('settings-save-btn').addEventListener('click', saveSettingsToFolder);
+document.getElementById('settings-load-btn').addEventListener('click', reloadSettingsFromFolderManually);
 document.getElementById('settings-reload-btn').addEventListener('click', reloadSettingsFromFolderManually);
 
 document.getElementById('file-input').addEventListener('change', async (e) => {
@@ -6596,6 +6804,7 @@ extractModalOverlay.addEventListener('click', (e) => {
     await refreshSettingsFolderUI();
     await loadSettingsFromFolderOnStartup();
     startSettingsExternalChangeWatcher();
+    startProjectFileUpdateWatcher();
   } else {
     document.getElementById('open-folder-row').style.display = 'none';
     document.getElementById('settings-folder-row').style.display = 'none';
