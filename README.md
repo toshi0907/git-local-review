@@ -18,6 +18,7 @@
 - **文字コード自動判定** — UTF-8 / Shift_JIS / EUC-JP を自動判定して読み込み
 - **複数ファイル一括読み込み / ドラッグ&ドロップ** — 複数 diff ファイルをまとめて選択・ドロップして個別プロジェクトとして追加
 - **キーワードハイライト（カテゴリ別）** — キーワード（`TODO` / `SECURITY` など）をカテゴリごとに登録し、カテゴリごとに背景色を指定して diff 中でハイライト
+- **キーワード行抽出** — トップバーの🔎アイコンから開く画面で、キーワードハイライトとは別に登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行のみ）を一覧抽出。キーワードは全体設定／プロジェクト毎のいずれかを選んで保存可能
 
 ## 使い方
 
@@ -93,6 +94,9 @@ diff ファイルのバイト列から文字コードを自動判定します（
 | `gitLocalReview_reviewFilter` | ハンク表示フィルタ（`all` / `unreviewed` / `needs_changes`） |
 | `gitLocalReview_projectSort` | プロジェクト一覧の並び順 |
 | `gitLocalReview_keywords` | キーワードハイライトのカテゴリ配列（`{ id, keywords, color }[]` の JSON） |
+| `gitLocalReview_projectKeywords` | プロジェクト毎のキーワードハイライトカテゴリ（`{ [projectId]: category[] }` の JSON） |
+| `gitLocalReview_extractKeywords` | キーワード行抽出の全体設定キーワード配列（`{ id, keyword }[]` の JSON、キーワードハイライトとは別機能） |
+| `gitLocalReview_projectExtractKeywords` | プロジェクト毎のキーワード行抽出キーワード（`{ [projectId]: entry[] }` の JSON） |
 
 `gitLocalReview_reviews` は以下の構造で保存されます。値は `"approved"`（承認）/ `"needs_changes"`（要修正）/ `"on_hold"`（保留）のいずれかで、キー自体が存在しない場合は未レビューです。
 

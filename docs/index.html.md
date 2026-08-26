@@ -92,6 +92,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
+| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）。登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出し、キーワードごとのリストとして表示する。キーワードは全体設定／プロジェクト毎の設定を選択可能 |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
@@ -190,11 +191,15 @@ const SK_REVIEW_FILTER   = 'gitLocalReview_reviewFilter';
 const SK_PROJECT_SORT    = 'gitLocalReview_projectSort';
 const SK_KEYWORDS        = 'gitLocalReview_keywords';
 const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
+const SK_EXTRACT_KEYWORDS = 'gitLocalReview_extractKeywords';
+const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 ```
 
 `SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。
 
 `SK_PROJECT_KEYWORDS`（#68 で追加）はプロジェクト毎のキーワードカテゴリを保持する JSON エンコードされたマップ `{ [projectId]: category[] }` で、各プロジェクトの配列は `SK_KEYWORDS` と同じカテゴリ形状です（`loadProjectKeywordCategories(projectId)` / `saveProjectKeywordCategories(projectId, categories)`）。カテゴリ1件ずつに「全体設定」か「このプロジェクトのみ」かの適用範囲（scope）があり、サイドバーのセレクトで切り替えると `moveKeywordCategoryScope()` が該当カテゴリを `SK_KEYWORDS` と `SK_PROJECT_KEYWORDS` の間で移動させます。`loadKeywordCategories()` は現在アクティブなプロジェクトの文脈で実際にハイライト・表示に使う「全体設定 + アクティブプロジェクト自身のカテゴリ」をマージした一覧を返し、各要素に `scope: 'global' | 'project'` を付与します（設定UIやカテゴリの移動先判定はこの `scope` を見て行います）。プロジェクトが削除されると、そのプロジェクト用のエントリは `deleteProjectKeywordCategories()` により `SK_PROJECT_KEYWORDS` から削除されます（全体設定のカテゴリは影響を受けません）。
+
+`SK_EXTRACT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS`（issue #79 で追加）はキーワード行抽出機能専用のストレージで、キーワードハイライトの `SK_KEYWORDS` / `SK_PROJECT_KEYWORDS` とは独立しています。`SK_EXTRACT_KEYWORDS` は全体設定のキーワードの JSON エンコードされた配列 `{ id, keyword }[]`（`loadGlobalExtractKeywords()` / `saveGlobalExtractKeywords()`）、`SK_PROJECT_EXTRACT_KEYWORDS` はプロジェクト毎のキーワードを保持する JSON エンコードされたマップ `{ [projectId]: entry[] }`（`loadProjectExtractKeywords(projectId)` / `saveProjectExtractKeywords(projectId, keywords)`）です。スコープの考え方・`loadExtractKeywords()`（マージ済みビューを返す）・`moveExtractKeywordScope()`・プロジェクト削除時の `deleteProjectExtractKeywords()` は、いずれも上記のキーワードハイライトの仕組みと同じパターンに倣っています。色やカウントON/OFFといったハイライト用のフィールドは持たず、エントリは `{ id, keyword }` のみです。
 
 `SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
 
@@ -436,7 +441,7 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "reviews": {
@@ -450,6 +455,14 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
     "projectId": [
       { "id": "kwcat_...", "keywords": "HACK", "color": "#a0c4ff" }
     ]
+  },
+  "extractKeywords": [
+    { "id": "exkw_...", "keyword": "TODO" }
+  ],
+  "projectExtractKeywords": {
+    "projectId": [
+      { "id": "exkw_...", "keyword": "HACK" }
+    ]
   }
 }
 ```
@@ -459,6 +472,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 `importAppData(file)` はインポート時に同じ ID のプロジェクトを上書きし、それ以外の既存プロジェクトはそのまま保持します。`reviews` の値は `sanitizeReviewsData()` / `normalizeReviewStatus()` を経由するため、`schemaVersion: 1` 時代の古いエクスポート（値が真偽値 `true`）もインポート時に自動的に `'approved'` へ変換されます。`schemaVersion` 自体はインポート処理で参照されておらず、あくまで記録用の情報です。
 
 `keywordCategories`（issue #58 で追加）は全体設定のキーワードハイライトのカテゴリ／色設定（`SK_KEYWORDS`、`loadGlobalKeywordCategories()`/`saveGlobalKeywordCategories()` 参照）です。`projectKeywordCategories`（issue #68 で追加、`schemaVersion: 4`）はプロジェクト毎のキーワードカテゴリ（`SK_PROJECT_KEYWORDS`）を `{ [projectId]: category[] }` の形でそのまま保持します。`mergeImportedKeywordCategories(rawGlobal, rawByProjectId)` は `keywordCategories` を同じ `id` のカテゴリで上書きし、`projectKeywordCategories` は各プロジェクトIDごとに同じ `id` のカテゴリを上書きします（いずれもそれ以外の既存カテゴリはそのまま保持、プロジェクトと同じマージ方針）。`schemaVersion: 2` 以前のエクスポートには `keywordCategories` が、`schemaVersion: 3` 以前には `projectKeywordCategories` が存在しませんが、`sanitizeKeywordCategories()` が非配列（`undefined` を含む）を空配列として扱うため、インポート時は何もマージされずスキップされるだけで安全です。
+
+`extractKeywords` / `projectExtractKeywords`（issue #79 で追加、`schemaVersion: 5`）は、上記のキーワードハイライトとは別機能であるキーワード行抽出のキーワード（`SK_EXTRACT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS`）です。形状・マージ方針（`mergeImportedExtractKeywords(rawGlobal, rawByProjectId)`）とも `keywordCategories` / `projectKeywordCategories` と同じパターンで、`schemaVersion: 4` 以前のエクスポートにはこれらのキーが存在しませんが同様に安全にスキップされます。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
@@ -599,6 +614,10 @@ init()
 │  gitLocalReview_keywords      キーワードカテゴリ配列  │
 │                                （全体設定）             │
 │  gitLocalReview_projectKeywords キーワードカテゴリ    │
+│                        （プロジェクトID → 配列）      │
+│  gitLocalReview_extractKeywords 行抽出キーワード配列  │
+│                                （全体設定）             │
+│  gitLocalReview_projectExtractKeywords 行抽出キーワード│
 │                        （プロジェクトID → 配列）      │
 └─────────────────────────────────────────────────────┘
           ↕ read/write（File System Access API 対応のみ）
