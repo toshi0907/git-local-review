@@ -3103,7 +3103,14 @@ async function checkProjectFileUpdates() {
       continue; // likely moved/deleted; reloadProjectFile() surfaces that when the user acts
     }
 
-    if (file.lastModified !== proj.fileLastModified) {
+    // Re-read the baseline instead of reusing `proj` from before the awaits
+    // above: a manual reload of this exact project (recordProjectFileBaseline())
+    // could have landed while we were waiting on the handle/permission/file,
+    // and comparing against the now-stale `proj.fileLastModified` would
+    // re-flag a file that was actually already brought up to date.
+    const currentProj = loadProjects().find(p => p.id === projectId);
+    if (!currentProj || typeof currentProj.fileLastModified !== 'number') continue;
+    if (file.lastModified !== currentProj.fileLastModified) {
       projectsWithExternalFileUpdate.add(projectId);
       changed = true;
     }
