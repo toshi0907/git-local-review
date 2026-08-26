@@ -142,7 +142,7 @@
       cursor: pointer;
     }
 
-    .memo-toggle-btn, .settings-toggle-btn {
+    .memo-toggle-btn, .settings-toggle-btn, .extract-toggle-btn {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -158,8 +158,8 @@
       transition: background 0.15s;
     }
 
-    .memo-toggle-btn:hover, .settings-toggle-btn:hover { background: #373e47; }
-    .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
+    .memo-toggle-btn:hover, .settings-toggle-btn:hover, .extract-toggle-btn:hover { background: #373e47; }
+    .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"], .extract-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
 
     .memo-badge {
       display: inline-flex;
@@ -1209,6 +1209,154 @@
       padding: 0 24px 24px;
     }
 
+    /* ===== Keyword line extraction modal (issue #79) ===== */
+    .extract-modal {
+      max-width: 720px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
+    .extract-modal-body {
+      overflow-y: auto;
+      padding: 0 24px 24px;
+    }
+
+    .extract-keywords-row-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .extract-keywords-row-header label { font-weight: 600; font-size: 13px; }
+
+    .extract-keyword-add-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #0969da;
+      background: #f1f8ff;
+      border: 1px solid #c8e1ff;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .extract-keyword-add-btn:hover { background: #ddf4ff; }
+
+    .extract-keywords {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 20px;
+    }
+
+    .extract-keywords-empty {
+      font-size: 13px;
+      color: #8b949e;
+      padding: 8px 0;
+    }
+
+    .extract-keyword-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .extract-keyword-input {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .extract-keyword-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+    .extract-keyword-scope-select {
+      padding: 5px 6px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 12px;
+      background: #fff;
+    }
+
+    .extract-keyword-remove-btn {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: #8b949e;
+      font-size: 15px;
+      line-height: 1;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .extract-keyword-remove-btn:hover { background: #ffeef0; color: #cf222e; }
+
+    .extract-results-heading {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .extract-results-empty {
+      font-size: 13px;
+      color: #8b949e;
+      padding: 8px 0;
+    }
+
+    .extract-result-section {
+      margin-bottom: 16px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .extract-result-heading {
+      padding: 6px 10px;
+      background: #f6f8fa;
+      font-size: 12px;
+      font-weight: 700;
+      color: #24292e;
+      border-bottom: 1px solid #d0d7de;
+    }
+
+    .extract-result-none {
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .extract-result-list {
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .extract-result-line {
+      display: flex;
+      gap: 10px;
+      padding: 3px 10px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      border-bottom: 1px solid #eaeef2;
+    }
+    .extract-result-line:last-child { border-bottom: none; }
+
+    .extract-result-line-added { background: #e6ffec; color: #116329; }
+    .extract-result-line-removed { background: #ffebe9; color: #82071e; }
+
+    .extract-result-file {
+      flex-shrink: 0;
+      color: #57606a;
+      font-weight: 600;
+    }
+
+    .extract-result-text { flex: 1; min-width: 0; }
+
     /* ===== Review memo panel =====
        z-index stays below .drop-overlay (400) so the drag & drop guide is
        never hidden behind the panel while it's open. */
@@ -1487,6 +1635,9 @@
   <button type="button" class="settings-toggle-btn" id="settings-modal-open-btn" title="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">⚙️</span> 設定
   </button>
+  <button type="button" class="extract-toggle-btn" id="extract-modal-open-btn" title="キーワード行抽出" aria-haspopup="dialog" aria-controls="extract-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🔎</span> 抽出
+  </button>
   <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
     <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
   </button>
@@ -1654,6 +1805,27 @@
   </div>
 </div>
 
+<!-- Keyword line extraction modal (issue #79): a separate feature from the
+     keyword-highlight coloring above — registered keywords here extract
+     matching diff lines (added/removed only) into a per-keyword list. -->
+<div class="modal-overlay" id="extract-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="extract-modal-title">
+  <div class="modal extract-modal">
+    <div class="settings-modal-header">
+      <h2 id="extract-modal-title">🔎 キーワード行抽出</h2>
+      <button type="button" class="settings-modal-close" id="extract-modal-close" aria-label="閉じる">✕</button>
+    </div>
+    <div class="extract-modal-body">
+      <div class="extract-keywords-row-header">
+        <label>抽出キーワード</label>
+        <button type="button" id="extract-keyword-add-btn" class="extract-keyword-add-btn" title="キーワードを追加">+ キーワード</button>
+      </div>
+      <div id="extract-keywords" class="extract-keywords"></div>
+      <div class="extract-results-heading">抽出結果</div>
+      <div id="extract-results"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -1673,6 +1845,10 @@ const SK_PROJECT_SORT     = 'gitLocalReview_projectSort';
 const SK_KEYWORDS         = 'gitLocalReview_keywords';
 /** Per-project keyword categories (issue #68): { [projectId]: category[] }, same category shape as SK_KEYWORDS. */
 const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
+/** Global keyword-line-extraction keywords (issue #79): a separate feature from SK_KEYWORDS' highlighting. */
+const SK_EXTRACT_KEYWORDS = 'gitLocalReview_extractKeywords';
+/** Per-project keyword-line-extraction keywords (issue #79): { [projectId]: entry[] }, same entry shape as SK_EXTRACT_KEYWORDS. */
+const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -2493,6 +2669,159 @@ function applyKeywordHighlight(root, groups) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyword line extraction (issue #79)
+//
+// A separate feature from the keyword highlight above: rather than coloring
+// matches in place, each registered keyword collects every diff line that
+// contains it into its own list, shown in the "🔎 抽出" modal. Extraction is
+// limited to added/removed lines (those starting with '+' or '-') — context
+// lines are not scanned. Matching is the same plain case-insensitive
+// substring search used by keyword highlight (findRawKeywordRanges), applied
+// directly to whole-line text.
+//
+// Each keyword entry has a scope, chosen per-entry in the modal:
+// - 'global'  — applies to every project, stored in SK_EXTRACT_KEYWORDS.
+// - 'project' — applies only while the entry's owning project is active,
+//               stored in SK_PROJECT_EXTRACT_KEYWORDS under that project's id.
+// loadExtractKeywords() returns the merged, scope-tagged view (global + the
+// current project's own entries), mirroring loadKeywordCategories().
+//
+// Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of { id, keyword }
+// entries. SK_PROJECT_EXTRACT_KEYWORDS holds a JSON-encoded
+// { [projectId]: entry[] } map using the same entry shape.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateExtractKeywordId() {
+  return `exkw_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Keep only well-formed entries; drop anything with an unexpected shape. */
+function sanitizeExtractKeywords(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const result = [];
+  for (const k of rawList) {
+    if (!k || typeof k !== 'object' || typeof k.keyword !== 'string') continue;
+    const id = typeof k.id === 'string' && k.id ? k.id : generateExtractKeywordId();
+    result.push({ id, keyword: k.keyword });
+  }
+  return result;
+}
+
+function loadGlobalExtractKeywords() {
+  try {
+    return sanitizeExtractKeywords(JSON.parse(localStorage.getItem(SK_EXTRACT_KEYWORDS) || '[]'));
+  } catch (e) {
+    console.error('Failed to load extract keywords from localStorage:', e);
+    return [];
+  }
+}
+
+function saveGlobalExtractKeywords(keywords) {
+  try {
+    localStorage.setItem(SK_EXTRACT_KEYWORDS, JSON.stringify(keywords));
+  } catch (e) {
+    console.error('Failed to save extract keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// Rebuild with a null-prototype object and per-project sanitizeExtractKeywords(),
+// mirroring sanitizeProjectKeywordCategoriesMap()'s prototype-pollution
+// defense — project IDs and entry arrays here may originate from imported
+// JSON. Projects left with no valid entries are dropped.
+function sanitizeProjectExtractKeywordsMap(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+  for (const pid of Object.keys(parsed)) {
+    const keywords = sanitizeExtractKeywords(parsed[pid]);
+    if (keywords.length > 0) safe[pid] = keywords;
+  }
+  return safe;
+}
+
+function loadAllProjectExtractKeywords() {
+  try {
+    return sanitizeProjectExtractKeywordsMap(JSON.parse(localStorage.getItem(SK_PROJECT_EXTRACT_KEYWORDS) || '{}'));
+  } catch (e) {
+    console.error('Failed to load project extract keywords from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllProjectExtractKeywords(byProjectId) {
+  try {
+    localStorage.setItem(SK_PROJECT_EXTRACT_KEYWORDS, JSON.stringify(byProjectId));
+  } catch (e) {
+    console.error('Failed to save project extract keywords to localStorage:', e);
+    alert('キーワードの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function loadProjectExtractKeywords(projectId) {
+  if (!projectId) return [];
+  // loadAllProjectExtractKeywords() already sanitizes each project's list.
+  return loadAllProjectExtractKeywords()[projectId] || [];
+}
+
+function saveProjectExtractKeywords(projectId, keywords) {
+  if (!projectId) return;
+  const all = loadAllProjectExtractKeywords();
+  all[projectId] = keywords;
+  saveAllProjectExtractKeywords(all);
+}
+
+/** Drops a deleted project's own extraction keywords; its global keywords are untouched. */
+function deleteProjectExtractKeywords(projectId) {
+  const all = loadAllProjectExtractKeywords();
+  if (!(projectId in all)) return;
+  delete all[projectId];
+  saveAllProjectExtractKeywords(all);
+}
+
+/**
+ * Merged, scope-tagged view used by the extraction modal: every global
+ * keyword, plus (when a project is active) that project's own keywords.
+ * `scope` on each entry ('global'|'project') tells the modal which store an
+ * edit/delete/move should go through.
+ */
+function loadExtractKeywords() {
+  const global = loadGlobalExtractKeywords().map(k => ({ ...k, scope: 'global' }));
+  if (!app.currentProjectId) return global;
+  const project = loadProjectExtractKeywords(app.currentProjectId).map(k => ({ ...k, scope: 'project' }));
+  return [...global, ...project];
+}
+
+/**
+ * Finds every added/removed diff line (lines starting with '+' or '-';
+ * context lines and the "\ No newline at end of file" marker are skipped)
+ * across the whole currently loaded diff (app.parsedDiff) whose text
+ * contains `keyword` (plain case-insensitive substring search, same rule as
+ * keyword highlight).
+ * @param {string} keyword
+ * @returns {Array<{filePath: string, prefix: '+'|'-', content: string}>}
+ */
+function extractKeywordMatches(keyword) {
+  const kw = keyword.trim();
+  if (!kw || !app.parsedDiff) return [];
+  const lowerKw = kw.toLowerCase();
+  const results = [];
+  for (const file of app.parsedDiff) {
+    for (const hunk of file.hunks) {
+      for (const line of hunk.lines) {
+        if (line.startsWith('\\')) continue; // "\ No newline at end of file" marker, not diff content
+        const prefix = line.charAt(0);
+        if (prefix !== '+' && prefix !== '-') continue;
+        const content = line.length > 1 ? line.slice(1) : '';
+        if (content.toLowerCase().includes(lowerKw)) {
+          results.push({ filePath: file.filePath, prefix, content });
+        }
+      }
+    }
+  }
+  return results;
+}
+
 function loadAllFiles() {
   try {
     return sanitizeFilesData(JSON.parse(localStorage.getItem(SK_FILES) || '{}'));
@@ -3304,6 +3633,7 @@ function renderDiff() {
     app.focusedHunkIndex = -1;
     renderStatSummary(null);
     refreshKeywordCounts();
+    renderExtractResults();
     return;
   }
 
@@ -3393,6 +3723,7 @@ function renderDiff() {
 
   setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
   refreshKeywordCounts();
+  renderExtractResults();
 
   // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
   // (the previous focus index may point at an element that no longer exists).
@@ -4304,6 +4635,8 @@ async function activateProject(projectId) {
   // The active project's own keyword categories (issue #68) join the global
   // ones in the merged view, so the sidebar list changes with the project.
   renderKeywordCategoryList();
+  // Same reasoning applies to the extraction modal's own keyword list (issue #79).
+  renderExtractKeywordList();
 
   renderProjectList();
   // Clear the previous project's diff (and its checkboxes) immediately so
@@ -4375,6 +4708,7 @@ function deleteProject(projectId) {
   saveAllReviews(allReviews);
   deleteMemosForProject(projectId);
   deleteProjectKeywordCategories(projectId);
+  deleteProjectExtractKeywords(projectId);
   deleteFileContent(projectId);
   deleteFileHandleRecord(projectId);
 
@@ -4387,6 +4721,7 @@ function deleteProject(projectId) {
     localStorage.removeItem(SK_CURRENT);
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
     renderKeywordCategoryList();
+    renderExtractKeywordList();
   }
   refreshMemoUI();
 
@@ -4414,6 +4749,7 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   localStorage.setItem(SK_CURRENT, id);
   refreshMemoUI();
   renderKeywordCategoryList();
+  renderExtractKeywordList();
 
   renderProjectList();
   renderDiff();
@@ -4439,6 +4775,7 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
   localStorage.setItem(SK_CURRENT, projectId);
   refreshMemoUI();
   renderKeywordCategoryList();
+  renderExtractKeywordList();
 
   renderProjectList();
   renderDiff();
@@ -4500,16 +4837,22 @@ function sanitizeImportedProjects(rawProjects) {
  * shape and the new string shape on read, and `keywordCategories`/
  * `projectKeywordCategories` are simply absent from pre-#58/#68 exports — so
  * schemaVersion is informational only and isn't itself checked on import.
+ * schemaVersion 5 (issue #79): added `extractKeywords`/`projectExtractKeywords`
+ * (the SK_EXTRACT_KEYWORDS/SK_PROJECT_EXTRACT_KEYWORDS keyword-line-extraction
+ * stores — a separate feature from keyword highlighting above), following the
+ * same global/per-project split as `keywordCategories`/`projectKeywordCategories`.
  */
 function buildExportData() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
     memos: loadAllMemos(),
     keywordCategories: loadGlobalKeywordCategories(),
     projectKeywordCategories: loadAllProjectKeywordCategories(),
+    extractKeywords: loadGlobalExtractKeywords(),
+    projectExtractKeywords: loadAllProjectExtractKeywords(),
   };
 }
 
@@ -4544,9 +4887,36 @@ function mergeImportedKeywordCategories(rawGlobal, rawByProjectId) {
 }
 
 /**
- * Merge parsed app-data (projects + reviews + keyword categories) into
- * localStorage: same-ID projects/categories are overwritten, other existing
- * ones are kept. Shared by importAppData() and the settings-folder load flow.
+ * Merge imported keyword-line-extraction keywords (issue #79) into
+ * localStorage: same-ID entries are overwritten, other existing entries are
+ * kept — same merge policy as mergeImportedKeywordCategories() above.
+ * `rawGlobal`/`rawByProjectId` are absent on pre-#79 exports, in which case
+ * the corresponding merge is a no-op.
+ */
+function mergeImportedExtractKeywords(rawGlobal, rawByProjectId) {
+  const importedGlobal = sanitizeExtractKeywords(rawGlobal);
+  if (importedGlobal.length > 0) {
+    const byId = new Map(loadGlobalExtractKeywords().map(k => [k.id, k]));
+    for (const k of importedGlobal) byId.set(k.id, k);
+    saveGlobalExtractKeywords([...byId.values()]);
+  }
+
+  const importedByProject = sanitizeProjectExtractKeywordsMap(rawByProjectId);
+  if (Object.keys(importedByProject).length === 0) return;
+  const allProjectKeywords = loadAllProjectExtractKeywords();
+  for (const pid of Object.keys(importedByProject)) {
+    const byId = new Map((allProjectKeywords[pid] || []).map(k => [k.id, k]));
+    for (const k of importedByProject[pid]) byId.set(k.id, k);
+    allProjectKeywords[pid] = [...byId.values()];
+  }
+  saveAllProjectExtractKeywords(allProjectKeywords);
+}
+
+/**
+ * Merge parsed app-data (projects + reviews + keyword categories + extraction
+ * keywords) into localStorage: same-ID projects/categories/keywords are
+ * overwritten, other existing ones are kept. Shared by importAppData() and
+ * the settings-folder load flow.
  * @returns {number} number of projects merged in
  */
 function mergeImportedData(data) {
@@ -4556,6 +4926,7 @@ function mergeImportedData(data) {
   // Independent of projects, so merge it even when there's nothing else to import
   // (e.g. an auto-saved settings file written before any project was loaded).
   mergeImportedKeywordCategories(data.keywordCategories, data.projectKeywordCategories);
+  mergeImportedExtractKeywords(data.extractKeywords, data.projectExtractKeywords);
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
@@ -5455,15 +5826,20 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && isExtractModalOpen()) {
+    closeExtractModal();
+    return;
+  }
+
   if (e.key === 'Escape' && !WIDE_LAYOUT_MEDIA_QUERY.matches && isMemoPanelOpen()) {
     closeMemoPanel();
     return;
   }
 
   // Don't hijack keys while the user is typing into a form field, while the
-  // file-conflict or settings modal is open, or while focus is inside the
-  // memo panel (its close/delete buttons can hold focus without being an
-  // INPUT, which would otherwise let j/k/Space leak through to hunk
+  // file-conflict, settings, or extraction modal is open, or while focus is
+  // inside the memo panel (its close/delete buttons can hold focus without
+  // being an INPUT, which would otherwise let j/k/Space leak through to hunk
   // navigation behind it). Checking focus rather than isMemoPanelOpen()
   // matters once the panel is permanently docked open on wide viewports —
   // j/k/Space must still work for hunk navigation whenever focus isn't
@@ -5471,7 +5847,7 @@ document.addEventListener('keydown', (e) => {
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
   const focusInMemoPanel = document.getElementById('memo-panel').contains(e.target);
-  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || focusInMemoPanel) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || isExtractModalOpen() || focusInMemoPanel) return;
 
   if (e.key === 'j') {
     e.preventDefault();
@@ -5556,8 +5932,8 @@ window.addEventListener('drop', async (e) => {
   dragCounter = 0;
   dropOverlay.classList.remove('active');
 
-  // Avoid stacking a new load on top of an already-open conflict or settings modal.
-  if (modalOverlay.classList.contains('active') || isSettingsModalOpen()) return;
+  // Avoid stacking a new load on top of an already-open conflict, settings, or extraction modal.
+  if (modalOverlay.classList.contains('active') || isSettingsModalOpen() || isExtractModalOpen()) return;
 
   const { files, handles } = await filesFromDataTransfer(e.dataTransfer);
   if (files.length === 0) return;
@@ -5922,6 +6298,280 @@ document.getElementById('keyword-bulk-submit-btn').addEventListener('click', () 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Keyword line extraction UI (issue #79): each row lets the user edit a
+// keyword's text and scope (global vs. the active project only); persists
+// across reloads/projects and re-renders the extraction results (debounced)
+// whenever a keyword's text changes. Adding/removing/moving a keyword
+// re-renders both the row list and the results immediately.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Which store (global or the active project's own) an extraction keyword id currently lives in, or null if neither. */
+function findExtractKeywordScope(id) {
+  if (loadGlobalExtractKeywords().some(k => k.id === id)) return 'global';
+  if (app.currentProjectId && loadProjectExtractKeywords(app.currentProjectId).some(k => k.id === id)) return 'project';
+  return null;
+}
+
+let extractResultsDebounceTimer = null;
+function scheduleExtractResultsRerender() {
+  clearTimeout(extractResultsDebounceTimer);
+  extractResultsDebounceTimer = setTimeout(renderExtractResults, 200);
+}
+
+/** Updates a single keyword's fields in place without rebuilding the row list, so the input being edited keeps focus. */
+function updateExtractKeyword(id, patch) {
+  const scope = findExtractKeywordScope(id);
+  if (!scope) return;
+  if (scope === 'global') {
+    const keywords = loadGlobalExtractKeywords();
+    const entry = keywords.find(k => k.id === id);
+    if (!entry) return;
+    Object.assign(entry, patch);
+    saveGlobalExtractKeywords(keywords);
+  } else {
+    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    const entry = keywords.find(k => k.id === id);
+    if (!entry) return;
+    Object.assign(entry, patch);
+    saveProjectExtractKeywords(app.currentProjectId, keywords);
+  }
+  scheduleExtractResultsRerender();
+}
+
+/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword text. */
+function moveExtractKeywordScope(id, newScope) {
+  const fromScope = findExtractKeywordScope(id);
+  if (!fromScope || fromScope === newScope) return;
+  if (newScope === 'project' && !app.currentProjectId) return;
+
+  let entry;
+  if (fromScope === 'global') {
+    const keywords = loadGlobalExtractKeywords();
+    const idx = keywords.findIndex(k => k.id === id);
+    if (idx === -1) return;
+    [entry] = keywords.splice(idx, 1);
+    saveGlobalExtractKeywords(keywords);
+  } else {
+    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    const idx = keywords.findIndex(k => k.id === id);
+    if (idx === -1) return;
+    [entry] = keywords.splice(idx, 1);
+    saveProjectExtractKeywords(app.currentProjectId, keywords);
+  }
+
+  if (newScope === 'global') {
+    const keywords = loadGlobalExtractKeywords();
+    keywords.push(entry);
+    saveGlobalExtractKeywords(keywords);
+  } else {
+    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    keywords.push(entry);
+    saveProjectExtractKeywords(app.currentProjectId, keywords);
+  }
+
+  renderExtractKeywordList();
+}
+
+function deleteExtractKeyword(id) {
+  const scope = findExtractKeywordScope(id);
+  if (scope === 'global') {
+    saveGlobalExtractKeywords(loadGlobalExtractKeywords().filter(k => k.id !== id));
+  } else if (scope === 'project') {
+    saveProjectExtractKeywords(app.currentProjectId, loadProjectExtractKeywords(app.currentProjectId).filter(k => k.id !== id));
+  }
+  renderExtractKeywordList();
+}
+
+/** New keywords always start global; move them to the active project via the scope selector afterwards. */
+function addExtractKeyword() {
+  const keywords = loadGlobalExtractKeywords();
+  keywords.push({ id: generateExtractKeywordId(), keyword: '' });
+  saveGlobalExtractKeywords(keywords);
+  renderExtractKeywordList();
+}
+
+function buildExtractKeywordRow(entry) {
+  const row = document.createElement('div');
+  row.className = 'extract-keyword-row';
+
+  const keywordInput = document.createElement('input');
+  keywordInput.type = 'text';
+  keywordInput.className = 'extract-keyword-input';
+  keywordInput.value = entry.keyword;
+  keywordInput.placeholder = '例: TODO';
+  keywordInput.setAttribute('aria-label', 'キーワード');
+  keywordInput.addEventListener('input', () => {
+    updateExtractKeyword(entry.id, { keyword: keywordInput.value });
+  });
+
+  // Scope selector (issue #79): choose whether this keyword is shared by
+  // every project ('global', stored in SK_EXTRACT_KEYWORDS) or private to
+  // the currently active project ('project', stored in
+  // SK_PROJECT_EXTRACT_KEYWORDS). The "プロジェクト" option is disabled with
+  // no active project, mirroring the keyword-highlight category scope select.
+  const scopeSelect = document.createElement('select');
+  scopeSelect.className = 'extract-keyword-scope-select';
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
+  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
+
+  const globalOption = document.createElement('option');
+  globalOption.value = 'global';
+  globalOption.textContent = '全体';
+  scopeSelect.appendChild(globalOption);
+
+  const projectOption = document.createElement('option');
+  projectOption.value = 'project';
+  projectOption.textContent = 'プロジェクト';
+  projectOption.disabled = !app.currentProjectId;
+  scopeSelect.appendChild(projectOption);
+
+  scopeSelect.value = entry.scope;
+  scopeSelect.addEventListener('change', () => {
+    moveExtractKeywordScope(entry.id, scopeSelect.value);
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'extract-keyword-remove-btn';
+  removeBtn.title = 'このキーワードを削除';
+  removeBtn.setAttribute('aria-label', 'キーワードを削除');
+  removeBtn.textContent = '×';
+  removeBtn.addEventListener('click', () => deleteExtractKeyword(entry.id));
+
+  row.appendChild(keywordInput);
+  row.appendChild(scopeSelect);
+  row.appendChild(removeBtn);
+  return row;
+}
+
+/** Builds one result section (heading + matching-line list) for a single keyword entry. */
+function buildExtractResultSection(entry) {
+  const section = document.createElement('div');
+  section.className = 'extract-result-section';
+
+  const matches = extractKeywordMatches(entry.keyword);
+
+  const heading = document.createElement('div');
+  heading.className = 'extract-result-heading';
+  heading.textContent = `${entry.keyword}（${matches.length}件）`;
+  section.appendChild(heading);
+
+  if (matches.length === 0) {
+    const none = document.createElement('div');
+    none.className = 'extract-result-none';
+    none.textContent = '一致する行はありません。';
+    section.appendChild(none);
+    return section;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'extract-result-list';
+  for (const m of matches) {
+    const line = document.createElement('div');
+    line.className = `extract-result-line ${m.prefix === '+' ? 'extract-result-line-added' : 'extract-result-line-removed'}`;
+
+    const file = document.createElement('span');
+    file.className = 'extract-result-file';
+    file.textContent = m.filePath;
+
+    const text = document.createElement('span');
+    text.className = 'extract-result-text';
+    text.textContent = `${m.prefix}${m.content}`;
+
+    line.appendChild(file);
+    line.appendChild(text);
+    list.appendChild(line);
+  }
+  section.appendChild(list);
+  return section;
+}
+
+/**
+ * Rebuilds the "抽出結果" area: one section per registered, non-empty keyword.
+ * Called on every renderDiff(), but the actual keyword-matching scan is
+ * skipped while the extraction modal is closed (openExtractModal() rebuilds
+ * it on open via renderExtractKeywordList()), so a large diff with many
+ * registered keywords doesn't pay that cost on every render. Checked via
+ * getElementById() rather than isExtractModalOpen() — this function's first
+ * call happens at module-init time (see renderExtractKeywordList() below),
+ * before the `extractModalOverlay` const it reads is declared.
+ */
+function renderExtractResults() {
+  const container = document.getElementById('extract-results');
+  container.innerHTML = '';
+
+  if (!document.getElementById('extract-modal-overlay').classList.contains('active')) return;
+
+  if (!app.parsedDiff) {
+    const empty = document.createElement('div');
+    empty.className = 'extract-results-empty';
+    empty.textContent = 'diffファイルを読み込むと抽出結果が表示されます。';
+    container.appendChild(empty);
+    return;
+  }
+
+  const keywords = loadExtractKeywords().filter(k => k.keyword.trim() !== '');
+  if (keywords.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'extract-results-empty';
+    empty.textContent = 'キーワードを登録すると、一致する差分行がここに一覧表示されます。';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const entry of keywords) container.appendChild(buildExtractResultSection(entry));
+}
+
+function renderExtractKeywordList() {
+  const container = document.getElementById('extract-keywords');
+  container.innerHTML = '';
+  const keywords = loadExtractKeywords();
+  if (keywords.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'extract-keywords-empty';
+    empty.textContent = 'キーワードがありません。「+ キーワード」から追加してください。';
+    container.appendChild(empty);
+  } else {
+    for (const entry of keywords) container.appendChild(buildExtractKeywordRow(entry));
+  }
+  renderExtractResults();
+}
+
+renderExtractKeywordList();
+document.getElementById('extract-keyword-add-btn').addEventListener('click', addExtractKeyword);
+
+// Keyword line extraction modal open/close (issue #79): independent of the
+// settings modal above — its own overlay/backdrop-click/Escape handling.
+const extractModalOverlay = document.getElementById('extract-modal-overlay');
+
+function isExtractModalOpen() {
+  return extractModalOverlay.classList.contains('active');
+}
+
+function openExtractModal() {
+  // Mark the modal active before rendering: renderExtractKeywordList() (via
+  // renderExtractResults()) only does its keyword-matching scan while the
+  // modal is active (see renderExtractResults()'s doc comment).
+  extractModalOverlay.classList.add('active');
+  renderExtractKeywordList();
+  document.getElementById('extract-modal-open-btn').setAttribute('aria-expanded', 'true');
+  document.getElementById('extract-modal-close').focus();
+}
+
+function closeExtractModal() {
+  extractModalOverlay.classList.remove('active');
+  const openBtn = document.getElementById('extract-modal-open-btn');
+  openBtn.setAttribute('aria-expanded', 'false');
+  if (extractModalOverlay.contains(document.activeElement)) openBtn.focus();
+}
+
+document.getElementById('extract-modal-open-btn').addEventListener('click', openExtractModal);
+document.getElementById('extract-modal-close').addEventListener('click', closeExtractModal);
+extractModalOverlay.addEventListener('click', (e) => {
+  if (e.target === extractModalOverlay) closeExtractModal();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
@@ -5962,10 +6612,12 @@ document.getElementById('keyword-bulk-submit-btn').addEventListener('click', () 
     if (proj) {
       app.currentProjectId = lastId;
       renderProjectList();
-      // The restored project may have its own keyword categories (issue #68),
-      // which the initial (pre-currentProjectId) renderKeywordCategoryList()
-      // call at script load couldn't have shown yet.
+      // The restored project may have its own keyword categories (issue #68)
+      // and extraction keywords (issue #79), which the initial
+      // (pre-currentProjectId) renderKeywordCategoryList()/
+      // renderExtractKeywordList() calls at script load couldn't have shown yet.
       renderKeywordCategoryList();
+      renderExtractKeywordList();
       await restoreProjectDiff(proj);
     }
   } else {
