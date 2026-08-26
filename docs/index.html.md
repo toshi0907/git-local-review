@@ -92,7 +92,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
-| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）。登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出し、キーワードごとのリストとして表示する。キーワードは全体設定／プロジェクト毎の設定を選択可能 |
+| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存 |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
@@ -121,6 +121,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
 | **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う |
+| **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。

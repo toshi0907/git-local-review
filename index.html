@@ -6486,10 +6486,21 @@ function buildExtractResultSection(entry) {
   return section;
 }
 
-/** Rebuilds the "抽出結果" area: one section per registered, non-empty keyword. */
+/**
+ * Rebuilds the "抽出結果" area: one section per registered, non-empty keyword.
+ * Called on every renderDiff(), but the actual keyword-matching scan is
+ * skipped while the extraction modal is closed (openExtractModal() rebuilds
+ * it on open via renderExtractKeywordList()), so a large diff with many
+ * registered keywords doesn't pay that cost on every render. Checked via
+ * getElementById() rather than isExtractModalOpen() — this function's first
+ * call happens at module-init time (see renderExtractKeywordList() below),
+ * before the `extractModalOverlay` const it reads is declared.
+ */
 function renderExtractResults() {
   const container = document.getElementById('extract-results');
   container.innerHTML = '';
+
+  if (!document.getElementById('extract-modal-overlay').classList.contains('active')) return;
 
   if (!app.parsedDiff) {
     const empty = document.createElement('div');
@@ -6538,8 +6549,11 @@ function isExtractModalOpen() {
 }
 
 function openExtractModal() {
-  renderExtractKeywordList();
+  // Mark the modal active before rendering: renderExtractKeywordList() (via
+  // renderExtractResults()) only does its keyword-matching scan while the
+  // modal is active (see renderExtractResults()'s doc comment).
   extractModalOverlay.classList.add('active');
+  renderExtractKeywordList();
   document.getElementById('extract-modal-open-btn').setAttribute('aria-expanded', 'true');
   document.getElementById('extract-modal-close').focus();
 }
