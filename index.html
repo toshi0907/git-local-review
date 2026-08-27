@@ -142,7 +142,7 @@
       cursor: pointer;
     }
 
-    .memo-toggle-btn, .settings-toggle-btn, .extract-toggle-btn {
+    .memo-toggle-btn, .settings-toggle-btn, .keyword-toggle-btn, .extract-toggle-btn {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -158,8 +158,8 @@
       transition: background 0.15s;
     }
 
-    .memo-toggle-btn:hover, .settings-toggle-btn:hover, .extract-toggle-btn:hover { background: #373e47; }
-    .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"], .extract-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
+    .memo-toggle-btn:hover, .settings-toggle-btn:hover, .keyword-toggle-btn:hover, .extract-toggle-btn:hover { background: #373e47; }
+    .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"], .keyword-toggle-btn[aria-expanded="true"], .extract-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
 
     .memo-badge {
       display: inline-flex;
@@ -1279,6 +1279,15 @@
       padding: 0 24px 24px;
     }
 
+    /* ===== Keyword highlight modal (issue #93) ===== */
+    .keyword-modal {
+      max-width: 560px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+    }
+
     /* ===== Keyword line extraction modal (issue #79) ===== */
     .extract-modal {
       width: 90vw;
@@ -1716,6 +1725,9 @@
   <button type="button" class="settings-toggle-btn" id="settings-modal-open-btn" title="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">⚙️</span> 設定
   </button>
+  <button type="button" class="keyword-toggle-btn" id="keyword-modal-open-btn" title="キーワードハイライト" aria-haspopup="dialog" aria-controls="keyword-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🎨</span> ハイライト
+  </button>
   <button type="button" class="extract-toggle-btn" id="extract-modal-open-btn" title="キーワード行抽出" aria-haspopup="dialog" aria-controls="extract-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">🔎</span> 抽出
   </button>
@@ -1869,6 +1881,22 @@
           <option value="euc-jp">EUC-JP</option>
         </select>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Keyword highlight modal (issue #93): moved out of the settings modal
+     above into its own top-bar-triggered dialog, mirroring the keyword line
+     extraction modal below. Independent overlay/backdrop-click/Escape
+     handling; the #keyword-categories contents and IDs are unchanged from
+     when this lived inside the settings modal. -->
+<div class="modal-overlay" id="keyword-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="keyword-modal-title">
+  <div class="modal keyword-modal">
+    <div class="settings-modal-header">
+      <h2 id="keyword-modal-title">🎨 キーワードハイライト</h2>
+      <button type="button" class="settings-modal-close" id="keyword-modal-close" aria-label="閉じる">✕</button>
+    </div>
+    <div class="settings-modal-body">
       <div class="keyword-row">
         <div class="keyword-row-header">
           <label>キーワード（カテゴリ別）</label>
@@ -6014,9 +6042,10 @@ modalOverlay.addEventListener('click', (e) => {
 });
 
 // Settings modal (issue #61): consolidates the default-open-folder,
-// settings-auto-save-folder, encoding, and keyword-category controls
-// (moved here from the sidebar) behind a single dialog. Independent of the
-// conflict modal above — its own overlay/backdrop-click/Escape handling.
+// settings-auto-save-folder, and encoding controls (moved here from the
+// sidebar) behind a single dialog. The keyword-category controls it also
+// used to hold moved out into their own modal below (issue #93). Independent
+// of the conflict modal above — its own overlay/backdrop-click/Escape handling.
 const settingsModalOverlay = document.getElementById('settings-modal-overlay');
 
 function isSettingsModalOpen() {
@@ -6045,6 +6074,35 @@ document.getElementById('settings-modal-open-btn').addEventListener('click', ope
 document.getElementById('settings-modal-close').addEventListener('click', closeSettingsModal);
 settingsModalOverlay.addEventListener('click', (e) => {
   if (e.target === settingsModalOverlay) closeSettingsModal();
+});
+
+// Keyword highlight modal (issue #93): the keyword-category controls used to
+// live inside the settings modal above; they now get their own top-bar
+// button and dialog, mirroring the keyword line extraction modal further
+// below. Independent overlay/backdrop-click/Escape handling.
+const keywordModalOverlay = document.getElementById('keyword-modal-overlay');
+
+function isKeywordModalOpen() {
+  return keywordModalOverlay.classList.contains('active');
+}
+
+function openKeywordModal() {
+  keywordModalOverlay.classList.add('active');
+  document.getElementById('keyword-modal-open-btn').setAttribute('aria-expanded', 'true');
+  document.getElementById('keyword-modal-close').focus();
+}
+
+function closeKeywordModal() {
+  keywordModalOverlay.classList.remove('active');
+  const openBtn = document.getElementById('keyword-modal-open-btn');
+  openBtn.setAttribute('aria-expanded', 'false');
+  if (keywordModalOverlay.contains(document.activeElement)) openBtn.focus();
+}
+
+document.getElementById('keyword-modal-open-btn').addEventListener('click', openKeywordModal);
+document.getElementById('keyword-modal-close').addEventListener('click', closeKeywordModal);
+keywordModalOverlay.addEventListener('click', (e) => {
+  if (e.target === keywordModalOverlay) closeKeywordModal();
 });
 
 // Review memo panel: toggle button, close button, backdrop click, and the
@@ -6093,6 +6151,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && isKeywordModalOpen()) {
+    closeKeywordModal();
+    return;
+  }
+
   if (e.key === 'Escape' && isExtractModalOpen()) {
     closeExtractModal();
     return;
@@ -6104,17 +6167,17 @@ document.addEventListener('keydown', (e) => {
   }
 
   // Don't hijack keys while the user is typing into a form field, while the
-  // file-conflict, settings, or extraction modal is open, or while focus is
-  // inside the memo panel (its close/delete buttons can hold focus without
-  // being an INPUT, which would otherwise let j/k/Space leak through to hunk
-  // navigation behind it). Checking focus rather than isMemoPanelOpen()
-  // matters once the panel is permanently docked open on wide viewports —
-  // j/k/Space must still work for hunk navigation whenever focus isn't
-  // actually inside the panel.
+  // file-conflict, settings, keyword-highlight, or extraction modal is open,
+  // or while focus is inside the memo panel (its close/delete buttons can
+  // hold focus without being an INPUT, which would otherwise let j/k/Space
+  // leak through to hunk navigation behind it). Checking focus rather than
+  // isMemoPanelOpen() matters once the panel is permanently docked open on
+  // wide viewports — j/k/Space must still work for hunk navigation whenever
+  // focus isn't actually inside the panel.
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
   const focusInMemoPanel = document.getElementById('memo-panel').contains(e.target);
-  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || isExtractModalOpen() || focusInMemoPanel) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen() || focusInMemoPanel) return;
 
   if (e.key === 'j') {
     e.preventDefault();
@@ -6199,8 +6262,8 @@ window.addEventListener('drop', async (e) => {
   dragCounter = 0;
   dropOverlay.classList.remove('active');
 
-  // Avoid stacking a new load on top of an already-open conflict, settings, or extraction modal.
-  if (modalOverlay.classList.contains('active') || isSettingsModalOpen() || isExtractModalOpen()) return;
+  // Avoid stacking a new load on top of an already-open conflict, settings, keyword-highlight, or extraction modal.
+  if (modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen()) return;
 
   const { files, handles } = await filesFromDataTransfer(e.dataTransfer);
   if (files.length === 0) return;

@@ -72,8 +72,12 @@ test/                ← テスト用 .diff サンプルファイル
                                    1200px以上は .layout 内の3カラム目として常時ドッキング表示。#57）
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
     <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（エクスポート/インポート（#83）・
-                                   既定のフォルダ・保存先フォルダ・文字コード・キーワードカテゴリをまとめて表示。#61。
-                                   「設定保存」「設定読込」ボタン自体はサイドバー（メイン画面）に配置）
+                                   既定のフォルダ・保存先フォルダ・文字コードを表示。#61。キーワードカテゴリは
+                                   #93 で別モーダルへ移動済み。「設定保存」「設定読込」ボタン自体はサイドバー
+                                   （メイン画面）に配置）
+    <div class="modal-overlay" id="keyword-modal-overlay"> ← キーワードハイライトモーダル（issue #93。
+                                   設定モーダルから分離。トップバーの「🎨 ハイライト」ボタンで開閉。
+                                   中身（#keyword-categories 等のID）は移動前と同一）
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
 ```
@@ -120,7 +124,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
 | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
 | **Drag & drop** | ドラッグ&ドロップ対応 |
-| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う |
+| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う。UI自体はトップバーの「🎨 ハイライト」ボタンで開く専用モーダル `#keyword-modal-overlay`（issue #93。以前は設定モーダル内にあった）にある |
 | **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
 | **Initialise** | `init()` — 起動時初期化 |
 
@@ -769,11 +773,15 @@ diff 行                旧ファイル列       新ファイル列
 
 ### 設定モーダルへ新しい設定項目を追加する（issue #61）
 
-既定のフォルダ・保存先フォルダ・文字コード・キーワードカテゴリの設定 UI は `#settings-modal-overlay`（`.settings-modal-body` 内）にまとまっています。新しい設定項目を追加する場合:
+既定のフォルダ・保存先フォルダ・文字コードの設定 UI は `#settings-modal-overlay`（`.settings-modal-body` 内）にまとまっています（キーワードカテゴリは #93 で別モーダル `#keyword-modal-overlay` へ分離済み — 後述）。新しい設定項目を追加する場合:
 
 1. 対象の要素（行）を `.settings-modal-body` 内に追加する。既存要素は `id` をそのまま維持しているため、対応するイベントリスナーは DOM 上の位置に関わらずそのまま動作する（`getElementById()` ベースのため）
 2. モーダルの開閉自体は `openSettingsModal()` / `closeSettingsModal()` / `isSettingsModalOpen()` が管理しており、新しい設定項目側で個別に開閉処理を書く必要はない
 3. モーダルを開いた状態でキーボードショートカット（j/k/Space 等）や Escape キーが正しく無効化/有効化されるかは、`isSettingsModalOpen()` を参照している箇所（`keydown` リスナー、ドラッグ&ドロップの読み込みガード）で担保されている。新しい設定項目の追加だけであれば、通常この部分の変更は不要
+
+### キーワードハイライトモーダル（issue #93）
+
+キーワードカテゴリの設定 UI は、以前は設定モーダル内にありましたが、トップバーの「🎨 ハイライト」ボタンで開閉する専用モーダル `#keyword-modal-overlay`（`.keyword-modal`、`.settings-modal-header`/`.settings-modal-body` クラスを再利用）に分離されました。中身（`#keyword-categories`、`#keyword-category-add-btn`、`#keyword-bulk-*` などのID）や `renderKeywordCategoryList()` 等のロジックは移動前から変更していません。開閉は `openKeywordModal()` / `closeKeywordModal()` / `isKeywordModalOpen()` が担い、設定モーダル・抽出モーダルと同様に `keydown` リスナー（Escape・j/k/Space の無効化）とドラッグ&ドロップの読み込みガードにも `isKeywordModalOpen()` が組み込まれています。
 
 ---
 
