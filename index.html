@@ -532,6 +532,18 @@
       color: #24292e;
     }
 
+    .keyword-category-case-row {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #57606a;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .keyword-category-case-toggle { cursor: pointer; }
+
     .keyword-category-enabled-toggle {
       flex-shrink: 0;
       cursor: pointer;
@@ -1370,6 +1382,19 @@
       font-size: 13px;
     }
     .extract-keyword-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+    .extract-keyword-case-label {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #57606a;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .extract-keyword-case-toggle { cursor: pointer; }
 
     .extract-keyword-file-input {
       flex: 0 0 160px;
@@ -2510,7 +2535,11 @@ function sanitizeKeywordCategories(rawCategories) {
     const id = typeof c.id === 'string' && c.id ? c.id : generateKeywordCategoryId();
     const countEnabled = c.countEnabled === true;
     const enabled = c.enabled !== false;
-    result.push({ id, keywords: c.keywords, color, countEnabled, enabled });
+    // caseSensitive (issue #95): defaults to false (= ignore case, the
+    // app's historical behavior) for both new categories and any saved
+    // before this field existed.
+    const caseSensitive = c.caseSensitive === true;
+    result.push({ id, keywords: c.keywords, color, countEnabled, enabled, caseSensitive });
   }
   return result;
 }
@@ -2537,7 +2566,7 @@ function loadGlobalKeywordCategories() {
   // subsequent loads — otherwise every loadGlobalKeywordCategories() call
   // would mint a new id and break edits/deletes for these rows (they look up
   // the category by an id from a previous load).
-  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false, enabled: true }];
+  const migrated = [{ id: generateKeywordCategoryId(), keywords: raw, color: DEFAULT_KEYWORD_COLOR, countEnabled: false, enabled: true, caseSensitive: false }];
   saveGlobalKeywordCategories(migrated);
   return migrated;
 }
@@ -2639,12 +2668,12 @@ function parseKeywords(raw) {
  * `enabled` toggle (issue #71) is off. Order matches the saved category
  * order and determines highlight priority when two categories match
  * overlapping text (earlier category wins — see findKeywordRanges).
- * @returns {Array<{color:string, keywords:string[]}>}
+ * @returns {Array<{color:string, keywords:string[], caseSensitive:boolean}>}
  */
 function getActiveKeywordGroups() {
   return loadKeywordCategories()
     .filter(cat => cat.enabled)
-    .map(cat => ({ color: cat.color, keywords: parseKeywords(cat.keywords) }))
+    .map(cat => ({ color: cat.color, keywords: parseKeywords(cat.keywords), caseSensitive: cat.caseSensitive }))
     .filter(g => g.keywords.length > 0);
 }
 
@@ -2665,19 +2694,21 @@ function mergeRanges(ranges) {
 }
 
 // Finds all (merged, non-overlapping) match ranges of a single set of
-// same-color keywords within `text`, case-insensitively.
-function findRawKeywordRanges(text, keywords) {
-  const lowerText = text.toLowerCase();
+// same-color keywords within `text`. Case-insensitive by default, matching
+// the app's historical behavior; pass caseSensitive: true (issue #95) to
+// match keywords' exact case instead.
+function findRawKeywordRanges(text, keywords, caseSensitive = false) {
+  const haystack = caseSensitive ? text : text.toLowerCase();
   const ranges = [];
   for (const kw of keywords) {
-    const lowerKw = kw.toLowerCase();
-    if (!lowerKw) continue;
+    const needle = caseSensitive ? kw : kw.toLowerCase();
+    if (!needle) continue;
     let from = 0;
     while (true) {
-      const idx = lowerText.indexOf(lowerKw, from);
+      const idx = haystack.indexOf(needle, from);
       if (idx === -1) break;
-      ranges.push({ start: idx, end: idx + lowerKw.length });
-      from = idx + lowerKw.length;
+      ranges.push({ start: idx, end: idx + needle.length });
+      from = idx + needle.length;
     }
   }
   return mergeRanges(ranges);
@@ -2687,15 +2718,17 @@ function findRawKeywordRanges(text, keywords) {
  * Counts how many times a category's keywords occur across every line of the
  * currently loaded diff (app.parsedDiff), regardless of the active review
  * filter — this reflects "全差分" (issue #59), not just the currently
- * rendered/filtered subset. Reuses findRawKeywordRanges() (case-insensitive,
- * merged/non-overlapping) per line, so it counts the same matches
- * applyKeywordHighlight() would find for this category on its own — unlike
- * findKeywordRanges(), there's no cross-category overlap trimming here since
- * each category's count is independent of the others.
+ * rendered/filtered subset. Reuses findRawKeywordRanges() (merged,
+ * non-overlapping matches, case-insensitive unless `caseSensitive` is set —
+ * issue #95) per line, so it counts the same matches applyKeywordHighlight()
+ * would find for this category on its own — unlike findKeywordRanges(),
+ * there's no cross-category overlap trimming here since each category's
+ * count is independent of the others.
  * @param {string[]} keywords
+ * @param {boolean} [caseSensitive]
  * @returns {number}
  */
-function countKeywordMatches(keywords) {
+function countKeywordMatches(keywords, caseSensitive = false) {
   if (!keywords || keywords.length === 0 || !app.parsedDiff) return 0;
   let total = 0;
   for (const file of app.parsedDiff) {
@@ -2703,7 +2736,7 @@ function countKeywordMatches(keywords) {
       for (const line of hunk.lines) {
         if (line.startsWith('\\')) continue; // "\ No newline at end of file" marker, not diff content
         const content = line.length > 1 ? line.slice(1) : '';
-        total += findRawKeywordRanges(content, keywords).length;
+        total += findRawKeywordRanges(content, keywords, caseSensitive).length;
       }
     }
   }
@@ -2736,13 +2769,14 @@ function subtractRanges(ranges, claimed) {
 }
 
 /**
- * Finds all match ranges of the given keyword groups within `text`,
- * case-insensitively (plain substring search, no RegExp). Each returned
- * range carries the color of the category it matched. When two categories'
+ * Finds all match ranges of the given keyword groups within `text` (plain
+ * substring search, no RegExp) — case-insensitively unless a group's own
+ * `caseSensitive` flag (issue #95) says otherwise. Each returned range
+ * carries the color of the category it matched. When two categories'
  * keywords match overlapping text, the earlier group in `groups` wins the
  * overlap — its range is kept whole and later groups are trimmed around it.
  * @param {string} text
- * @param {Array<{color:string, keywords:string[]}>} groups
+ * @param {Array<{color:string, keywords:string[], caseSensitive?:boolean}>} groups
  * @returns {Array<{start:number, end:number, color:string}>} sorted, non-overlapping
  */
 function findKeywordRanges(text, groups) {
@@ -2750,7 +2784,7 @@ function findKeywordRanges(text, groups) {
   let claimed = [];
   const colored = [];
   for (const group of groups) {
-    const raw = findRawKeywordRanges(text, group.keywords);
+    const raw = findRawKeywordRanges(text, group.keywords, group.caseSensitive);
     if (raw.length === 0) continue;
     for (const p of subtractRanges(raw, claimed)) colored.push({ start: p.start, end: p.end, color: group.color });
     claimed = mergeRanges([...claimed, ...raw]);
@@ -2816,8 +2850,9 @@ function applyKeywordHighlight(root, groups) {
 // matches the entry if it contains at least one of them (OR, not AND).
 // Extraction is limited to added/removed lines (those starting with '+' or
 // '-') — context lines are not scanned. Matching is the same plain
-// case-insensitive substring search used by keyword highlight
-// (findRawKeywordRanges), applied directly to whole-line text.
+// substring search used by keyword highlight (findRawKeywordRanges),
+// applied directly to whole-line text — case-insensitive unless the entry's
+// own `caseSensitive` flag (issue #95) says otherwise.
 //
 // Each keyword entry has a scope, chosen per-entry in the modal:
 // - 'global'  — applies to every project, stored in SK_EXTRACT_KEYWORDS.
@@ -2827,10 +2862,13 @@ function applyKeywordHighlight(root, groups) {
 // current project's own entries), mirroring loadKeywordCategories().
 //
 // Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of
-// { id, keyword, fileFilter } entries — fileFilter (issue #92) is an
-// optional plain case-insensitive partial match against each file's path,
-// restricting extraction to matching files; '' (the default, including for
-// entries saved before #92) means every file is scanned.
+// { id, keyword, fileFilter, caseSensitive } entries — fileFilter (issue
+// #92) is an optional plain case-insensitive partial match against each
+// file's path, restricting extraction to matching files; '' (the default,
+// including for entries saved before #92) means every file is scanned.
+// caseSensitive (issue #95) defaults to false (= ignore case, the app's
+// historical behavior) for both new entries and any saved before this field
+// existed.
 // SK_PROJECT_EXTRACT_KEYWORDS holds a JSON-encoded { [projectId]: entry[] }
 // map using the same entry shape.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2849,7 +2887,11 @@ function sanitizeExtractKeywords(rawList) {
     // fileFilter (issue #92): optional partial file-path match, defaulting to
     // '' (= no filter, extract from every file) for older saved entries.
     const fileFilter = typeof k.fileFilter === 'string' ? k.fileFilter : '';
-    result.push({ id, keyword: k.keyword, fileFilter });
+    // caseSensitive (issue #95): defaults to false (= ignore case, the app's
+    // historical behavior) for both new entries and any saved before this
+    // field existed.
+    const caseSensitive = k.caseSensitive === true;
+    result.push({ id, keyword: k.keyword, fileFilter, caseSensitive });
   }
   return result;
 }
@@ -2942,23 +2984,25 @@ function loadExtractKeywords() {
  * Finds every added/removed diff line (lines starting with '+' or '-';
  * context lines and the "\ No newline at end of file" marker are skipped)
  * across the whole currently loaded diff (app.parsedDiff) whose text
- * contains at least one of `raw`'s keywords (plain case-insensitive
- * substring search, same rule as keyword highlight). `raw` may hold several
- * comma-separated keywords (issue #91), parsed the same way keyword-highlight
- * categories are (see parseKeywords()) — a line matches if any one of them
- * is found (OR, not AND).
+ * contains at least one of `raw`'s keywords (plain substring search,
+ * case-insensitive unless `caseSensitive` is set — issue #95). `raw` may
+ * hold several comma-separated keywords (issue #91), parsed the same way
+ * keyword-highlight categories are (see parseKeywords()) — a line matches if
+ * any one of them is found (OR, not AND).
  *
  * `fileFilter` (issue #92) restricts the scan to files whose path contains
- * it (same plain case-insensitive substring rule); left blank (the
- * default), every file in the diff is scanned.
+ * it (always a plain case-insensitive substring match, regardless of
+ * `caseSensitive` — that flag only affects keyword matching); left blank
+ * (the default), every file in the diff is scanned.
  * @param {string} raw
  * @param {string} [fileFilter]
+ * @param {boolean} [caseSensitive]
  * @returns {Array<{filePath: string, prefix: '+'|'-', content: string}>}
  */
-function extractKeywordMatches(raw, fileFilter = '') {
+function extractKeywordMatches(raw, fileFilter = '', caseSensitive = false) {
   const keywords = parseKeywords(raw);
   if (keywords.length === 0 || !app.parsedDiff) return [];
-  const lowerKeywords = keywords.map(kw => kw.toLowerCase());
+  const matchKeywords = caseSensitive ? keywords : keywords.map(kw => kw.toLowerCase());
   const lowerFileFilter = fileFilter.trim().toLowerCase();
   const results = [];
   for (const file of app.parsedDiff) {
@@ -2969,8 +3013,8 @@ function extractKeywordMatches(raw, fileFilter = '') {
         const prefix = line.charAt(0);
         if (prefix !== '+' && prefix !== '-') continue;
         const content = line.length > 1 ? line.slice(1) : '';
-        const lowerContent = content.toLowerCase();
-        if (lowerKeywords.some(kw => lowerContent.includes(kw))) {
+        const matchContent = caseSensitive ? content : content.toLowerCase();
+        if (matchKeywords.some(kw => matchContent.includes(kw))) {
           results.push({ filePath: file.filePath, prefix, content });
         }
       }
@@ -6353,7 +6397,7 @@ window.addEventListener('drop', async (e) => {
 /** Count badge text for a category row: empty unless counting is on and a diff is loaded. */
 function keywordCategoryCountBadgeText(category) {
   if (!category.countEnabled || !app.parsedDiff) return '';
-  return `${countKeywordMatches(parseKeywords(category.keywords))}件`;
+  return `${countKeywordMatches(parseKeywords(category.keywords), category.caseSensitive)}件`;
 }
 
 function buildKeywordCategoryRow(category) {
@@ -6391,7 +6435,7 @@ function buildKeywordCategoryRow(category) {
   keywordsInput.className = 'keyword-category-keywords';
   keywordsInput.value = category.keywords;
   keywordsInput.placeholder = '例: TODO, FIXME, XXX';
-  keywordsInput.title = 'カンマ区切りで複数指定できます（大文字小文字は区別しません）';
+  keywordsInput.title = 'カンマ区切りで複数指定できます（大文字小文字の区別は右の「Aa」で切り替えられます）';
   keywordsInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
   keywordsInput.addEventListener('input', () => {
     updateKeywordCategory(category.id, { keywords: keywordsInput.value });
@@ -6458,12 +6502,34 @@ function buildKeywordCategoryRow(category) {
   countBadge.dataset.categoryId = category.id;
   countBadge.textContent = keywordCategoryCountBadgeText(category);
 
+  // Case-sensitivity toggle (issue #95): off (the default, and the app's
+  // historical behavior) matches keywords ignoring case; on matches their
+  // exact case. Affects both the highlight itself (via getActiveKeywordGroups())
+  // and this row's own count badge below.
+  const caseRow = document.createElement('label');
+  caseRow.className = 'keyword-category-case-row';
+  caseRow.title = 'オンにすると、キーワードの大文字小文字を区別して一致させます（オフなら区別しません）';
+
+  const caseToggle = document.createElement('input');
+  caseToggle.type = 'checkbox';
+  caseToggle.className = 'keyword-category-case-toggle';
+  caseToggle.checked = !!category.caseSensitive;
+  caseToggle.setAttribute('aria-label', 'このカテゴリで大文字小文字を区別する');
+
+  caseRow.appendChild(caseToggle);
+  caseRow.appendChild(document.createTextNode('Aa'));
+
   countToggle.addEventListener('change', () => {
     updateKeywordCategory(category.id, { countEnabled: countToggle.checked });
     // Use keywordsInput.value (not category.keywords, which is a snapshot from
     // when this row was built) so a keyword edited just before toggling counts
     // with the current text rather than briefly showing a stale count.
-    countBadge.textContent = keywordCategoryCountBadgeText({ keywords: keywordsInput.value, countEnabled: countToggle.checked });
+    countBadge.textContent = keywordCategoryCountBadgeText({ keywords: keywordsInput.value, countEnabled: countToggle.checked, caseSensitive: caseToggle.checked });
+  });
+
+  caseToggle.addEventListener('change', () => {
+    updateKeywordCategory(category.id, { caseSensitive: caseToggle.checked });
+    countBadge.textContent = keywordCategoryCountBadgeText({ keywords: keywordsInput.value, countEnabled: countToggle.checked, caseSensitive: caseToggle.checked });
   });
 
   countRow.appendChild(countToggle);
@@ -6471,6 +6537,7 @@ function buildKeywordCategoryRow(category) {
   countRow.appendChild(countBadge);
 
   row.appendChild(countRow);
+  row.appendChild(caseRow);
   row.appendChild(removeBtn);
   return row;
 }
@@ -6532,7 +6599,7 @@ function collectAllKeywordColors() {
 function addKeywordCategory() {
   const color = pickUnusedKeywordColor(collectAllKeywordColors());
   const categories = loadGlobalKeywordCategories();
-  categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false, enabled: true });
+  categories.push({ id: generateKeywordCategoryId(), keywords: '', color, countEnabled: false, enabled: true, caseSensitive: false });
   saveGlobalKeywordCategories(categories);
   renderKeywordCategoryList();
 }
@@ -6560,7 +6627,7 @@ function bulkAddKeywordCategories(text, scope) {
   const newCategories = lines.map(line => {
     const color = pickUnusedKeywordColor(usedColors);
     usedColors.push(color);
-    return { id: generateKeywordCategoryId(), keywords: line, color, countEnabled: false, enabled: true };
+    return { id: generateKeywordCategoryId(), keywords: line, color, countEnabled: false, enabled: true, caseSensitive: false };
   });
 
   if (isProjectScope) {
@@ -6610,7 +6677,7 @@ function updateKeywordCategory(id, patch) {
   scheduleKeywordDiffRerender();
 }
 
-/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled/enabled. */
+/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled/enabled/caseSensitive. */
 function moveKeywordCategoryScope(id, newScope) {
   const fromScope = findKeywordCategoryScope(id);
   if (!fromScope || fromScope === newScope) return;
@@ -6734,7 +6801,7 @@ function updateExtractKeyword(id, patch) {
   scheduleExtractResultsRerender();
 }
 
-/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword text. */
+/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword/fileFilter/caseSensitive. */
 function moveExtractKeywordScope(id, newScope) {
   const fromScope = findExtractKeywordScope(id);
   if (!fromScope || fromScope === newScope) return;
@@ -6781,7 +6848,7 @@ function deleteExtractKeyword(id) {
 /** New keywords always start global; move them to the active project via the scope selector afterwards. */
 function addExtractKeyword() {
   const keywords = loadGlobalExtractKeywords();
-  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '' });
+  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '', caseSensitive: false });
   saveGlobalExtractKeywords(keywords);
   renderExtractKeywordList();
 }
@@ -6795,11 +6862,31 @@ function buildExtractKeywordRow(entry) {
   keywordInput.className = 'extract-keyword-input';
   keywordInput.value = entry.keyword;
   keywordInput.placeholder = '例: TODO, FIXME';
-  keywordInput.title = 'カンマ区切りで複数指定できます（大文字小文字は区別しません）';
+  keywordInput.title = 'カンマ区切りで複数指定できます（大文字小文字の区別は右の「Aa」で切り替えられます）';
   keywordInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
   keywordInput.addEventListener('input', () => {
     updateExtractKeyword(entry.id, { keyword: keywordInput.value });
   });
+
+  // Case-sensitivity toggle (issue #95): off (the default, and the app's
+  // historical behavior) matches keywords ignoring case; on matches their
+  // exact case. Does not affect the fileFilter match above, which always
+  // stays case-insensitive.
+  const caseToggleLabel = document.createElement('label');
+  caseToggleLabel.className = 'extract-keyword-case-label';
+  caseToggleLabel.title = 'オンにすると、キーワードの大文字小文字を区別して一致させます（オフなら区別しません）';
+
+  const caseToggle = document.createElement('input');
+  caseToggle.type = 'checkbox';
+  caseToggle.className = 'extract-keyword-case-toggle';
+  caseToggle.checked = !!entry.caseSensitive;
+  caseToggle.setAttribute('aria-label', 'このキーワードで大文字小文字を区別する');
+  caseToggle.addEventListener('change', () => {
+    updateExtractKeyword(entry.id, { caseSensitive: caseToggle.checked });
+  });
+
+  caseToggleLabel.appendChild(caseToggle);
+  caseToggleLabel.appendChild(document.createTextNode('Aa'));
 
   // File filter (issue #92): restricts extraction to files whose path
   // contains this text (plain case-insensitive partial match, same rule as
@@ -6850,6 +6937,7 @@ function buildExtractKeywordRow(entry) {
   removeBtn.addEventListener('click', () => deleteExtractKeyword(entry.id));
 
   row.appendChild(keywordInput);
+  row.appendChild(caseToggleLabel);
   row.appendChild(fileFilterInput);
   row.appendChild(scopeSelect);
   row.appendChild(removeBtn);
@@ -6861,7 +6949,7 @@ function buildExtractResultSection(entry) {
   const section = document.createElement('div');
   section.className = 'extract-result-section';
 
-  const matches = extractKeywordMatches(entry.keyword, entry.fileFilter);
+  const matches = extractKeywordMatches(entry.keyword, entry.fileFilter, entry.caseSensitive);
 
   const heading = document.createElement('div');
   heading.className = 'extract-result-heading';
