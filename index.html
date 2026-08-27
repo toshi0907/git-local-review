@@ -1396,6 +1396,19 @@
 
     .extract-keyword-case-toggle { cursor: pointer; }
 
+    .extract-keyword-added-only-label {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      color: #57606a;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .extract-keyword-added-only-toggle { cursor: pointer; }
+
     .extract-keyword-file-input {
       flex: 0 0 160px;
       min-width: 0;
@@ -1448,6 +1461,10 @@
     }
 
     .extract-result-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       padding: 6px 10px;
       background: #f6f8fa;
       font-size: 12px;
@@ -1455,6 +1472,25 @@
       color: #24292e;
       border-bottom: 1px solid #d0d7de;
     }
+
+    .extract-result-heading-text {
+      min-width: 0;
+      overflow-wrap: break-word;
+    }
+
+    .extract-result-copy-btn {
+      flex-shrink: 0;
+      padding: 3px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .extract-result-copy-btn:hover:not(:disabled) { background: #f3f4f6; }
+    .extract-result-copy-btn:disabled { color: #8b949e; cursor: default; }
 
     .extract-result-none {
       padding: 8px 10px;
@@ -2933,13 +2969,15 @@ function applyKeywordHighlight(root, groups) {
 // current project's own entries), mirroring loadKeywordCategories().
 //
 // Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of
-// { id, keyword, fileFilter, caseSensitive } entries — fileFilter (issue
-// #92) is an optional plain case-insensitive partial match against each
-// file's path, restricting extraction to matching files; '' (the default,
-// including for entries saved before #92) means every file is scanned.
-// caseSensitive (issue #95) defaults to false (= ignore case, the app's
-// historical behavior) for both new entries and any saved before this field
-// existed.
+// { id, keyword, fileFilter, caseSensitive, addedOnly } entries — fileFilter
+// (issue #92) is an optional plain case-insensitive partial match against
+// each file's path, restricting extraction to matching files; '' (the
+// default, including for entries saved before #92) means every file is
+// scanned. caseSensitive (issue #95) defaults to false (= ignore case, the
+// app's historical behavior) for both new entries and any saved before this
+// field existed. addedOnly (issue #106) defaults to false (= scan both
+// added and removed lines, the app's historical behavior); when true, only
+// added lines (those starting with '+') are scanned.
 // SK_PROJECT_EXTRACT_KEYWORDS holds a JSON-encoded { [projectId]: entry[] }
 // map using the same entry shape.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2962,7 +3000,11 @@ function sanitizeExtractKeywords(rawList) {
     // historical behavior) for both new entries and any saved before this
     // field existed.
     const caseSensitive = k.caseSensitive === true;
-    result.push({ id, keyword: k.keyword, fileFilter, caseSensitive });
+    // addedOnly (issue #106): defaults to false (= scan added and removed
+    // lines, the app's historical behavior) for both new entries and any
+    // saved before this field existed.
+    const addedOnly = k.addedOnly === true;
+    result.push({ id, keyword: k.keyword, fileFilter, caseSensitive, addedOnly });
   }
   return result;
 }
@@ -3065,12 +3107,17 @@ function loadExtractKeywords() {
  * it (always a plain case-insensitive substring match, regardless of
  * `caseSensitive` — that flag only affects keyword matching); left blank
  * (the default), every file in the diff is scanned.
+ *
+ * `addedOnly` (issue #106) restricts the scan to added lines (those
+ * starting with '+') only, skipping removed lines; false (the default)
+ * scans both.
  * @param {string} raw
  * @param {string} [fileFilter]
  * @param {boolean} [caseSensitive]
+ * @param {boolean} [addedOnly]
  * @returns {Array<{filePath: string, prefix: '+'|'-', content: string}>}
  */
-function extractKeywordMatches(raw, fileFilter = '', caseSensitive = false) {
+function extractKeywordMatches(raw, fileFilter = '', caseSensitive = false, addedOnly = false) {
   const keywords = parseKeywords(raw);
   if (keywords.length === 0 || !app.parsedDiff) return [];
   const matchKeywords = caseSensitive ? keywords : keywords.map(kw => kw.toLowerCase());
@@ -3083,6 +3130,7 @@ function extractKeywordMatches(raw, fileFilter = '', caseSensitive = false) {
         if (line.startsWith('\\')) continue; // "\ No newline at end of file" marker, not diff content
         const prefix = line.charAt(0);
         if (prefix !== '+' && prefix !== '-') continue;
+        if (addedOnly && prefix !== '+') continue;
         const content = line.length > 1 ? line.slice(1) : '';
         const matchContent = caseSensitive ? content : content.toLowerCase();
         if (matchKeywords.some(kw => matchContent.includes(kw))) {
@@ -6938,7 +6986,7 @@ function updateExtractKeyword(id, patch) {
   scheduleExtractResultsRerender();
 }
 
-/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword/fileFilter/caseSensitive. */
+/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword/fileFilter/caseSensitive/addedOnly. */
 function moveExtractKeywordScope(id, newScope) {
   const fromScope = findExtractKeywordScope(id);
   if (!fromScope || fromScope === newScope) return;
@@ -6985,7 +7033,7 @@ function deleteExtractKeyword(id) {
 /** New keywords always start global; move them to the active project via the scope selector afterwards. */
 function addExtractKeyword() {
   const keywords = loadGlobalExtractKeywords();
-  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '', caseSensitive: false });
+  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '', caseSensitive: false, addedOnly: false });
   saveGlobalExtractKeywords(keywords);
   renderExtractKeywordList();
 }
@@ -7024,6 +7072,25 @@ function buildExtractKeywordRow(entry) {
 
   caseToggleLabel.appendChild(caseToggle);
   caseToggleLabel.appendChild(document.createTextNode('Aa'));
+
+  // Added-lines-only toggle (issue #106): off (the default, and the app's
+  // historical behavior) scans both added and removed lines; on restricts
+  // extraction to added lines (those starting with '+') only.
+  const addedOnlyToggleLabel = document.createElement('label');
+  addedOnlyToggleLabel.className = 'extract-keyword-added-only-label';
+  addedOnlyToggleLabel.title = 'オンにすると、追加された行（+ で始まる行）のみを抽出対象にします';
+
+  const addedOnlyToggle = document.createElement('input');
+  addedOnlyToggle.type = 'checkbox';
+  addedOnlyToggle.className = 'extract-keyword-added-only-toggle';
+  addedOnlyToggle.checked = !!entry.addedOnly;
+  addedOnlyToggle.setAttribute('aria-label', 'このキーワードで追加された行のみを対象にする');
+  addedOnlyToggle.addEventListener('change', () => {
+    updateExtractKeyword(entry.id, { addedOnly: addedOnlyToggle.checked });
+  });
+
+  addedOnlyToggleLabel.appendChild(addedOnlyToggle);
+  addedOnlyToggleLabel.appendChild(document.createTextNode('+のみ'));
 
   // File filter (issue #92): restricts extraction to files whose path
   // contains this text (plain case-insensitive partial match, same rule as
@@ -7075,10 +7142,34 @@ function buildExtractKeywordRow(entry) {
 
   row.appendChild(keywordInput);
   row.appendChild(caseToggleLabel);
+  row.appendChild(addedOnlyToggleLabel);
   row.appendChild(fileFilterInput);
   row.appendChild(scopeSelect);
   row.appendChild(removeBtn);
   return row;
+}
+
+/**
+ * Copies one extraction entry's matched lines to the clipboard as plain
+ * text (issue #106), one match per line formatted as `filePath: +/-content`.
+ * Briefly swaps the triggering button's label to confirm success, or alerts
+ * on failure (e.g. clipboard permission denied).
+ */
+async function copyExtractMatchesToClipboard(matches, button) {
+  const text = matches.map(m => `${m.filePath}: ${m.prefix}${m.content}`).join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    const original = button.textContent;
+    button.textContent = '✓ コピーしました';
+    button.disabled = true;
+    setTimeout(() => {
+      button.textContent = original;
+      button.disabled = false;
+    }, 1500);
+  } catch (e) {
+    console.error('Failed to copy extraction results to clipboard:', e);
+    alert('クリップボードへのコピーに失敗しました。');
+  }
 }
 
 /** Builds one result section (heading + matching-line list) for a single keyword entry. */
@@ -7086,12 +7177,30 @@ function buildExtractResultSection(entry) {
   const section = document.createElement('div');
   section.className = 'extract-result-section';
 
-  const matches = extractKeywordMatches(entry.keyword, entry.fileFilter, entry.caseSensitive);
+  const matches = extractKeywordMatches(entry.keyword, entry.fileFilter, entry.caseSensitive, entry.addedOnly);
 
   const heading = document.createElement('div');
   heading.className = 'extract-result-heading';
+
+  const headingText = document.createElement('span');
+  headingText.className = 'extract-result-heading-text';
   const fileFilterSuffix = entry.fileFilter.trim() ? ` [対象ファイル: ${entry.fileFilter.trim()}]` : '';
-  heading.textContent = `${entry.keyword}${fileFilterSuffix}（${matches.length}件）`;
+  const addedOnlySuffix = entry.addedOnly ? ' [追加行のみ]' : '';
+  headingText.textContent = `${entry.keyword}${fileFilterSuffix}${addedOnlySuffix}（${matches.length}件）`;
+  heading.appendChild(headingText);
+
+  // Copy-to-clipboard button (issue #106): copies this entry's matched lines
+  // as plain text so they can be pasted elsewhere.
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'extract-result-copy-btn';
+  copyBtn.textContent = '📋 コピー';
+  copyBtn.title = '抽出結果をクリップボードにコピー';
+  copyBtn.setAttribute('aria-label', `${entry.keyword} の抽出結果をクリップボードにコピー`);
+  copyBtn.disabled = matches.length === 0;
+  copyBtn.addEventListener('click', () => copyExtractMatchesToClipboard(matches, copyBtn));
+  heading.appendChild(copyBtn);
+
   section.appendChild(heading);
 
   if (matches.length === 0) {
