@@ -1344,6 +1344,16 @@
     }
     .extract-keyword-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
 
+    .extract-keyword-file-input {
+      flex: 0 0 160px;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .extract-keyword-file-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
     .extract-keyword-scope-select {
       padding: 5px 6px;
       border: 1px solid #d0d7de;
@@ -2769,9 +2779,13 @@ function applyKeywordHighlight(root, groups) {
 // loadExtractKeywords() returns the merged, scope-tagged view (global + the
 // current project's own entries), mirroring loadKeywordCategories().
 //
-// Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of { id, keyword }
-// entries. SK_PROJECT_EXTRACT_KEYWORDS holds a JSON-encoded
-// { [projectId]: entry[] } map using the same entry shape.
+// Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of
+// { id, keyword, fileFilter } entries — fileFilter (issue #92) is an
+// optional plain case-insensitive partial match against each file's path,
+// restricting extraction to matching files; '' (the default, including for
+// entries saved before #92) means every file is scanned.
+// SK_PROJECT_EXTRACT_KEYWORDS holds a JSON-encoded { [projectId]: entry[] }
+// map using the same entry shape.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function generateExtractKeywordId() {
@@ -2785,7 +2799,10 @@ function sanitizeExtractKeywords(rawList) {
   for (const k of rawList) {
     if (!k || typeof k !== 'object' || typeof k.keyword !== 'string') continue;
     const id = typeof k.id === 'string' && k.id ? k.id : generateExtractKeywordId();
-    result.push({ id, keyword: k.keyword });
+    // fileFilter (issue #92): optional partial file-path match, defaulting to
+    // '' (= no filter, extract from every file) for older saved entries.
+    const fileFilter = typeof k.fileFilter === 'string' ? k.fileFilter : '';
+    result.push({ id, keyword: k.keyword, fileFilter });
   }
   return result;
 }
@@ -2883,15 +2900,22 @@ function loadExtractKeywords() {
  * comma-separated keywords (issue #91), parsed the same way keyword-highlight
  * categories are (see parseKeywords()) — a line matches if any one of them
  * is found (OR, not AND).
+ *
+ * `fileFilter` (issue #92) restricts the scan to files whose path contains
+ * it (same plain case-insensitive substring rule); left blank (the
+ * default), every file in the diff is scanned.
  * @param {string} raw
+ * @param {string} [fileFilter]
  * @returns {Array<{filePath: string, prefix: '+'|'-', content: string}>}
  */
-function extractKeywordMatches(raw) {
+function extractKeywordMatches(raw, fileFilter = '') {
   const keywords = parseKeywords(raw);
   if (keywords.length === 0 || !app.parsedDiff) return [];
   const lowerKeywords = keywords.map(kw => kw.toLowerCase());
+  const lowerFileFilter = fileFilter.trim().toLowerCase();
   const results = [];
   for (const file of app.parsedDiff) {
+    if (lowerFileFilter && !file.filePath.toLowerCase().includes(lowerFileFilter)) continue;
     for (const hunk of file.hunks) {
       for (const line of hunk.lines) {
         if (line.startsWith('\\')) continue; // "\ No newline at end of file" marker, not diff content
@@ -6628,7 +6652,7 @@ function deleteExtractKeyword(id) {
 /** New keywords always start global; move them to the active project via the scope selector afterwards. */
 function addExtractKeyword() {
   const keywords = loadGlobalExtractKeywords();
-  keywords.push({ id: generateExtractKeywordId(), keyword: '' });
+  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '' });
   saveGlobalExtractKeywords(keywords);
   renderExtractKeywordList();
 }
@@ -6646,6 +6670,20 @@ function buildExtractKeywordRow(entry) {
   keywordInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
   keywordInput.addEventListener('input', () => {
     updateExtractKeyword(entry.id, { keyword: keywordInput.value });
+  });
+
+  // File filter (issue #92): restricts extraction to files whose path
+  // contains this text (plain case-insensitive partial match, same rule as
+  // keyword matching). Left empty (the default), every file is scanned.
+  const fileFilterInput = document.createElement('input');
+  fileFilterInput.type = 'text';
+  fileFilterInput.className = 'extract-keyword-file-input';
+  fileFilterInput.value = entry.fileFilter;
+  fileFilterInput.placeholder = '対象ファイル名（任意）';
+  fileFilterInput.title = 'ファイルパスの部分一致で絞り込みます（大文字小文字は区別しません）。未入力なら全ファイルが対象です';
+  fileFilterInput.setAttribute('aria-label', '対象ファイル名（部分一致、未入力なら全ファイル）');
+  fileFilterInput.addEventListener('input', () => {
+    updateExtractKeyword(entry.id, { fileFilter: fileFilterInput.value });
   });
 
   // Scope selector (issue #79): choose whether this keyword is shared by
@@ -6683,6 +6721,7 @@ function buildExtractKeywordRow(entry) {
   removeBtn.addEventListener('click', () => deleteExtractKeyword(entry.id));
 
   row.appendChild(keywordInput);
+  row.appendChild(fileFilterInput);
   row.appendChild(scopeSelect);
   row.appendChild(removeBtn);
   return row;
@@ -6693,11 +6732,12 @@ function buildExtractResultSection(entry) {
   const section = document.createElement('div');
   section.className = 'extract-result-section';
 
-  const matches = extractKeywordMatches(entry.keyword);
+  const matches = extractKeywordMatches(entry.keyword, entry.fileFilter);
 
   const heading = document.createElement('div');
   heading.className = 'extract-result-heading';
-  heading.textContent = `${entry.keyword}（${matches.length}件）`;
+  const fileFilterSuffix = entry.fileFilter.trim() ? ` [対象ファイル: ${entry.fileFilter.trim()}]` : '';
+  heading.textContent = `${entry.keyword}${fileFilterSuffix}（${matches.length}件）`;
   section.appendChild(heading);
 
   if (matches.length === 0) {
