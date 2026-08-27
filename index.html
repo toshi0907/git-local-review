@@ -5501,6 +5501,15 @@ async function loadSettingsFromFolderOnStartup() {
  * Manually reload from the settings folder on demand — the counterpart to
  * the auto-save skip/notice in autoSaveSettingsToFolder(): loading itself
  * always stays an explicit user action, never automatic.
+ *
+ * Also secures readwrite (not just read) access on this same user gesture
+ * (issue #88) — the button is reachable even when write permission was
+ * never granted or was reset (e.g. a fresh browser session), and without
+ * this the read succeeds but auto-save keeps failing silently until some
+ * other action happens to (re-)request write access. refreshSettingsFolderUI()
+ * immediately syncs the auto-save warning banner/watchers to the
+ * now-granted permission instead of waiting for the next debounced
+ * auto-save attempt to notice.
  */
 async function reloadSettingsFromFolderManually() {
   const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
@@ -5512,10 +5521,11 @@ async function reloadSettingsFromFolderManually() {
     return;
   }
 
-  if (!(await verifyHandlePermission(dirHandle, 'read'))) {
-    alert('フォルダへの読み取りアクセスが許可されませんでした。');
+  if (!(await verifyHandlePermission(dirHandle, 'readwrite'))) {
+    alert('フォルダへの読み取り・書き込みアクセスが許可されませんでした。');
     return;
   }
+  await refreshSettingsFolderUI();
 
   let fileHandle;
   try {

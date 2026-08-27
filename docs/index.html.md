@@ -559,6 +559,8 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 
 **任意タイミングでの読み込み（issue #83）:** `reloadSettingsFromFolderManually()` を呼ぶボタンは2つあります。`#settings-reload-btn`（`#settings-external-update-notice` 内、外部変更検知時のみ表示）に加えて、「設定を保存」ボタンの隣に常時表示の `#settings-load-btn`（「📥 設定を読み込み」）があり、外部変更の有無にかかわらず任意のタイミングで保存先フォルダから読み込み直せます。保存先フォルダが未設定の状態で `#settings-load-btn` を押した場合は `reloadSettingsFromFolderManually()` が `saveSettingsToFolder()` 同様のアラートで案内します（`#settings-reload-btn` 側は通知自体がフォルダ設定済みのときしか表示されないため、通常この分岐には到達しません）。
 
+**読み込み時の書き込み権限確保（issue #88）:** `reloadSettingsFromFolderManually()` は読み込み自体には `read` 権限で足りるが、`readwrite` を要求する。ブラウザの再起動などで書き込み権限が失効・未許可のまま残っていると、読み込みは成功しても自動保存だけが気付かれにくい形で失敗し続けるため、読み込みボタンという既存のユーザー操作（ジェスチャー）に便乗して書き込み権限もまとめて確保する。権限確保の直後に `refreshSettingsFolderUI()` を呼び、次のデバウンス済み自動保存を待たずに自動保存警告バナー（issue #60）の表示状態を最新の権限に同期する。
+
 ---
 
 ### File loading
