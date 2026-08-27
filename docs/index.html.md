@@ -62,7 +62,10 @@ test/                ← テスト用 .diff サンプルファイル
     <div id="app">
       <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・「設定保存」/「設定読込」ボタン（保存状態表示・
                                    外部変更通知「読み込む」導線を含む）・プロジェクト一覧（#83 でコンパクト表示化）。
-                                   フォルダ選択等の設定項目は #61 で、エクスポート/インポートは #83 で設定モーダルへ移動済み）
+                                   フォルダ選択等の設定項目は #61 で、エクスポート/インポートは #83 で設定モーダルへ移動済み。
+                                   右端の `#sidebar-resizer` ハンドルをドラッグして幅を変更可能（issue #94、
+                                   `initSidebarResizer()`。メモパネルの `#memo-panel-resizer` と同じ Pointer Events
+                                   パターン。幅は `localStorage` には保存されず、セッション内のみ有効）
       <main id="main">
         <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）
         <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）

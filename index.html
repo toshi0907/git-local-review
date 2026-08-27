@@ -187,14 +187,32 @@
 
     /* ===== Sidebar ===== */
     .sidebar {
+      position: relative;
       width: 280px;
       min-width: 220px;
+      max-width: 600px;
       background: #fff;
       border-right: 1px solid #d0d7de;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       flex-shrink: 0;
+    }
+
+    /* Drag handle on the sidebar's right edge (issue #94), mirroring
+       .memo-panel-resizer's handle on the memo panel's left edge — kept
+       fully inside the panel's box (not straddling the border) since the
+       parent's overflow: hidden would otherwise clip it and swallow pointer
+       events on the clipped portion. */
+    .sidebar-resizer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 10px;
+      height: 100%;
+      cursor: ew-resize;
+      touch-action: none;
+      z-index: 1;
     }
 
     .load-section {
@@ -1751,7 +1769,8 @@
 <div class="layout">
 
   <!-- Sidebar: file loader + project list -->
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-resizer" id="sidebar-resizer" aria-hidden="true"></div>
     <div class="load-section">
       <input type="file" id="file-input" accept=".diff,.patch,.txt,text/plain" multiple>
       <button class="load-btn" id="load-btn">
@@ -4738,6 +4757,52 @@ function closeMemoPanel() {
   }
 }
 
+/**
+ * Drag-to-resize for the sidebar (issue #94), mirroring
+ * initMemoPanelResizer() below but growing the sidebar when the handle is
+ * dragged right (its resize edge, on the sidebar's right side) instead of
+ * left (the memo panel's resize edge is on its left side, since the memo
+ * panel itself docks on the opposite side of the screen).
+ */
+function initSidebarResizer() {
+  const sidebar = document.getElementById('sidebar');
+  const handle = document.getElementById('sidebar-resizer');
+  if (!sidebar || !handle) return;
+
+  let minWidth = 0;
+  let startX = 0;
+  let startWidth = 0;
+  let maxWidth = 0;
+  let isResizing = false;
+
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = sidebar.getBoundingClientRect().width;
+    minWidth = Number.parseFloat(getComputedStyle(sidebar).minWidth);
+    if (!Number.isFinite(minWidth)) minWidth = 0;
+    maxWidth = Number.parseFloat(getComputedStyle(sidebar).maxWidth);
+    if (!Number.isFinite(maxWidth)) maxWidth = window.innerWidth;
+    isResizing = true;
+    handle.setPointerCapture(e.pointerId);
+  });
+
+  handle.addEventListener('pointermove', (e) => {
+    if (!isResizing || !handle.hasPointerCapture(e.pointerId)) return;
+    const delta = e.clientX - startX;
+    const nextWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + delta));
+    sidebar.style.width = `${nextWidth}px`;
+  });
+
+  const stopResize = () => {
+    isResizing = false;
+  };
+  handle.addEventListener('pointerup', stopResize);
+  handle.addEventListener('pointercancel', stopResize);
+  handle.addEventListener('lostpointercapture', stopResize);
+}
+
 function initMemoPanelResizer() {
   const panel = document.getElementById('memo-panel');
   const handle = document.getElementById('memo-panel-resizer');
@@ -6130,6 +6195,7 @@ document.getElementById('memo-input').addEventListener('keydown', (e) => {
   }
 });
 initMemoPanelResizer();
+initSidebarResizer();
 // Keep the panel's content in sync when the viewport crosses the
 // WIDE_LAYOUT_MEDIA_QUERY breakpoint (e.g. the memo list wasn't rendered
 // while narrow and closed, but must be populated once it docks open).
