@@ -201,6 +201,7 @@ const SK_KEYWORDS        = 'gitLocalReview_keywords';
 const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
 const SK_EXTRACT_KEYWORDS = 'gitLocalReview_extractKeywords';
 const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
+const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 ```
 
 `SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled, caseSensitive }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。`caseSensitive`（issue #95、真偽値）はこのカテゴリのキーワード一致で大文字小文字を区別するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトは区別しない＝従来通りの挙動）。`findRawKeywordRanges(text, keywords, caseSensitive)` がこのフラグに応じて比較前の `toLowerCase()` をスキップし、`getActiveKeywordGroups()` の返す各グループにも `caseSensitive` が含まれて `findKeywordRanges()`／`applyKeywordHighlight()` に伝播します。件数バッジ（`countKeywordMatches(keywords, caseSensitive)`）にも同じフラグが渡されるため、大文字小文字の区別有無でカウント結果も変わります。設定UIではカテゴリ行の「Aa」チェックボックスで切り替えます。
@@ -212,6 +213,8 @@ const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 `SK_REVIEWS` の各ハンクの値は #51 以降 `'approved' | 'needs_changes' | 'on_hold'` のいずれか（キー自体が無ければ未レビュー）です。#51 以前の値（真偽値 `true`）は `normalizeReviewStatus()` により読み込み時に自動的に `'approved'` へ変換されます（`sanitizeReviewsData()` 経由、ローカルの既存データ・インポートしたJSON両方に適用）。
 
 `SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のとき、および全キーが `false`（何もチェックしていない状態）のときは、いずれもフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
+
+`SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
 ---
 
@@ -441,6 +444,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 メモ入力欄は複数行入力に対応した `<textarea>`（`maxlength="5000"`）で、長文やコードの貼り付けにも対応します。`Ctrl+Enter`（macOS では `Cmd+Enter`）でも「追加」ボタンと同じくメモを追加できます（`#memo-input` の `keydown` リスナーが `#memo-add-form` を `requestSubmit()`）。パネル左端の `#memo-panel-resizer` ハンドルをドラッグすると Pointer Events（`initMemoPanelResizer()`）でパネル幅を変更できます（幅は `localStorage` には保存されず、セッション内のみ有効）。
 
+**一括登録（issue #104）:** 追加フォーム右上の「一括登録」ボタン（`#memo-bulk-toggle-btn`、`setMemoBulkMode()`）をトグルすると、`#memo-input` の下に区切り文字入力欄（`#memo-bulk-delimiter`）が現れ、「追加」ボタンの表示も「一括登録」に変わります。この状態でフォームを送信すると、`#memo-input` に入力したテキストを `splitBulkMemoText(text, delimiter)` が区切り文字と完全一致する行で分割し、それぞれを独立したメモとして `addMemos(texts)`（1回の `localStorage` 書き込み・再描画にまとめてメモを追加するバッチ版 `addMemo()`）に渡します。区切り文字に一致した行は分割後も直前のセグメントの末尾行として残ります（例: `"foo\n---\nbar"` を `"---"` で分割すると `["foo\n---", "bar"]` の2件になる）。区切り文字は `SK_MEMO_BULK_DELIMITER` に保存され、次回一括登録モードを開いたときの初期値として復元されます（`loadMemoBulkDelimiter()`）。一括登録モードは通常の追加モードに戻すか、パネルを閉じる（`closeMemoPanel()`）と解除されます。
+
 **メモの編集:** 各メモ項目の ✏ ボタン（`.memo-item-edit`）をクリックすると、そのメモだけがインライン編集フォーム（`.memo-edit-form`、`buildMemoEditForm()`）に切り替わります。編集中のメモ ID はモジュール変数 `editingMemoId` に保持され、`renderMemoList()` はこの ID を持つメモだけ通常表示の代わりに編集フォームを描画します（他のメモは通常どおり一覧表示のまま）。フォーム内の `<textarea>` は開くと自動的にフォーカスされ、カーソルは末尾に置かれます。追加フォームと同様に `Ctrl+Enter`（`Cmd+Enter`）で保存、`Escape` でそのメモの編集だけをキャンセルします（`stopPropagation()` により、パネル全体を閉じる `document` レベルの `Escape` ハンドラーへは伝播しません）。保存は `editMemo(memoId, text)` が行い、`text` をトリムして空でなければ `text` と `updatedAt` を更新し `saveAllMemos()` で永続化します（空文字列の場合は保存せず編集状態のまま）。`editingMemoId` はパネルを閉じたとき（`closeMemoPanel()`）とプロジェクト切替時・表示モード切替時（`refreshMemoUI()`）にリセットされ、別のメモや別プロジェクトの一覧を開いたときに編集フォームが残らないようにしています。
 
 **表示モード（issue #57）:** ビューポート幅が `WIDE_LAYOUT_MEDIA_QUERY`（`(min-width: 1200px)`、CSS 側は同値の `@media (min-width: 1200px)`）以上のときはスライドオーバーレイではなく、`.layout` の3番目のflexカラムとして右側に常時ドッキング表示されます。この場合 `#memo-toggle-btn` と `#memo-panel-close` は CSS で常に非表示になります（`.open` クラスの有無に関わらず、パネル自体は常時ドッキング表示のため開閉トリガー・閉じるボタンが不要）。`isMemoPanelOpen()` は `WIDE_LAYOUT_MEDIA_QUERY.matches` を優先して true を返します。`#memo-toggle-btn` が非表示のため `openMemoPanel()` は呼ばれず、`aria-hidden` の同期は `refreshMemoUI()` が `isMemoPanelOpen()` の結果に基づいて行います（`init()` 完了時・プロジェクト切替時・ブレークポイントをまたいだ `WIDE_LAYOUT_MEDIA_QUERY` の `change` イベント時に呼ばれる）。ドッキング表示中は Escape キーでのクローズを無効化し（常時表示のため閉じる概念がない）、j/k/Space のハンク操作ショートカットは「フォーカスが `#memo-panel` 内にあるか」で判定するよう変更されています（`isMemoPanelOpen()` ではなく `document.getElementById('memo-panel').contains(e.target)`）。これは、ドッキング時は常時 `isMemoPanelOpen() === true` になるため、パネル外にフォーカスがあってもハンク操作を無効化してしまわないようにするためです。
@@ -646,6 +651,8 @@ init()
 │                                （全体設定）             │
 │  gitLocalReview_projectExtractKeywords 行抽出キーワード│
 │                        （プロジェクトID → 配列）      │
+│  gitLocalReview_memoBulkDelimiter メモ一括登録の区切り│
+│                                文字（全プロジェクト共通）│
 └─────────────────────────────────────────────────────┘
           ↕ read/write（File System Access API 対応のみ）
 ┌─────────────────────────────────────────────────────┐
