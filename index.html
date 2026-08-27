@@ -1600,6 +1600,52 @@
     .memo-add-form textarea:disabled,
     .memo-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+    .memo-add-form-header {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .memo-bulk-toggle-btn {
+      flex-shrink: 0;
+      padding: 2px 8px;
+      background: none;
+      border: 1px solid #0969da;
+      border-radius: 5px;
+      color: #0969da;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .memo-bulk-toggle-btn:hover { background: #ddf4ff; }
+    .memo-bulk-toggle-btn[aria-pressed="true"] { background: #0969da; color: #fff; }
+    .memo-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .memo-bulk-options {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: #57606a;
+    }
+
+    .memo-bulk-options[hidden] { display: none; }
+
+    .memo-bulk-delimiter-input {
+      flex: 1;
+      min-width: 0;
+      box-sizing: border-box;
+      padding: 4px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+
+    .memo-bulk-delimiter-input:focus {
+      outline: none;
+      border-color: #0969da;
+    }
+
     .memo-empty {
       padding: 24px 16px;
       text-align: center;
@@ -1852,8 +1898,15 @@
       <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
     </div>
     <form class="memo-add-form" id="memo-add-form">
+      <div class="memo-add-form-header">
+        <button type="button" id="memo-bulk-toggle-btn" class="memo-bulk-toggle-btn" aria-pressed="false" title="区切り文字の行で区切った複数のメモをまとめて登録">一括登録</button>
+      </div>
       <textarea id="memo-input" placeholder="メモを追加（Ctrl+Enterで追加）" maxlength="5000"></textarea>
-      <button type="submit" class="memo-add-btn">追加</button>
+      <div id="memo-bulk-options" class="memo-bulk-options" hidden>
+        <label for="memo-bulk-delimiter">区切り文字</label>
+        <input type="text" id="memo-bulk-delimiter" class="memo-bulk-delimiter-input" placeholder="例: ---" maxlength="50" aria-label="一括登録の区切り文字（この行でメモを分割、区切り行自体も直前のメモに含まれます）">
+      </div>
+      <button type="submit" class="memo-add-btn" id="memo-add-btn">追加</button>
     </form>
     <div class="memo-empty" id="memo-empty" style="display:none;"></div>
     <ul class="memo-list" id="memo-list"></ul>
@@ -2010,6 +2063,8 @@ const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
 const SK_EXTRACT_KEYWORDS = 'gitLocalReview_extractKeywords';
 /** Per-project keyword-line-extraction keywords (issue #79): { [projectId]: entry[] }, same entry shape as SK_EXTRACT_KEYWORDS. */
 const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
+/** Delimiter line used to split bulk-registered memos (issue #104), shared across all projects. */
+const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -2406,6 +2461,22 @@ function saveAllMemos(memos) {
   } catch (e) {
     console.error('Failed to save memos to localStorage:', e);
     alert('メモの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+/** Default delimiter (issue #104) used for bulk memo registration when none has been configured yet. */
+const DEFAULT_MEMO_BULK_DELIMITER = '---';
+
+function loadMemoBulkDelimiter() {
+  const v = localStorage.getItem(SK_MEMO_BULK_DELIMITER);
+  return typeof v === 'string' && v !== '' ? v : DEFAULT_MEMO_BULK_DELIMITER;
+}
+
+function saveMemoBulkDelimiter(delimiter) {
+  try {
+    localStorage.setItem(SK_MEMO_BULK_DELIMITER, delimiter);
+  } catch (e) {
+    console.error('Failed to save memo bulk delimiter to localStorage:', e);
   }
 }
 
@@ -4637,17 +4708,20 @@ function renderMemoList() {
   const emptyEl = document.getElementById('memo-empty');
   const input   = document.getElementById('memo-input');
   const addBtn  = document.querySelector('.memo-add-btn');
+  const bulkToggleBtn = document.getElementById('memo-bulk-toggle-btn');
   listEl.innerHTML = '';
 
   if (!app.currentProjectId) {
     input.disabled = true;
     addBtn.disabled = true;
+    bulkToggleBtn.disabled = true;
     emptyEl.textContent = 'プロジェクトを開くとメモを追加できます。';
     emptyEl.style.display = 'block';
     return;
   }
   input.disabled = false;
   addBtn.disabled = false;
+  bulkToggleBtn.disabled = false;
 
   const memos = getCurrentProjectMemos();
   if (memos.length === 0) {
@@ -4678,19 +4752,54 @@ function renderMemoList() {
   }
 }
 
-function addMemo(text) {
-  const trimmed = text.trim();
-  if (!trimmed || !app.currentProjectId) return;
+/**
+ * Adds multiple memos in a single localStorage write + re-render (issue
+ * #104's bulk registration), instead of calling addMemo() once per segment.
+ * Blank/whitespace-only segments are dropped. Returns how many were added.
+ */
+function addMemos(texts) {
+  if (!app.currentProjectId) return 0;
+  const trimmedTexts = texts.map(t => t.trim()).filter(Boolean);
+  if (trimmedTexts.length === 0) return 0;
 
   const all = loadAllMemos();
   if (!all[app.currentProjectId]) all[app.currentProjectId] = [];
   const now = Date.now();
-  all[app.currentProjectId].push({ id: generateMemoId(), text: trimmed, done: false, createdAt: now, updatedAt: now });
+  for (const text of trimmedTexts) {
+    all[app.currentProjectId].push({ id: generateMemoId(), text, done: false, createdAt: now, updatedAt: now });
+  }
   saveAllMemos(all);
   scheduleSettingsAutoSave();
 
   renderMemoList();
   refreshMemoBadge();
+  return trimmedTexts.length;
+}
+
+function addMemo(text) {
+  addMemos([text]);
+}
+
+/**
+ * Splits bulk-registration memo text (issue #104) into individual memo
+ * strings at lines that exactly match `delimiter`. The matching delimiter
+ * line is kept as the trailing line of the segment that precedes it, per
+ * the issue's spec ("デリミタに一致した行もメモに含める"), so only the
+ * text after the last delimiter line (if any) ends up without one.
+ */
+function splitBulkMemoText(text, delimiter) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const segments = [];
+  let current = [];
+  for (const line of lines) {
+    current.push(line);
+    if (delimiter && line === delimiter) {
+      segments.push(current.join('\n'));
+      current = [];
+    }
+  }
+  if (current.some(line => line.trim() !== '')) segments.push(current.join('\n'));
+  return segments.map(s => s.trim()).filter(Boolean);
 }
 
 function toggleMemoDone(memoId, done) {
@@ -4788,6 +4897,7 @@ function openMemoPanel() {
 
 function closeMemoPanel() {
   editingMemoId = null;
+  setMemoBulkMode(false);
   document.getElementById('memo-panel').classList.remove('open');
   document.getElementById('memo-panel').setAttribute('aria-hidden', 'true');
   document.getElementById('memo-panel-overlay').classList.remove('active');
@@ -6221,10 +6331,37 @@ document.getElementById('memo-toggle-btn').addEventListener('click', () => {
 });
 document.getElementById('memo-panel-close').addEventListener('click', closeMemoPanel);
 document.getElementById('memo-panel-overlay').addEventListener('click', closeMemoPanel);
+
+// Bulk memo registration (issue #104): toggling "一括登録" reveals a
+// delimiter input; submitting the form then splits #memo-input's text into
+// one memo per segment (splitBulkMemoText()) instead of adding it as a
+// single memo. The delimiter itself persists across sessions (SK_MEMO_BULK_DELIMITER).
+const memoBulkToggleBtn      = document.getElementById('memo-bulk-toggle-btn');
+const memoBulkOptions        = document.getElementById('memo-bulk-options');
+const memoBulkDelimiterInput = document.getElementById('memo-bulk-delimiter');
+const memoAddBtn             = document.getElementById('memo-add-btn');
+let memoBulkModeOn = false;
+
+function setMemoBulkMode(on) {
+  memoBulkModeOn = on;
+  memoBulkToggleBtn.setAttribute('aria-pressed', String(on));
+  memoBulkOptions.hidden = !on;
+  memoAddBtn.textContent = on ? '一括登録' : '追加';
+  if (on) memoBulkDelimiterInput.value = loadMemoBulkDelimiter();
+}
+
+memoBulkToggleBtn.addEventListener('click', () => setMemoBulkMode(!memoBulkModeOn));
+
 document.getElementById('memo-add-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = document.getElementById('memo-input');
-  addMemo(input.value);
+  if (memoBulkModeOn) {
+    const delimiter = memoBulkDelimiterInput.value.trim() || DEFAULT_MEMO_BULK_DELIMITER;
+    saveMemoBulkDelimiter(delimiter);
+    addMemos(splitBulkMemoText(input.value, delimiter));
+  } else {
+    addMemo(input.value);
+  }
   input.value = '';
   input.focus();
 });
