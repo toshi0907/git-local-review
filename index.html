@@ -2751,12 +2751,15 @@ function applyKeywordHighlight(root, groups) {
 // Keyword line extraction (issue #79)
 //
 // A separate feature from the keyword highlight above: rather than coloring
-// matches in place, each registered keyword collects every diff line that
-// contains it into its own list, shown in the "🔎 抽出" modal. Extraction is
-// limited to added/removed lines (those starting with '+' or '-') — context
-// lines are not scanned. Matching is the same plain case-insensitive
-// substring search used by keyword highlight (findRawKeywordRanges), applied
-// directly to whole-line text.
+// matches in place, each registered entry collects every diff line matching
+// any of its keywords into its own list, shown in the "🔎 抽出" modal. As
+// with keyword highlight, an entry's `keyword` field may hold several
+// comma-separated keywords (issue #91, parsed via parseKeywords()) — a line
+// matches the entry if it contains at least one of them (OR, not AND).
+// Extraction is limited to added/removed lines (those starting with '+' or
+// '-') — context lines are not scanned. Matching is the same plain
+// case-insensitive substring search used by keyword highlight
+// (findRawKeywordRanges), applied directly to whole-line text.
 //
 // Each keyword entry has a scope, chosen per-entry in the modal:
 // - 'global'  — applies to every project, stored in SK_EXTRACT_KEYWORDS.
@@ -2874,15 +2877,18 @@ function loadExtractKeywords() {
  * Finds every added/removed diff line (lines starting with '+' or '-';
  * context lines and the "\ No newline at end of file" marker are skipped)
  * across the whole currently loaded diff (app.parsedDiff) whose text
- * contains `keyword` (plain case-insensitive substring search, same rule as
- * keyword highlight).
- * @param {string} keyword
+ * contains at least one of `raw`'s keywords (plain case-insensitive
+ * substring search, same rule as keyword highlight). `raw` may hold several
+ * comma-separated keywords (issue #91), parsed the same way keyword-highlight
+ * categories are (see parseKeywords()) — a line matches if any one of them
+ * is found (OR, not AND).
+ * @param {string} raw
  * @returns {Array<{filePath: string, prefix: '+'|'-', content: string}>}
  */
-function extractKeywordMatches(keyword) {
-  const kw = keyword.trim();
-  if (!kw || !app.parsedDiff) return [];
-  const lowerKw = kw.toLowerCase();
+function extractKeywordMatches(raw) {
+  const keywords = parseKeywords(raw);
+  if (keywords.length === 0 || !app.parsedDiff) return [];
+  const lowerKeywords = keywords.map(kw => kw.toLowerCase());
   const results = [];
   for (const file of app.parsedDiff) {
     for (const hunk of file.hunks) {
@@ -2891,7 +2897,8 @@ function extractKeywordMatches(keyword) {
         const prefix = line.charAt(0);
         if (prefix !== '+' && prefix !== '-') continue;
         const content = line.length > 1 ? line.slice(1) : '';
-        if (content.toLowerCase().includes(lowerKw)) {
+        const lowerContent = content.toLowerCase();
+        if (lowerKeywords.some(kw => lowerContent.includes(kw))) {
           results.push({ filePath: file.filePath, prefix, content });
         }
       }
@@ -6633,8 +6640,9 @@ function buildExtractKeywordRow(entry) {
   keywordInput.type = 'text';
   keywordInput.className = 'extract-keyword-input';
   keywordInput.value = entry.keyword;
-  keywordInput.placeholder = '例: TODO';
-  keywordInput.setAttribute('aria-label', 'キーワード');
+  keywordInput.placeholder = '例: TODO, FIXME';
+  keywordInput.title = 'カンマ区切りで複数指定できます（大文字小文字は区別しません）';
+  keywordInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
   keywordInput.addEventListener('input', () => {
     updateExtractKeyword(entry.id, { keyword: keywordInput.value });
   });
@@ -6745,7 +6753,7 @@ function renderExtractResults() {
     return;
   }
 
-  const keywords = loadExtractKeywords().filter(k => k.keyword.trim() !== '');
+  const keywords = loadExtractKeywords().filter(k => parseKeywords(k.keyword).length > 0);
   if (keywords.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'extract-results-empty';
