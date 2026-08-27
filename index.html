@@ -1737,10 +1737,10 @@
       <div class="settings-save-section" id="settings-save-section">
         <div class="settings-save-btn-row">
           <button class="io-btn settings-save-btn" id="settings-save-btn" title="今すぐ指定フォルダに保存します（変更時は自動でも保存されます）">
-            <span aria-hidden="true">💾</span> 設定を保存
+            <span aria-hidden="true">💾</span> 設定保存
           </button>
           <button class="io-btn settings-save-btn" id="settings-load-btn" title="今すぐ指定フォルダから読み込みます">
-            <span aria-hidden="true">📥</span> 設定を読み込み
+            <span aria-hidden="true">📥</span> 設定読込
           </button>
         </div>
         <div class="folder-status-msg" id="settings-save-status"></div>
@@ -5505,7 +5505,7 @@ async function loadSettingsFromFolderOnStartup() {
 async function reloadSettingsFromFolderManually() {
   const dirHandle = await loadFolderHandle(FOLDER_KEY_SETTINGS);
   if (!dirHandle) {
-    // Reachable from the always-visible "設定を読み込み" button (issue #83),
+    // Reachable from the always-visible "設定読込" button (issue #83),
     // unlike the external-update notice's "読み込む" button, which only ever
     // shows once a folder (and a file in it) is already known to exist.
     alert('先に設定の保存先フォルダを選択してください。');

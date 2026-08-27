@@ -60,7 +60,7 @@ test/                ← テスト用 .diff サンプルファイル
     <style>                     ← アプリ全体の CSS
   <body>
     <div id="app">
-      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・「設定を保存」/「設定を読み込み」ボタン（保存状態表示・
+      <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・「設定保存」/「設定読込」ボタン（保存状態表示・
                                    外部変更通知「読み込む」導線を含む）・プロジェクト一覧（#83 でコンパクト表示化）。
                                    フォルダ選択等の設定項目は #61 で、エクスポート/インポートは #83 で設定モーダルへ移動済み）
       <main id="main">
@@ -73,7 +73,7 @@ test/                ← テスト用 .diff サンプルファイル
     <div id="conflict-modal">   ← ファイル名衝突ダイアログ
     <div class="modal-overlay" id="settings-modal-overlay"> ← 設定モーダル（エクスポート/インポート（#83）・
                                    既定のフォルダ・保存先フォルダ・文字コード・キーワードカテゴリをまとめて表示。#61。
-                                   「設定を保存」「設定を読み込み」ボタン自体はサイドバー（メイン画面）に配置）
+                                   「設定保存」「設定読込」ボタン自体はサイドバー（メイン画面）に配置）
     <script>                    ← highlight.js (minified, インライン)
     <script>                    ← アプリロジック本体
 ```
@@ -545,7 +545,7 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 **自動保存状態の警告（issue #60）:** `#autosave-warning-banner`（トップバー直下・画面上部に常時表示可能なバナー）は、保存先フォルダが設定されているにもかかわらず自動保存が実行できていない場合（書き込み権限が許可されていない、または書き込み時に例外が発生した場合）に表示されます。`showAutoSaveWarning(message)` / `hideAutoSaveWarning()` が表示・非表示とメッセージ文言を切り替え、バナーが占める高さ（`AUTOSAVE_WARNING_HEIGHT_PX`）は CSS カスタムプロパティ `--autosave-warning-height` 経由で `.layout` の高さ計算に反映されます。以下の経路で状態が更新されます。
 
 - `autoSaveSettingsToFolder()`: 書き込み権限が無い、または書き込みが例外で失敗した場合に表示。成功時は非表示
-- `saveSettingsToFolder()`（サイドバー（メイン画面）の「設定を保存」ボタンによる手動保存。#61 でサイドバーから設定モーダルへ一時移動していたが、その後サイドバーへ戻された）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
+- `saveSettingsToFolder()`（サイドバー（メイン画面）の「設定保存」ボタンによる手動保存。#61 でサイドバーから設定モーダルへ一時移動していたが、その後サイドバーへ戻された）: 自動保存と同じ書き込み経路を使うため、失敗時は同様に表示（`alert()` に加えて表示）。成功時は非表示
 
 **手動保存時の外部変更チェック（issue #70）:** `saveSettingsToFolder()` は書き込み直前に `statSettingsFile()` で現在の設定ファイルの `lastModified`（ファイルが無ければ `null`）を取得し、`settingsFileKnownModified`（前回このタブが保存/読込した時点の値。未読込なら `null`）と比較します。一致しなければ `confirm()` で上書きの可否をユーザーに確認します。この不一致は「他の環境で更新された」だけでなく、`currentModified === null` なら「他の環境で削除された」、`settingsFileKnownModified === null` なら「他の環境で新規作成された」ケースもあり得るため、ダイアログの文言は3パターンを判定して出し分けます。
 
@@ -557,7 +557,7 @@ diff 読み込み / レビュー変更 / プロジェクト削除
 
 このバナーは「保存先フォルダが未設定」の場合や、外部変更検知による意図的なスキップ（`showSettingsExternalUpdateNotice()` が既に専用の通知とアクションを提供している）では表示されません。前者は警告対象外、後者は失敗ではなく想定内の一時停止のためです。
 
-**任意タイミングでの読み込み（issue #83）:** `reloadSettingsFromFolderManually()` を呼ぶボタンは2つあります。`#settings-reload-btn`（`#settings-external-update-notice` 内、外部変更検知時のみ表示）に加えて、「設定を保存」ボタンの隣に常時表示の `#settings-load-btn`（「📥 設定を読み込み」）があり、外部変更の有無にかかわらず任意のタイミングで保存先フォルダから読み込み直せます。保存先フォルダが未設定の状態で `#settings-load-btn` を押した場合は `reloadSettingsFromFolderManually()` が `saveSettingsToFolder()` 同様のアラートで案内します（`#settings-reload-btn` 側は通知自体がフォルダ設定済みのときしか表示されないため、通常この分岐には到達しません）。
+**任意タイミングでの読み込み（issue #83）:** `reloadSettingsFromFolderManually()` を呼ぶボタンは2つあります。`#settings-reload-btn`（`#settings-external-update-notice` 内、外部変更検知時のみ表示）に加えて、「設定保存」ボタンの隣に常時表示の `#settings-load-btn`（「📥 設定読込」）があり、外部変更の有無にかかわらず任意のタイミングで保存先フォルダから読み込み直せます。保存先フォルダが未設定の状態で `#settings-load-btn` を押した場合は `reloadSettingsFromFolderManually()` が `saveSettingsToFolder()` 同様のアラートで案内します（`#settings-reload-btn` 側は通知自体がフォルダ設定済みのときしか表示されないため、通常この分岐には到達しません）。
 
 ---
 
