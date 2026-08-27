@@ -1342,6 +1342,24 @@
 
     .extract-keywords-row-header label { font-weight: 600; font-size: 13px; }
 
+    .extract-keywords-row-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .extract-keyword-bulk-toggle-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #57606a;
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .extract-keyword-bulk-toggle-btn:hover { background: #eaeef2; }
+
     .extract-keyword-add-btn {
       padding: 4px 10px;
       font-size: 12px;
@@ -1371,6 +1389,13 @@
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    .extract-keyword-row-disabled { opacity: 0.5; }
+
+    .extract-keyword-enable-toggle {
+      flex-shrink: 0;
+      cursor: pointer;
     }
 
     .extract-keyword-input {
@@ -2067,7 +2092,11 @@
     <div class="extract-modal-body">
       <div class="extract-keywords-row-header">
         <label>抽出キーワード</label>
-        <button type="button" id="extract-keyword-add-btn" class="extract-keyword-add-btn" title="キーワードを追加">+ キーワード</button>
+        <div class="extract-keywords-row-header-actions">
+          <button type="button" id="extract-keyword-enable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを有効にする">全て有効</button>
+          <button type="button" id="extract-keyword-disable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを無効にする">全て無効</button>
+          <button type="button" id="extract-keyword-add-btn" class="extract-keyword-add-btn" title="キーワードを追加">+ キーワード</button>
+        </div>
       </div>
       <div id="extract-keywords" class="extract-keywords"></div>
       <div class="extract-results-heading">抽出結果</div>
@@ -2968,6 +2997,10 @@ function applyKeywordHighlight(root, groups) {
 // loadExtractKeywords() returns the merged, scope-tagged view (global + the
 // current project's own entries), mirroring loadKeywordCategories().
 //
+// `enabled` (issue #109) toggles a single entry's extraction on/off without
+// deleting it; disabled entries are skipped entirely by renderExtractResults()
+// (no result section is shown for them). Defaults to true.
+//
 // Storage: SK_EXTRACT_KEYWORDS holds a JSON-encoded array of
 // { id, keyword, fileFilter, caseSensitive, addedOnly } entries — fileFilter
 // (issue #92) is an optional plain case-insensitive partial match against
@@ -3004,7 +3037,11 @@ function sanitizeExtractKeywords(rawList) {
     // lines, the app's historical behavior) for both new entries and any
     // saved before this field existed.
     const addedOnly = k.addedOnly === true;
-    result.push({ id, keyword: k.keyword, fileFilter, caseSensitive, addedOnly });
+    // enabled (issue #109): whether this keyword's extraction is active.
+    // Defaults to true for both new entries and any saved before this field
+    // existed, so existing keywords keep extracting after upgrade.
+    const enabled = k.enabled !== false;
+    result.push({ id, keyword: k.keyword, fileFilter, caseSensitive, addedOnly, enabled });
   }
   return result;
 }
@@ -7030,10 +7067,33 @@ function deleteExtractKeyword(id) {
   renderExtractKeywordList();
 }
 
+/**
+ * Sets `enabled` on every keyword currently visible in the modal (issue #109):
+ * every global keyword, plus (when a project is active) that project's own
+ * keywords — i.e. all entries loadExtractKeywords() would return. Writes
+ * both stores in one pass rather than calling updateExtractKeyword() per
+ * entry, then re-renders the whole row list and results in one go.
+ */
+function setAllExtractKeywordsEnabled(enabled) {
+  const globalKeywords = loadGlobalExtractKeywords();
+  if (globalKeywords.length > 0) {
+    for (const k of globalKeywords) k.enabled = enabled;
+    saveGlobalExtractKeywords(globalKeywords);
+  }
+  if (app.currentProjectId) {
+    const projectKeywords = loadProjectExtractKeywords(app.currentProjectId);
+    if (projectKeywords.length > 0) {
+      for (const k of projectKeywords) k.enabled = enabled;
+      saveProjectExtractKeywords(app.currentProjectId, projectKeywords);
+    }
+  }
+  renderExtractKeywordList();
+}
+
 /** New keywords always start global; move them to the active project via the scope selector afterwards. */
 function addExtractKeyword() {
   const keywords = loadGlobalExtractKeywords();
-  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '', caseSensitive: false, addedOnly: false });
+  keywords.push({ id: generateExtractKeywordId(), keyword: '', fileFilter: '', caseSensitive: false, addedOnly: false, enabled: true });
   saveGlobalExtractKeywords(keywords);
   renderExtractKeywordList();
 }
@@ -7041,6 +7101,21 @@ function addExtractKeyword() {
 function buildExtractKeywordRow(entry) {
   const row = document.createElement('div');
   row.className = 'extract-keyword-row';
+  if (entry.enabled === false) row.classList.add('extract-keyword-row-disabled');
+
+  // Enable/disable toggle (issue #109): lets a keyword be switched off without
+  // deleting it. Disabled entries are skipped by renderExtractResults(), so
+  // their "抽出結果" section disappears too.
+  const enableToggle = document.createElement('input');
+  enableToggle.type = 'checkbox';
+  enableToggle.className = 'extract-keyword-enable-toggle';
+  enableToggle.checked = entry.enabled !== false;
+  enableToggle.title = 'このキーワードの抽出を有効にする';
+  enableToggle.setAttribute('aria-label', 'このキーワードの抽出を有効にする');
+  enableToggle.addEventListener('change', () => {
+    updateExtractKeyword(entry.id, { enabled: enableToggle.checked });
+    row.classList.toggle('extract-keyword-row-disabled', !enableToggle.checked);
+  });
 
   const keywordInput = document.createElement('input');
   keywordInput.type = 'text';
@@ -7140,6 +7215,7 @@ function buildExtractKeywordRow(entry) {
   removeBtn.textContent = '×';
   removeBtn.addEventListener('click', () => deleteExtractKeyword(entry.id));
 
+  row.appendChild(enableToggle);
   row.appendChild(keywordInput);
   row.appendChild(caseToggleLabel);
   row.appendChild(addedOnlyToggleLabel);
@@ -7257,7 +7333,7 @@ function renderExtractResults() {
     return;
   }
 
-  const keywords = loadExtractKeywords().filter(k => parseKeywords(k.keyword).length > 0);
+  const keywords = loadExtractKeywords().filter(k => parseKeywords(k.keyword).length > 0 && k.enabled !== false);
   if (keywords.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'extract-results-empty';
@@ -7286,6 +7362,8 @@ function renderExtractKeywordList() {
 
 renderExtractKeywordList();
 document.getElementById('extract-keyword-add-btn').addEventListener('click', addExtractKeyword);
+document.getElementById('extract-keyword-enable-all-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true));
+document.getElementById('extract-keyword-disable-all-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false));
 
 // Keyword line extraction modal open/close (issue #79): independent of the
 // settings modal above — its own overlay/backdrop-click/Escape handling.
