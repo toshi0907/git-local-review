@@ -92,7 +92,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存 |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
-| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したキーワードごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
+| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したエントリごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。1エントリの `keyword` はキーワードハイライトと同様 `,` 区切りで複数指定でき（issue #91）、`parseKeywords()` でパースした上でいずれか1つでも一致すれば（OR）その行を抽出する。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
