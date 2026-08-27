@@ -612,11 +612,20 @@
       gap: 6px;
     }
 
-    .proj-quick-actions {
+    /* Project name on its own row, reload button + updated time together on
+       the row below, expand toggle pushed to the far right (issue #85). */
+    .proj-bottom-row {
       display: flex;
       align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
+      gap: 6px;
+    }
+
+    .proj-bottom-row .proj-meta {
+      margin-bottom: 0;
+    }
+
+    .proj-bottom-row .proj-expand-toggle {
+      margin-left: auto;
     }
 
     .proj-expand-toggle {
@@ -3690,11 +3699,12 @@ function renderProjectList() {
     delBtn.title = 'プロジェクトを削除';
     delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
 
-    // The reload button stays in the always-visible quick-actions row (not
+    // The reload button stays in the always-visible bottom row (not
     // .proj-details) since it's the one action the compact list (#83) is
     // meant to keep reachable without expanding — the badge above signals
-    // when it's actually worth pressing.
-    const quickActEl = document.createElement('div'); quickActEl.className = 'proj-quick-actions';
+    // when it's actually worth pressing. The project name gets its own row
+    // and the reload button sits next to the updated time below it (#85).
+    const bottomRowEl = document.createElement('div'); bottomRowEl.className = 'proj-bottom-row';
     if (projectIdsWithHandles.has(proj.id)) {
       const reloadBtn = document.createElement('button');
       reloadBtn.className = 'btn btn-reload' + (hasExternalUpdate ? ' btn-reload-update' : '');
@@ -3703,9 +3713,10 @@ function renderProjectList() {
         ? 'ディスク上のファイルが更新されています。クリックして再読み込み'
         : '同じファイルをディスクから再読み込み';
       reloadBtn.addEventListener('click', e => { e.stopPropagation(); reloadProjectFile(proj.id); });
-      quickActEl.appendChild(reloadBtn);
+      bottomRowEl.appendChild(reloadBtn);
     }
-    quickActEl.appendChild(toggleBtn);
+    bottomRowEl.appendChild(metaEl);
+    bottomRowEl.appendChild(toggleBtn);
 
     actEl.appendChild(resetBtn);
     actEl.appendChild(delBtn);
@@ -3714,9 +3725,8 @@ function renderProjectList() {
     detailsEl.appendChild(actEl);
 
     topRowEl.appendChild(nameEl);
-    topRowEl.appendChild(quickActEl);
     item.appendChild(topRowEl);
-    item.appendChild(metaEl);
+    item.appendChild(bottomRowEl);
     item.appendChild(detailsEl);
 
     item.addEventListener('click', () => activateProject(proj.id));
