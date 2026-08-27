@@ -95,7 +95,7 @@ diff ファイルのバイト列から文字コードを自動判定します（
 | `gitLocalReview_projectSort` | プロジェクト一覧の並び順 |
 | `gitLocalReview_keywords` | キーワードハイライトのカテゴリ配列（`{ id, keywords, color }[]` の JSON） |
 | `gitLocalReview_projectKeywords` | プロジェクト毎のキーワードハイライトカテゴリ（`{ [projectId]: category[] }` の JSON） |
-| `gitLocalReview_extractKeywords` | キーワード行抽出の全体設定キーワード配列（`{ id, keyword }[]` の JSON、キーワードハイライトとは別機能） |
+| `gitLocalReview_extractKeywords` | キーワード行抽出の全体設定キーワード配列（`{ id, keyword, fileFilter }[]` の JSON、キーワードハイライトとは別機能） |
 | `gitLocalReview_projectExtractKeywords` | プロジェクト毎のキーワード行抽出キーワード（`{ [projectId]: entry[] }` の JSON） |
 
 `gitLocalReview_reviews` は以下の構造で保存されます。値は `"approved"`（承認）/ `"needs_changes"`（要修正）/ `"on_hold"`（保留）のいずれかで、キー自体が存在しない場合は未レビューです。
