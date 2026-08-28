@@ -417,6 +417,24 @@
       gap: 6px;
     }
 
+    /* Groups a scope label ("全て" / "全体設定" / "プロジェクト設定") with its
+       "有効"/"無効" buttons; flex-basis: 100% forces each group onto its own
+       line within the wrapping header-actions row above (issue #113). Shared
+       between the keyword-highlight and keyword-line-extraction modals. */
+    .keyword-toggle-group {
+      display: flex;
+      align-items: center;
+      flex-basis: 100%;
+      gap: 6px;
+    }
+
+    .keyword-toggle-group-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #57606a;
+      margin-right: 2px;
+    }
+
     .keyword-category-bulk-toggle-btn {
       padding: 4px 10px;
       font-size: 12px;
@@ -2075,12 +2093,21 @@
         <div class="keyword-row-header">
           <label>キーワード（カテゴリ別）</label>
           <div class="keyword-row-header-actions">
-            <button type="button" id="keyword-category-enable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを有効にする">全て有効</button>
-            <button type="button" id="keyword-category-disable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを無効にする">全て無効</button>
-            <button type="button" id="keyword-category-enable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて有効にする">全体設定を全て有効</button>
-            <button type="button" id="keyword-category-disable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて無効にする">全体設定を全て無効</button>
-            <button type="button" id="keyword-category-enable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて有効にする">プロジェクトの設定を全て有効</button>
-            <button type="button" id="keyword-category-disable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて無効にする">プロジェクトの設定を全て無効</button>
+            <div class="keyword-toggle-group">
+              <span class="keyword-toggle-group-label">全て</span>
+              <button type="button" id="keyword-category-enable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを有効にする" aria-label="すべてのカテゴリを有効にする">有効</button>
+              <button type="button" id="keyword-category-disable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを無効にする" aria-label="すべてのカテゴリを無効にする">無効</button>
+            </div>
+            <div class="keyword-toggle-group">
+              <span class="keyword-toggle-group-label">全体設定</span>
+              <button type="button" id="keyword-category-enable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて有効にする" aria-label="全体設定のカテゴリをすべて有効にする">有効</button>
+              <button type="button" id="keyword-category-disable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて無効にする" aria-label="全体設定のカテゴリをすべて無効にする">無効</button>
+            </div>
+            <div class="keyword-toggle-group">
+              <span class="keyword-toggle-group-label">プロジェクト設定</span>
+              <button type="button" id="keyword-category-enable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて有効にする" aria-label="このプロジェクトのカテゴリをすべて有効にする">有効</button>
+              <button type="button" id="keyword-category-disable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて無効にする" aria-label="このプロジェクトのカテゴリをすべて無効にする">無効</button>
+            </div>
             <button type="button" id="keyword-category-bulk-btn" class="keyword-category-add-btn" title="複数のキーワードをまとめて登録">一括登録</button>
             <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
           </div>
@@ -2115,12 +2142,21 @@
       <div class="extract-keywords-row-header">
         <label>抽出キーワード</label>
         <div class="extract-keywords-row-header-actions">
-          <button type="button" id="extract-keyword-enable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを有効にする">全て有効</button>
-          <button type="button" id="extract-keyword-disable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを無効にする">全て無効</button>
-          <button type="button" id="extract-keyword-enable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて有効にする">全体設定を全て有効</button>
-          <button type="button" id="extract-keyword-disable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて無効にする">全体設定を全て無効</button>
-          <button type="button" id="extract-keyword-enable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて有効にする">プロジェクトの設定を全て有効</button>
-          <button type="button" id="extract-keyword-disable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて無効にする">プロジェクトの設定を全て無効</button>
+          <div class="keyword-toggle-group">
+            <span class="keyword-toggle-group-label">全て</span>
+            <button type="button" id="extract-keyword-enable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを有効にする" aria-label="すべてのキーワードを有効にする">有効</button>
+            <button type="button" id="extract-keyword-disable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを無効にする" aria-label="すべてのキーワードを無効にする">無効</button>
+          </div>
+          <div class="keyword-toggle-group">
+            <span class="keyword-toggle-group-label">全体設定</span>
+            <button type="button" id="extract-keyword-enable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて有効にする" aria-label="全体設定のキーワードをすべて有効にする">有効</button>
+            <button type="button" id="extract-keyword-disable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて無効にする" aria-label="全体設定のキーワードをすべて無効にする">無効</button>
+          </div>
+          <div class="keyword-toggle-group">
+            <span class="keyword-toggle-group-label">プロジェクト設定</span>
+            <button type="button" id="extract-keyword-enable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて有効にする" aria-label="このプロジェクトのキーワードをすべて有効にする">有効</button>
+            <button type="button" id="extract-keyword-disable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて無効にする" aria-label="このプロジェクトのキーワードをすべて無効にする">無効</button>
+          </div>
           <button type="button" id="extract-keyword-add-btn" class="extract-keyword-add-btn" title="キーワードを追加">+ キーワード</button>
         </div>
       </div>
