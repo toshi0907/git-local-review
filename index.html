@@ -413,6 +413,7 @@
 
     .keyword-row-header-actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
     }
 
@@ -427,6 +428,7 @@
       cursor: pointer;
     }
     .keyword-category-bulk-toggle-btn:hover { background: #eaeef2; }
+    .keyword-category-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .keyword-bulk-form {
       display: flex;
@@ -1356,6 +1358,7 @@
 
     .extract-keywords-row-header-actions {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
     }
@@ -1371,6 +1374,7 @@
       cursor: pointer;
     }
     .extract-keyword-bulk-toggle-btn:hover { background: #eaeef2; }
+    .extract-keyword-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .extract-keyword-add-btn {
       padding: 4px 10px;
@@ -2073,6 +2077,10 @@
           <div class="keyword-row-header-actions">
             <button type="button" id="keyword-category-enable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを有効にする">全て有効</button>
             <button type="button" id="keyword-category-disable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを無効にする">全て無効</button>
+            <button type="button" id="keyword-category-enable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて有効にする">全体設定を全て有効</button>
+            <button type="button" id="keyword-category-disable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて無効にする">全体設定を全て無効</button>
+            <button type="button" id="keyword-category-enable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて有効にする">プロジェクトの設定を全て有効</button>
+            <button type="button" id="keyword-category-disable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて無効にする">プロジェクトの設定を全て無効</button>
             <button type="button" id="keyword-category-bulk-btn" class="keyword-category-add-btn" title="複数のキーワードをまとめて登録">一括登録</button>
             <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
           </div>
@@ -2109,6 +2117,10 @@
         <div class="extract-keywords-row-header-actions">
           <button type="button" id="extract-keyword-enable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを有効にする">全て有効</button>
           <button type="button" id="extract-keyword-disable-all-btn" class="extract-keyword-bulk-toggle-btn" title="すべてのキーワードを無効にする">全て無効</button>
+          <button type="button" id="extract-keyword-enable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて有効にする">全体設定を全て有効</button>
+          <button type="button" id="extract-keyword-disable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて無効にする">全体設定を全て無効</button>
+          <button type="button" id="extract-keyword-enable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて有効にする">プロジェクトの設定を全て有効</button>
+          <button type="button" id="extract-keyword-disable-all-project-btn" class="extract-keyword-bulk-toggle-btn" title="このプロジェクトのキーワードをすべて無効にする">プロジェクトの設定を全て無効</button>
           <button type="button" id="extract-keyword-add-btn" class="extract-keyword-add-btn" title="キーワードを追加">+ キーワード</button>
         </div>
       </div>
@@ -6781,6 +6793,8 @@ function buildKeywordCategoryRow(category) {
 function renderKeywordCategoryList() {
   const container = document.getElementById('keyword-categories');
   container.innerHTML = '';
+  document.getElementById('keyword-category-enable-all-project-btn').disabled = !app.currentProjectId;
+  document.getElementById('keyword-category-disable-all-project-btn').disabled = !app.currentProjectId;
   const categories = loadKeywordCategories();
   if (categories.length === 0) {
     const empty = document.createElement('div');
@@ -6960,19 +6974,25 @@ function deleteKeywordCategory(id) {
 }
 
 /**
- * Sets `enabled` on every category currently visible in the modal (issue #111):
- * every global category, plus (when a project is active) that project's own
- * categories — i.e. all entries loadKeywordCategories() would return. Writes
- * both stores in one pass rather than calling updateKeywordCategory() per
- * entry, then re-renders the whole row list and diff in one go.
+ * Sets `enabled` on categories currently visible in the modal (issue #111,
+ * extended by issue #113 with a `scope` to target just one store): `scope`
+ * 'all' (default) covers every global category plus (when a project is
+ * active) that project's own categories — i.e. all entries
+ * loadKeywordCategories() would return; 'global' / 'project' restrict the
+ * change to just that store (a 'project' call with no active project is a
+ * no-op). Writes the affected store(s) in one pass rather than calling
+ * updateKeywordCategory() per entry, then re-renders the whole row list and
+ * diff in one go.
  */
-function setAllKeywordCategoriesEnabled(enabled) {
-  const globalCategories = loadGlobalKeywordCategories();
-  if (globalCategories.length > 0) {
-    for (const c of globalCategories) c.enabled = enabled;
-    saveGlobalKeywordCategories(globalCategories);
+function setAllKeywordCategoriesEnabled(enabled, scope = 'all') {
+  if (scope === 'all' || scope === 'global') {
+    const globalCategories = loadGlobalKeywordCategories();
+    if (globalCategories.length > 0) {
+      for (const c of globalCategories) c.enabled = enabled;
+      saveGlobalKeywordCategories(globalCategories);
+    }
   }
-  if (app.currentProjectId) {
+  if ((scope === 'all' || scope === 'project') && app.currentProjectId) {
     const projectCategories = loadProjectKeywordCategories(app.currentProjectId);
     if (projectCategories.length > 0) {
       for (const c of projectCategories) c.enabled = enabled;
@@ -6987,6 +7007,10 @@ renderKeywordCategoryList();
 document.getElementById('keyword-category-add-btn').addEventListener('click', addKeywordCategory);
 document.getElementById('keyword-category-enable-all-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true));
 document.getElementById('keyword-category-disable-all-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false));
+document.getElementById('keyword-category-enable-all-global-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true, 'global'));
+document.getElementById('keyword-category-disable-all-global-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false, 'global'));
+document.getElementById('keyword-category-enable-all-project-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true, 'project'));
+document.getElementById('keyword-category-disable-all-project-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false, 'project'));
 
 // Bulk keyword registration: a collapsible form (toggled by "一括登録") that
 // splits its textarea into one new category per line and registers them all
@@ -7108,19 +7132,25 @@ function deleteExtractKeyword(id) {
 }
 
 /**
- * Sets `enabled` on every keyword currently visible in the modal (issue #109):
- * every global keyword, plus (when a project is active) that project's own
- * keywords — i.e. all entries loadExtractKeywords() would return. Writes
- * both stores in one pass rather than calling updateExtractKeyword() per
- * entry, then re-renders the whole row list and results in one go.
+ * Sets `enabled` on keywords currently visible in the modal (issue #109,
+ * extended by issue #113 with a `scope` to target just one store): `scope`
+ * 'all' (default) covers every global keyword plus (when a project is
+ * active) that project's own keywords — i.e. all entries
+ * loadExtractKeywords() would return; 'global' / 'project' restrict the
+ * change to just that store (a 'project' call with no active project is a
+ * no-op). Writes the affected store(s) in one pass rather than calling
+ * updateExtractKeyword() per entry, then re-renders the whole row list and
+ * results in one go.
  */
-function setAllExtractKeywordsEnabled(enabled) {
-  const globalKeywords = loadGlobalExtractKeywords();
-  if (globalKeywords.length > 0) {
-    for (const k of globalKeywords) k.enabled = enabled;
-    saveGlobalExtractKeywords(globalKeywords);
+function setAllExtractKeywordsEnabled(enabled, scope = 'all') {
+  if (scope === 'all' || scope === 'global') {
+    const globalKeywords = loadGlobalExtractKeywords();
+    if (globalKeywords.length > 0) {
+      for (const k of globalKeywords) k.enabled = enabled;
+      saveGlobalExtractKeywords(globalKeywords);
+    }
   }
-  if (app.currentProjectId) {
+  if ((scope === 'all' || scope === 'project') && app.currentProjectId) {
     const projectKeywords = loadProjectExtractKeywords(app.currentProjectId);
     if (projectKeywords.length > 0) {
       for (const k of projectKeywords) k.enabled = enabled;
@@ -7388,6 +7418,8 @@ function renderExtractResults() {
 function renderExtractKeywordList() {
   const container = document.getElementById('extract-keywords');
   container.innerHTML = '';
+  document.getElementById('extract-keyword-enable-all-project-btn').disabled = !app.currentProjectId;
+  document.getElementById('extract-keyword-disable-all-project-btn').disabled = !app.currentProjectId;
   const keywords = loadExtractKeywords();
   if (keywords.length === 0) {
     const empty = document.createElement('div');
@@ -7404,6 +7436,10 @@ renderExtractKeywordList();
 document.getElementById('extract-keyword-add-btn').addEventListener('click', addExtractKeyword);
 document.getElementById('extract-keyword-enable-all-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true));
 document.getElementById('extract-keyword-disable-all-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false));
+document.getElementById('extract-keyword-enable-all-global-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true, 'global'));
+document.getElementById('extract-keyword-disable-all-global-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false, 'global'));
+document.getElementById('extract-keyword-enable-all-project-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true, 'project'));
+document.getElementById('extract-keyword-disable-all-project-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false, 'project'));
 
 // Keyword line extraction modal open/close (issue #79): independent of the
 // settings modal above — its own overlay/backdrop-click/Escape handling.
