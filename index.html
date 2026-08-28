@@ -416,6 +416,18 @@
       gap: 6px;
     }
 
+    .keyword-category-bulk-toggle-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #57606a;
+      background: #f6f8fa;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .keyword-category-bulk-toggle-btn:hover { background: #eaeef2; }
+
     .keyword-bulk-form {
       display: flex;
       flex-direction: column;
@@ -2059,6 +2071,8 @@
         <div class="keyword-row-header">
           <label>キーワード（カテゴリ別）</label>
           <div class="keyword-row-header-actions">
+            <button type="button" id="keyword-category-enable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを有効にする">全て有効</button>
+            <button type="button" id="keyword-category-disable-all-btn" class="keyword-category-bulk-toggle-btn" title="すべてのカテゴリを無効にする">全て無効</button>
             <button type="button" id="keyword-category-bulk-btn" class="keyword-category-add-btn" title="複数のキーワードをまとめて登録">一括登録</button>
             <button type="button" id="keyword-category-add-btn" class="keyword-category-add-btn" title="カテゴリを追加">+ カテゴリ</button>
           </div>
@@ -6945,8 +6959,34 @@ function deleteKeywordCategory(id) {
   scheduleKeywordDiffRerender();
 }
 
+/**
+ * Sets `enabled` on every category currently visible in the modal (issue #111):
+ * every global category, plus (when a project is active) that project's own
+ * categories — i.e. all entries loadKeywordCategories() would return. Writes
+ * both stores in one pass rather than calling updateKeywordCategory() per
+ * entry, then re-renders the whole row list and diff in one go.
+ */
+function setAllKeywordCategoriesEnabled(enabled) {
+  const globalCategories = loadGlobalKeywordCategories();
+  if (globalCategories.length > 0) {
+    for (const c of globalCategories) c.enabled = enabled;
+    saveGlobalKeywordCategories(globalCategories);
+  }
+  if (app.currentProjectId) {
+    const projectCategories = loadProjectKeywordCategories(app.currentProjectId);
+    if (projectCategories.length > 0) {
+      for (const c of projectCategories) c.enabled = enabled;
+      saveProjectKeywordCategories(app.currentProjectId, projectCategories);
+    }
+  }
+  renderKeywordCategoryList();
+  scheduleKeywordDiffRerender();
+}
+
 renderKeywordCategoryList();
 document.getElementById('keyword-category-add-btn').addEventListener('click', addKeywordCategory);
+document.getElementById('keyword-category-enable-all-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true));
+document.getElementById('keyword-category-disable-all-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false));
 
 // Bulk keyword registration: a collapsible form (toggled by "一括登録") that
 // splits its textarea into one new category per line and registers them all
