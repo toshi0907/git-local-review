@@ -97,7 +97,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Application state** | `app` オブジェクト（ランタイム状態） |
 | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
-| **Diff view mode** | Unified / Side-by-side モード保存 |
+| **Diff view mode** | Unified / Side-by-side モード保存（`loadViewMode()`/`saveViewMode()`）。単語単位差分表示（word-diff）のON/OFF永続化（`loadWordDiff()`/`saveWordDiff()`）も同じセクションにある |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で大文字小文字を区別するかどうかも選択可能（issue #95）、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
 | **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したエントリごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。1エントリの `keyword` はキーワードハイライトと同様 `,` 区切りで複数指定でき（issue #91）、`parseKeywords()` でパースした上でいずれか1つでも一致すれば（OR）その行を抽出する。各エントリは `fileFilter`（issue #92）も持ち、ファイルパスに対する部分一致（常に大文字小文字を区別しない）で対象ファイルを絞り込める。空文字列（未指定・旧データの既定値）なら全ファイルが対象。`caseSensitive`（issue #95）はキーワード一致の大文字小文字区別をエントリ単位で切り替える（デフォルトは区別しない）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
@@ -109,9 +109,11 @@ test/                ← テスト用 .diff サンプルファイル
 | **Hashing** | Web Crypto API / djb2 フォールバック |
 | **HTML escaping** | `esc()` ユーティリティ |
 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
 | **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示） |
 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
 | **Render: full diff view** | `renderDiff()` |
+| **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
 | **Build a single hunk card** | `buildHunkCard()` |
 | **Set collapsed state** | ハンクの折りたたみ |
 | **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
@@ -195,6 +197,7 @@ const SK_MEMOS           = 'gitLocalReview_memos';
 const SK_CURRENT         = 'gitLocalReview_currentProject';
 const SK_FILES           = 'gitLocalReview_files';
 const SK_VIEW_MODE       = 'gitLocalReview_viewMode';
+const SK_WORD_DIFF       = 'gitLocalReview_wordDiff';
 const SK_REVIEW_FILTER   = 'gitLocalReview_reviewFilter';
 const SK_PROJECT_SORT    = 'gitLocalReview_projectSort';
 const SK_KEYWORDS        = 'gitLocalReview_keywords';
@@ -214,6 +217,8 @@ const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 
 `SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のとき、および全キーが `false`（何もチェックしていない状態）のときは、いずれもフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
 
+`SK_WORD_DIFF` は `'true' | 'false'` の文字列一つだけを保持する単純なキーで、トップバーの「単語単位で差分表示」チェックボックスの状態を `SK_VIEW_MODE`（Unified / Split）とは独立に永続化します（`loadWordDiff()` / `saveWordDiff()`）。詳細は [Word-level diff highlighting](#build-a-single-hunk-card) を参照してください。
+
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
 ---
@@ -227,7 +232,9 @@ const app = {
   currentProjectId: null,   // 現在選択中のプロジェクト ID
   parsedDiff: null,          // parseDiff() の戻り値（構造化 diff データ）
   fileProgressEls: new Map(),// filePath → <span> 要素（進捗バッジ）
+  projectBadgeEls: new Map(),// projectId → <span> 要素（サイドバーのレビュー進捗バッジ）
   viewMode: 'unified',       // 'unified' | 'split'
+  wordDiff: false,           // 単語単位差分表示（word-diff）のON/OFF。viewMode とは独立
   reviewFilter: { unreviewed: true, approved: true, needs_changes: true, on_hold: true }, // 表示するハンクをステータス別に絞り込むチェックボックス群の状態
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
@@ -352,6 +359,10 @@ renderProjectList()
 
 **外部更新の可視化（issue #83）:** モジュール変数 `projectsWithExternalFileUpdate`（`Set<projectId>`、`checkProjectFileUpdates()` が更新）にプロジェクトIDが含まれる場合、ファイル名の先頭に 🆕 バッジ（`.proj-update-badge`）が付き、再読み込みボタンに `.btn-reload-update` クラスが付いて配色が変わります。いずれもクリックで「🔃 再読み込み」を実行すれば通常の見た目に戻ります（`reloadProjectFile()` → `updateExistingProject()` 経由で `recordProjectFileBaseline()` が呼ばれ、`projectsWithExternalFileUpdate` からも削除されます）。
 
+**レビュー進捗バッジ:** 各プロジェクトのファイル名の左に `.proj-progress-badge`（`<span>`）を1つ配置し、`updateProjectProgressBadge(projectId, el)` が中身を描画します。未レビューのハンクが残っていれば残数（`.badge-remaining`、赤系）、diff の全ハンクにレビューステータスが付いていれば ✓（`.badge-complete`、緑系。ハンクが0件の diff も「残りが無い」として ✓ 扱いになります）を表示し、そのプロジェクトの diff テキストが保存されていない、または計算がまだ完了していない（進捗が不明）場合のみバッジ自体を非表示（`hidden`）にします。
+
+現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは診断のために diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化してから同様に数える必要があるため、結果を `projectProgressCache`（`Map<projectId, {sig, total, reviewed}>`）にキャッシュし、そのプロジェクトの diff テキストの `djb2hex()` 署名 `sig` が変わらない限り再計算しません。レビュー内容だけが変わって diff テキストは変わらないケース（`resetProject()`・`deleteProject()`・インポート/設定フォルダ読込によるマージ）は署名だけでは検出できないため、該当箇所で明示的に `invalidateProjectProgressCache(projectId)` を呼んでキャッシュを破棄しています。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。アクティブなプロジェクトのバッジは、ハンクのレビューステータスが変わるたびに `refreshProgress()` からも更新されます。
+
 ---
 
 ### Render: full diff view
@@ -413,6 +424,17 @@ buildHunkCard(filePath, hunk, status, language): HTMLElement
 **Split（サイドバイサイド）表示の行構造:**
 
 1 つの diff 行が `computeLineRecords` の結果から旧ファイル側と新ファイル側に分離されます。詳細は [サイドバイサイド表示の仕組み](#サイドバイサイド表示の仕組み) を参照。
+
+**Word-level diff highlighting（単語単位の差分表示、`app.wordDiff`）:**
+
+トップバーの「単語単位で差分表示」チェックボックス（`git --word-diff` 相当）で、Unified / Split どちらの表示モードでも独立にON/OFFできます（`setWordDiff()`、状態は `SK_WORD_DIFF` に永続化）。ON のとき、`buildUnifiedTbody()` / `buildSplitTbody()` はハンク内で「置き換え」とみなせる `-`/`+` 行のペアだけを対象に、行全体ではなく変化した単語だけをハイライトします。
+
+1. **ペアリング:** 連続する `-` 行の並びと連続する `+` 行の並びを、位置で1対1に対応付けます（`computeWordDiffPairs()`。Unified 用に独立実装していますが、Split 表示の `buildSplitTbody()` 内の既存のペアリング（`pendingDel`/`pendingAdd`）とまったく同じアルゴリズムです）。片方が余った行（純粋な追加/削除や、置き換えの相手行が無い行）とコンテキスト行はペア対象外＝単語単位ハイライトは適用されません。
+2. **トークン化:** `tokenizeForWordDiff(text)` が各行を「単語（Unicode プロパティエスケープ `\p{L}\p{N}_` の連続。日本語のような非ラテン文字の連続も1トークンにまとまる）／空白の連続／それ以外の記号1文字」単位のトークン列に分割します。
+3. **トークン差分:** `diffWordTokens(oldTokens, newTokens)` が LCS ベースの O(n·m) 動的計画法でトークン列同士を比較し、`{type: 'equal'|'del'|'add', token}` の並びを返します（あまりに長い行同士の組み合わせ（トークン数の積が閾値超）は DP テーブルが巨大になるため、行全体を置き換え扱いにフォールバックします）。
+4. **描画:** `buildWordDiffSegments(ops, side)` が `ops` を片側（`'del'` または `'add'`）分だけ抽出し、隣接する同種の区間をまとめた `{text, changed}` のセグメント列にします。`buildContentCell()` はこのセグメント列を受け取ると、`highlightHunkLines()` の syntax highlight 済み HTML は使わず、変化したセグメントだけを `.worddiff-del`（取り消し線）/ `.worddiff-add` の `<span>` で囲んだプレーンテキストとして描画します（2つの独立したインラインマークアップ（syntax highlighting と word-diff）を文字単位でマージする処理は行っていないため）。ペア対象外の行・コンテキスト行はこれまで通り `highlightHunkLines()` の結果を使います。キーワードハイライト（`applyKeywordHighlight()`）は `.worddiff-*` の `<span>` を含むDOMに対しても、TreeWalker でテキストノードを直接辿るため問題なく併用できます。
+
+Unified 表示では、同じペアの `-` 行・`+` 行が別々の `<tr>` として順に処理されるため、`diffWordTokens()` の結果をペアのキー（両側の `idx` の小さい方）でハンク単位のローカルキャッシュ（`wordDiffOpsCache`）に保持し、2回計算しないようにしています。Split 表示では `emitPairedRow(delRec, addRec)` が両側を同時に扱うため、そのままその場で1回だけ計算します。
 
 ---
 
@@ -628,9 +650,12 @@ init()
 │  app.currentProjectId                               │
 │  app.parsedDiff                                     │
 │  app.viewMode                                       │
+│  app.wordDiff                                       │
 │  app.reviewFilter                                   │
 │  app.focusedHunkIndex                               │
 │  app.fileProgressEls (DOM 参照キャッシュ)             │
+│  app.projectBadgeEls (DOM 参照キャッシュ)             │
+│  projectProgressCache (サイドバーバッジ計算キャッシュ) │
 └─────────────────────────────────────────────────────┘
           ↕ read/write
 ┌─────────────────────────────────────────────────────┐
@@ -641,6 +666,7 @@ init()
 │  gitLocalReview_files         diff テキスト本文       │
 │  gitLocalReview_currentProject 最後に開いた ID        │
 │  gitLocalReview_viewMode      表示モード              │
+│  gitLocalReview_wordDiff      単語単位差分表示ON/OFF  │
 │  gitLocalReview_reviewFilter  表示フィルター設定       │
 │  gitLocalReview_projectSort   並び順                 │
 │  gitLocalReview_keywords      キーワードカテゴリ配列  │
@@ -704,6 +730,8 @@ diff 行                旧ファイル列       新ファイル列
 ```
 
 `-` 行と `+` 行が連続して現れる場合は同一行の変更とみなし、同じ `<tr>` の左右に並べます（`buildSplitTbody()` 内のペアリングロジック）。
+
+単語単位の差分表示（`app.wordDiff`、Unified 表示でも使われる同じ「置き換えペア」の考え方）はこのペアリングをそのまま流用しています。詳細は [Build a single hunk card](#build-a-single-hunk-card) の「Word-level diff highlighting」を参照してください。
 
 ---
 
