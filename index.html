@@ -131,6 +131,8 @@
       white-space: nowrap;
     }
 
+    .word-diff-toggle { margin-right: 16px; }
+
     .filter-checkbox-group-label {
       white-space: nowrap;
     }
@@ -716,6 +718,27 @@
       font-size: 12px;
     }
 
+    /* Review-progress badge (remaining unreviewed hunk count, or a checkmark
+       once every hunk in the project has a review status), shown to the
+       left of the project name. Hidden entirely while no count is known yet
+       (diff not loaded / still being parsed+hashed). */
+    .proj-progress-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .proj-progress-badge[hidden] { display: none; }
+    .proj-progress-badge.badge-remaining { background: #ffd7d5; color: #cf222e; }
+    .proj-progress-badge.badge-complete  { background: #ccffd8; color: #1a7f37; }
+
     .btn-reload-update {
       color: #b42318;
       border-color: #fda29b;
@@ -1153,6 +1176,13 @@
 
     .line-context { background: #fff; }
     .line-context .line-prefix { color: #8b949e; }
+
+    /* Word-level diff highlighting (git --word-diff-style, opt-in via the
+       単語単位で差分表示 checkbox): a stronger overlay on top of the line's
+       own .line-add/.line-del background, marking only the changed tokens
+       within a paired removed/added line. */
+    .worddiff-del { background: #ffb9b0; text-decoration: line-through; text-decoration-color: rgba(207, 34, 46, 0.6); border-radius: 2px; }
+    .worddiff-add { background: #6fdd8b; border-radius: 2px; }
 
     .line-no-newline {
       background: #fffce0;
@@ -1903,6 +1933,9 @@
     <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
     <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
   </div>
+  <div class="filter-checkbox-group word-diff-toggle" id="word-diff-toggle-group">
+    <label class="filter-checkbox-label"><input type="checkbox" id="word-diff-checkbox">単語単位で差分表示</label>
+  </div>
   <div class="filter-checkbox-group" id="review-filter-group" role="group" aria-label="表示するハンクをレビュー状態で絞り込みます">
     <span class="filter-checkbox-group-label">表示:</span>
     <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-unreviewed">未レビュー</label>
@@ -2183,6 +2216,8 @@ const SK_MEMOS            = 'gitLocalReview_memos';
 const SK_CURRENT          = 'gitLocalReview_currentProject';
 const SK_FILES            = 'gitLocalReview_files';
 const SK_VIEW_MODE        = 'gitLocalReview_viewMode';
+/** Word-level (git --word-diff-style) highlighting toggle, independent of SK_VIEW_MODE. */
+const SK_WORD_DIFF        = 'gitLocalReview_wordDiff';
 const SK_REVIEW_FILTER    = 'gitLocalReview_reviewFilter';
 /** Pre-#51 boolean-only "未レビューのみ表示" toggle, read once for migration into SK_REVIEW_FILTER. */
 const SK_UNREVIEWED_ONLY_LEGACY = 'gitLocalReview_unreviewedOnly';
@@ -2247,8 +2282,12 @@ const app = {
   parsedDiff: null,
   /** Holds progress badge elements keyed by filePath, populated during renderDiff */
   fileProgressEls: new Map(),
+  /** Holds sidebar review-progress badge elements keyed by projectId, populated during renderProjectList */
+  projectBadgeEls: new Map(),
   /** @type {'unified'|'split'} Current diff view mode ('split' = side-by-side) */
   viewMode: 'unified',
+  /** @type {boolean} Word-level (git --word-diff-style) highlighting of changed lines, independent of viewMode */
+  wordDiff: false,
   /** @type {{[key: string]: boolean}} Which review-status hunks renderDiff() shows, keyed by REVIEW_FILTER_KEYS; see loadReviewFilter() */
   reviewFilter: loadReviewFilter(),
   /** Index into the flat, document-order list of currently rendered hunk cards
@@ -2630,6 +2669,28 @@ function saveViewMode(mode) {
     localStorage.setItem(SK_VIEW_MODE, mode);
   } catch (e) {
     console.error('Failed to save view mode to localStorage:', e);
+  }
+}
+
+/**
+ * Word-level diff highlighting toggle (git --word-diff-style), persisted
+ * independently of the unified/split view mode. Falls back to off (false)
+ * for any missing/corrupted value.
+ */
+function loadWordDiff() {
+  try {
+    return localStorage.getItem(SK_WORD_DIFF) === 'true';
+  } catch (e) {
+    console.error('Failed to load word-diff setting from localStorage:', e);
+    return false;
+  }
+}
+
+function saveWordDiff(enabled) {
+  try {
+    localStorage.setItem(SK_WORD_DIFF, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.error('Failed to save word-diff setting to localStorage:', e);
   }
 }
 
@@ -3953,11 +4014,126 @@ function parseHunkHeader(header) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sidebar review-progress badge
+//
+// Shows, to the left of each project's name, either the count of hunks that
+// still have no review status, or a ✓ once every hunk has one. The active
+// project's count is derived directly from app.parsedDiff (already parsed
+// and hashed in memory), which is cheap and always exact. Any other project
+// has to be parsed and hashed from its saved diff text, which is async
+// (Web Crypto) — so results are cached per project, keyed by a cheap djb2
+// signature of that project's raw diff text, and only recomputed when that
+// text actually changes. Reviews changing for an *inactive* project (reset,
+// delete, import) can't be detected via that signature, so those call sites
+// explicitly drop the cache entry — see invalidateProjectProgressCache().
+// ─────────────────────────────────────────────────────────────────────────────
+const projectProgressCache = new Map(); // projectId -> { sig, total, reviewed }
+
+function invalidateProjectProgressCache(projectId) {
+  projectProgressCache.delete(projectId);
+}
+
+/** Count reviewed vs. total hunks across an already-parsed(+hashed) diff. */
+function countHunkProgress(parsedFiles, projectReviews) {
+  let total = 0, reviewed = 0;
+  for (const file of parsedFiles) {
+    const fileReviews = projectReviews[file.filePath] || Object.create(null);
+    for (const h of file.hunks) {
+      total++;
+      if (fileReviews[h.hash]) reviewed++;
+    }
+  }
+  return { total, reviewed };
+}
+
+/**
+ * Paint one project's badge element from a {total, reviewed} progress count,
+ * or hide it when `progress` is null (nothing known yet — no saved diff
+ * text, or its parse+hash is still in flight). A project whose diff text
+ * parses to zero hunks still gets a (trivially complete) ✓, since there is
+ * nothing left to review.
+ */
+function renderProjectProgressBadge(el, progress) {
+  if (!el) return;
+  if (!progress) {
+    el.hidden = true;
+    return;
+  }
+  const remaining = progress.total - progress.reviewed;
+  el.hidden = false;
+  if (remaining > 0) {
+    el.textContent = String(remaining);
+    el.title = `残り ${remaining} / ${progress.total} hunk 未レビュー`;
+    el.className = 'proj-progress-badge badge-remaining';
+  } else {
+    el.textContent = '✓';
+    el.title = `${progress.total} hunk すべてレビュー済み`;
+    el.className = 'proj-progress-badge badge-complete';
+  }
+}
+
+/**
+ * Resolve (synchronously when possible) and paint one project's sidebar
+ * review-progress badge. `el` must still be the badge element currently
+ * rendered for `projectId` (i.e. from app.projectBadgeEls) — for the async
+ * (non-active-project) path, the result is only ever applied through a
+ * fresh app.projectBadgeEls lookup, so a render that happened in the
+ * meantime can't be clobbered with a stale element.
+ */
+function updateProjectProgressBadge(projectId, el) {
+  if (!el) return;
+
+  if (projectId === app.currentProjectId && app.parsedDiff) {
+    const progress = countHunkProgress(app.parsedDiff, loadAllReviews()[projectId] || Object.create(null));
+    renderProjectProgressBadge(el, progress);
+    return;
+  }
+
+  const rawText = loadFileContent(projectId);
+  if (rawText == null) {
+    renderProjectProgressBadge(el, null);
+    return;
+  }
+
+  const sig = djb2hex(rawText);
+  const cached = projectProgressCache.get(projectId);
+  if (cached && cached.sig === sig) {
+    renderProjectProgressBadge(el, cached);
+    return;
+  }
+
+  // Hide rather than show a stale count while the (async) parse+hash for
+  // the new content is in flight.
+  el.hidden = true;
+
+  (async () => {
+    let parsed;
+    try {
+      parsed = parseDiff(rawText);
+      await computeAllHashes(parsed);
+    } catch (e) {
+      console.error('Failed to compute review progress for project', projectId, e);
+      return;
+    }
+    // Reviews may have changed (e.g. resetProject()) while hashing was in
+    // flight, so re-read rather than reuse anything captured earlier.
+    const progress = countHunkProgress(parsed, loadAllReviews()[projectId] || Object.create(null));
+    projectProgressCache.set(projectId, { sig, ...progress });
+    // Only paint whichever badge element is currently live for this
+    // project — renderProjectList() may have rebuilt the list since this
+    // computation started.
+    renderProjectProgressBadge(app.projectBadgeEls.get(projectId), progress);
+  })();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Render: sidebar project list
 // ─────────────────────────────────────────────────────────────────────────────
 function renderProjectList() {
   const listEl = document.getElementById('project-list');
   const projects = loadProjects();
+
+  app.projectBadgeEls.clear();
 
   if (projects.length === 0) {
     listEl.innerHTML = '<div class="project-empty">プロジェクトなし</div>';
@@ -3979,6 +4155,10 @@ function renderProjectList() {
     });
 
     const topRowEl = document.createElement('div'); topRowEl.className = 'proj-top-row';
+    const progressBadgeEl = document.createElement('span');
+    progressBadgeEl.className = 'proj-progress-badge';
+    progressBadgeEl.hidden = true;
+    app.projectBadgeEls.set(proj.id, progressBadgeEl);
     const nameEl   = document.createElement('div'); nameEl.className = 'proj-name'; nameEl.title = proj.id; nameEl.textContent = proj.fileName;
     if (hasExternalUpdate) {
       const updateBadge = document.createElement('span');
@@ -4069,6 +4249,7 @@ function renderProjectList() {
     detailsEl.appendChild(encEl);
     detailsEl.appendChild(actEl);
 
+    topRowEl.appendChild(progressBadgeEl);
     topRowEl.appendChild(nameEl);
     item.appendChild(topRowEl);
     item.appendChild(bottomRowEl);
@@ -4076,6 +4257,8 @@ function renderProjectList() {
 
     item.addEventListener('click', () => activateProject(proj.id));
     listEl.appendChild(item);
+
+    updateProjectProgressBadge(proj.id, progressBadgeEl);
   }
 }
 
@@ -4299,6 +4482,110 @@ function hunkPassesReviewFilter(status, filter) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Word-level diff highlighting (git --word-diff-style), toggled by app.wordDiff
+//
+// Applies only to a removed/added line pair that a "replace" block within a
+// hunk pairs up — the very same pairing the side-by-side view already uses
+// (buildSplitTbody's pendingDel/pendingAdd grouping): consecutive '-' lines
+// paired index-for-index with consecutive '+' lines, extras left unpaired.
+// A paired line is tokenized and diffed at the word level; the changed
+// tokens are wrapped in .worddiff-del / .worddiff-add, unchanged tokens
+// render as plain text. Lines with no counterpart (pure add/delete) and
+// context lines are unaffected — there is nothing to word-diff them against.
+// Word-diffed cells render as plain text rather than through
+// highlightHunkLines()'s syntax-highlighted HTML, since merging two
+// independent inline-markup sources (syntax highlighting + word-diff spans)
+// char-by-char is not attempted here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Split a line into word / whitespace-run / single-punctuation tokens for
+ * word-level diffing. Uses Unicode property escapes (\p{L}/\p{N}) rather
+ * than \w so runs of non-Latin letters (e.g. Japanese comments) group into
+ * one token instead of one token per character.
+ */
+function tokenizeForWordDiff(text) {
+  return text.match(/[\p{L}\p{N}_]+|[^\S\r\n]+|[^\p{L}\p{N}_\s]/gu) || [];
+}
+
+/**
+ * LCS-based token diff. Returns an ordered list of {type: 'equal'|'del'|'add', token}.
+ * Guards against pathological (e.g. minified) lines, where an O(n*m) DP
+ * table would be too large, by falling back to a whole-line replace.
+ */
+function diffWordTokens(oldTokens, newTokens) {
+  const n = oldTokens.length, m = newTokens.length;
+  if (n * m > 200000) {
+    const ops = oldTokens.map(token => ({ type: 'del', token }));
+    for (const token of newTokens) ops.push({ type: 'add', token });
+    return ops;
+  }
+
+  const dp = new Array(n + 1);
+  for (let i = 0; i <= n; i++) dp[i] = new Uint32Array(m + 1);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = oldTokens[i] === newTokens[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (oldTokens[i] === newTokens[j]) { ops.push({ type: 'equal', token: oldTokens[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ type: 'del', token: oldTokens[i] }); i++; }
+    else { ops.push({ type: 'add', token: newTokens[j] }); j++; }
+  }
+  while (i < n) { ops.push({ type: 'del', token: oldTokens[i] }); i++; }
+  while (j < m) { ops.push({ type: 'add', token: newTokens[j] }); j++; }
+  return ops;
+}
+
+/**
+ * Filter a diffWordTokens() op list down to one side ('del' or 'add'),
+ * merging adjacent same-state runs into {text, changed} segments ready for rendering.
+ */
+function buildWordDiffSegments(ops, side) {
+  const segments = [];
+  for (const op of ops) {
+    let changed;
+    if (op.type === 'equal') changed = false;
+    else if (op.type === side) changed = true;
+    else continue; // belongs to the other side
+    const last = segments[segments.length - 1];
+    if (last && last.changed === changed) last.text += op.token;
+    else segments.push({ text: op.token, changed });
+  }
+  return segments;
+}
+
+/**
+ * Pair up '-'/'+' line records within a hunk the same way buildSplitTbody()
+ * visually pairs them (consecutive del-run × consecutive add-run, matched
+ * index-for-index; a second replace block within the hunk starts a new
+ * pairing group). Returns a Map<idx, partnerIdx> covering only paired lines.
+ */
+function computeWordDiffPairs(records) {
+  const pairs = new Map();
+  let delGroup = [], addGroup = [];
+  const flush = () => {
+    const n = Math.min(delGroup.length, addGroup.length);
+    for (let k = 0; k < n; k++) {
+      pairs.set(delGroup[k].idx, addGroup[k].idx);
+      pairs.set(addGroup[k].idx, delGroup[k].idx);
+    }
+    delGroup = []; addGroup = [];
+  };
+  for (const r of records) {
+    if (r.type === '-') { if (addGroup.length > 0) flush(); delGroup.push(r); }
+    else if (r.type === '+') { addGroup.push(r); }
+    else flush();
+  }
+  flush();
+  return pairs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Build a single hunk card element
 // ─────────────────────────────────────────────────────────────────────────────
 /**
@@ -4347,9 +4634,10 @@ function computeLineRecords(hunk) {
  * @param {string[]|null} hlLines
  * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
  * @param {Array<{color:string, keywords:string[]}>} [keywordGroups] - active keyword categories to highlight within this cell's text (see applyKeywordHighlight)
+ * @param {Array<{text:string, changed:boolean}>|null} [wordDiffSegments] - when set (word-diff mode, paired del/add line), renders these segments instead of hlLines/plain content
  * @returns {HTMLTableCellElement}
  */
-function buildContentCell(record, hlLines, extraCls, keywordGroups) {
+function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegments) {
   const td = document.createElement('td');
   td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
   if (!record) return td;
@@ -4359,7 +4647,19 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups) {
   pfx.textContent = record.type === '\\' ? '' : record.type;
   td.appendChild(pfx);
 
-  if (hlLines && record.idx < hlLines.length && htmlFragmentRange) {
+  if (wordDiffSegments) {
+    const side = record.type === '-' ? 'worddiff-del' : 'worddiff-add';
+    for (const seg of wordDiffSegments) {
+      if (seg.changed) {
+        const span = document.createElement('span');
+        span.className = side;
+        span.textContent = seg.text;
+        td.appendChild(span);
+      } else {
+        td.appendChild(document.createTextNode(seg.text));
+      }
+    }
+  } else if (hlLines && record.idx < hlLines.length && htmlFragmentRange) {
     // Use a Range-based fragment parse to safely convert highlighted HTML
     // into DOM nodes (avoiding direct innerHTML assignment) without losing
     // leading indentation whitespace — see htmlFragmentRange's doc comment.
@@ -4381,6 +4681,8 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups) {
 function buildUnifiedTbody(hunk, hlLines, keywordGroups) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
+  const wordDiffPairs = app.wordDiff ? computeWordDiffPairs(records) : null;
+  const wordDiffOpsCache = new Map(); // pair key (min of the two idx) -> diffWordTokens() ops
 
   for (const record of records) {
     const tr = document.createElement('tr');
@@ -4399,9 +4701,23 @@ function buildUnifiedTbody(hunk, hlLines, keywordGroups) {
     const cls = record.type === '+' ? 'line-add' : record.type === '-' ? 'line-del' : 'line-context';
     tr.className = cls;
 
+    let wordDiffSegments = null;
+    if (wordDiffPairs && wordDiffPairs.has(record.idx)) {
+      const partnerIdx = wordDiffPairs.get(record.idx);
+      const cacheKey = Math.min(record.idx, partnerIdx);
+      let ops = wordDiffOpsCache.get(cacheKey);
+      if (!ops) {
+        const delRec = record.type === '-' ? record : records[partnerIdx];
+        const addRec = record.type === '+' ? record : records[partnerIdx];
+        ops = diffWordTokens(tokenizeForWordDiff(delRec.content), tokenizeForWordDiff(addRec.content));
+        wordDiffOpsCache.set(cacheKey, ops);
+      }
+      wordDiffSegments = buildWordDiffSegments(ops, record.type === '-' ? 'del' : 'add');
+    }
+
     const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
     const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
-    const tdCon = buildContentCell(record, hlLines, null, keywordGroups);
+    const tdCon = buildContentCell(record, hlLines, null, keywordGroups, wordDiffSegments);
 
     tr.appendChild(tdOld); tr.appendChild(tdNew); tr.appendChild(tdCon);
     tbody.appendChild(tr);
@@ -4434,17 +4750,24 @@ function buildSplitTbody(hunk, hlLines, keywordGroups) {
     const oldCls = delRec ? 'line-del' : 'line-empty';
     const newCls = addRec ? 'line-add' : 'line-empty';
 
+    let delSegments = null, addSegments = null;
+    if (app.wordDiff && delRec && addRec) {
+      const ops = diffWordTokens(tokenizeForWordDiff(delRec.content), tokenizeForWordDiff(addRec.content));
+      delSegments = buildWordDiffSegments(ops, 'del');
+      addSegments = buildWordDiffSegments(ops, 'add');
+    }
+
     const tdOldNum = document.createElement('td');
     tdOldNum.className = 'line-num ' + oldCls;
     tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
 
-    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups);
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups, delSegments);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider ' + newCls;
     tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
 
-    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups);
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups, addSegments);
 
     tr.appendChild(tdOldNum);
     tr.appendChild(tdOldContent);
@@ -4711,6 +5034,7 @@ function refreshProgress() {
   }
 
   setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
+  updateProjectProgressBadge(app.currentProjectId, app.projectBadgeEls.get(app.currentProjectId));
 }
 
 function setOverallProgress(reviewed, total, needsChanges = 0, onHold = 0) {
@@ -5249,6 +5573,22 @@ function setViewMode(mode) {
   renderDiff();
 }
 
+/** Independent of view mode (works in both unified and split): see the
+ *  "Word-level diff highlighting" comment above computeWordDiffPairs(). */
+function updateWordDiffCheckbox() {
+  const checkbox = document.getElementById('word-diff-checkbox');
+  if (checkbox) checkbox.checked = app.wordDiff;
+}
+
+function setWordDiff(enabled) {
+  enabled = !!enabled;
+  if (app.wordDiff === enabled) return;
+  app.wordDiff = enabled;
+  saveWordDiff(enabled);
+  updateWordDiffCheckbox();
+  renderDiff();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Empty state helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5336,6 +5676,7 @@ function resetProject(projectId) {
   delete allReviews[projectId];
   saveAllReviews(allReviews);
   scheduleSettingsAutoSave();
+  invalidateProjectProgressCache(projectId);
 
   if (app.currentProjectId === projectId && app.parsedDiff) renderDiff();
   renderProjectList();
@@ -5354,6 +5695,7 @@ function deleteProject(projectId) {
   deleteProjectExtractKeywords(projectId);
   deleteFileContent(projectId);
   deleteFileHandleRecord(projectId);
+  invalidateProjectProgressCache(projectId);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
   scheduleSettingsAutoSave();
@@ -5584,6 +5926,7 @@ function mergeImportedData(data) {
   const reviews = loadAllReviews();
   for (const pid of Object.keys(importedReviews)) {
     reviews[pid] = importedReviews[pid];
+    invalidateProjectProgressCache(pid);
   }
   saveAllReviews(reviews);
 
@@ -6358,6 +6701,7 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
 
 document.getElementById('view-mode-unified').addEventListener('click', () => setViewMode('unified'));
 document.getElementById('view-mode-split').addEventListener('click', () => setViewMode('split'));
+document.getElementById('word-diff-checkbox').addEventListener('change', e => setWordDiff(e.target.checked));
 
 document.getElementById('export-btn').addEventListener('click', exportAppData);
 
@@ -7518,6 +7862,8 @@ extractModalOverlay.addEventListener('click', (e) => {
 (async function init() {
   app.viewMode = loadViewMode();
   updateViewModeButtons();
+  app.wordDiff = loadWordDiff();
+  updateWordDiffCheckbox();
 
   for (const key of REVIEW_FILTER_KEYS) {
     const checkbox = document.getElementById(`review-filter-${key}`);
