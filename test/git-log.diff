@@ -1,0 +1,69 @@
+commit 9f3a2c1e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a3f
+Merge: 1a2b3c4 5d6e7f8
+Author: Ada Lovelace <ada@example.com>
+Date:   Fri Sep 5 10:00:00 2026 +0900
+
+    Merge branch 'feature' into main
+
+commit 5d6e7f8c4b3a291807f6e5d4c3b2a1908f7e6d5c
+Author: Ada Lovelace <ada@example.com>
+Date:   Fri Sep 5 09:30:00 2026 +0900
+
+    calculator: validate arguments in subtract()
+
+    Throw a TypeError instead of returning NaN when a non-number is
+    passed in.
+
+diff --git a/src/utils/calculator.js b/src/utils/calculator.js
+index 3a1b2c4..7f8d9e0 100644
+--- a/src/utils/calculator.js
++++ b/src/utils/calculator.js
+@@ -1,10 +1,14 @@
++// Simple calculator utility
+ function add(a, b) {
+   return a + b;
+ }
+
+ function subtract(a, b) {
+-  return a - b;
++  if (typeof a !== 'number' || typeof b !== 'number') {
++    throw new TypeError('Arguments must be numbers');
++  }
++  return a - b;
+ }
+
+ function multiply(a, b) {
+   return a * b;
+ }
+
+commit 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+Author: Ada Lovelace <ada@example.com>
+Date:   Fri Sep 5 09:00:00 2026 +0900
+
+    calculator: add multiply() helper
+
+diff --git a/src/utils/calculator.js b/src/utils/calculator.js
+index 0000000..3a1b2c4 100644
+--- /dev/null
++++ b/src/utils/calculator.js
+@@ -0,0 +1,13 @@
++function add(a, b) {
++  return a + b;
++}
++
++function subtract(a, b) {
++  return a - b;
++}
++
++function multiply(a, b) {
++  return a * b;
++}
+diff --git a/README.md b/README.md
+index 4c5d6e7..8a9b0c1 100644
+--- a/README.md
++++ b/README.md
+@@ -1,3 +1,4 @@
+ # calc-demo
+
+ A tiny calculator library.
++See src/utils/calculator.js for the implementation.
