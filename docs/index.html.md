@@ -289,7 +289,7 @@ parseDiff(text: string): Array<{filePath, hunks, commit}>
 
 **パースの流れ:**
 
-```
+```text
 入力: unified diff テキスト
   "diff --git a/foo b/foo"  → 新しいファイルエントリを開始（commit フィールドに現在の curCommit を設定）
   "+++ b/foo"               → filePath を確定（rename 対応）
@@ -300,7 +300,7 @@ parseDiff(text: string): Array<{filePath, hunks, commit}>
 
 各ハンクは `{ header: string, lines: string[] }` の形式です。ハンクの確定時に `splitLargeHunk()` が呼ばれ、行数が多いハンクは複数に分割されます。
 
-**`git log -p` 入力への対応:** `commit <hash>` 行（`GIT_LOG_COMMIT_LINE_RE` で検出）が現れると、以降の `diff --git` で作られるファイルエントリすべてに、そのコミットの `{ hash, shortHash, author, date, subject }` を `commit` フィールドとして持たせます。`Author:` / `Date:` / `Merge:` 行と、インデントされたコミットメッセージ本文の最初の1行（`subject`）を拾い、それ以外の本文行は読み飛ばします。通常の `git diff` / `git show` 出力には `commit ` 行が出現しないため `commit` は常に `null` のままで、挙動は commit 対応を追加する前と変わりません。マージコミット（`git log -p` はデフォルトでマージコミットの差分を出力しない）は対応する `diff --git` が現れず、ファイルエントリが1つも生成されないため、パース結果に一切現れません（レビュー対象がないコミットとして扱われます）。
+**`git log -p` 入力への対応:** `commit <hash>` 行（`GIT_LOG_COMMIT_LINE_RE` で検出。7〜64桁の16進数を受理し、SHA-1（40桁）・短縮ハッシュ・SHA-256（64桁、`--object-format=sha256` リポジトリ）のいずれにも対応）が現れると、以降の `diff --git` で作られるファイルエントリすべてに、そのコミットの `{ hash, shortHash, author, date, subject }` を `commit` フィールドとして持たせます。`Author:` / `Date:` / `Merge:` 行と、インデントされたコミットメッセージ本文の最初の1行（`subject`）を拾い、それ以外の本文行は読み飛ばします。`git show <commit>` の既定出力も同じ `commit <hash>` ヘッダーを持つため同様に検出され、そのコミットの見出しが表示されます（`git show` を単体の1コミットの `git log -p` として扱っている形です）。`commit` が常に `null` のままなのは、`commit` 行が一切出現しない通常の `git diff` 出力のみです。マージコミット（`git log -p` はデフォルトでマージコミットの差分を出力しない）は対応する `diff --git` が現れず、ファイルエントリが1つも生成されないため、パース結果に一切現れません（レビュー対象がないコミットとして扱われます）。
 
 ---
 
