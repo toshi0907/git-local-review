@@ -103,7 +103,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
-| **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ |
+| **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ。`git log -p` 出力も認識し、各ファイルに由来コミット情報（`commit`）を付与する |
 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
 | **Hashing** | Web Crypto API / djb2 フォールバック |
@@ -112,7 +112,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
 | **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示） |
 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
-| **Render: full diff view** | `renderDiff()` |
+| **Render: full diff view** | `renderDiff()`。`buildCommitSectionHeader()` によるコミット見出しの挿入もこの近辺にある |
 | **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
 | **Build a single hunk card** | `buildHunkCard()` |
 | **Set collapsed state** | ハンクの折りたたみ |
@@ -284,14 +284,14 @@ ArrayBuffer
 ### Diff parser
 
 ```javascript
-parseDiff(text: string): Array<{filePath, hunks}>
+parseDiff(text: string): Array<{filePath, hunks, commit}>
 ```
 
 **パースの流れ:**
 
 ```
 入力: unified diff テキスト
-  "diff --git a/foo b/foo"  → 新しいファイルエントリを開始
+  "diff --git a/foo b/foo"  → 新しいファイルエントリを開始（commit フィールドに現在の curCommit を設定）
   "+++ b/foo"               → filePath を確定（rename 対応）
   "@@ -1,5 +1,6 @@"        → 新しいハンクを開始
   " " / "+" / "-" / "\"    → ハンクに行を追加
@@ -299,6 +299,8 @@ parseDiff(text: string): Array<{filePath, hunks}>
 ```
 
 各ハンクは `{ header: string, lines: string[] }` の形式です。ハンクの確定時に `splitLargeHunk()` が呼ばれ、行数が多いハンクは複数に分割されます。
+
+**`git log -p` 入力への対応:** `commit <hash>` 行（`GIT_LOG_COMMIT_LINE_RE` で検出）が現れると、以降の `diff --git` で作られるファイルエントリすべてに、そのコミットの `{ hash, shortHash, author, date, subject }` を `commit` フィールドとして持たせます。`Author:` / `Date:` / `Merge:` 行と、インデントされたコミットメッセージ本文の最初の1行（`subject`）を拾い、それ以外の本文行は読み飛ばします。通常の `git diff` / `git show` 出力には `commit ` 行が出現しないため `commit` は常に `null` のままで、挙動は commit 対応を追加する前と変わりません。マージコミット（`git log -p` はデフォルトでマージコミットの差分を出力しない）は対応する `diff --git` が現れず、ファイルエントリが1つも生成されないため、パース結果に一切現れません（レビュー対象がないコミットとして扱われます）。
 
 ---
 
@@ -381,6 +383,9 @@ renderDiff()
   ├─ for each file:
   │     ├─ isReviewFilterActive(filter) が true かつ、絞り込み条件に合うハンクが1つも無い → ファイルごとスキップ
   │     │  （表示フィルタのチェックボックス「未レビュー/承認/要修正/保留」で選ばれたステータスのみ表示）
+  │     ├─ file.commit があり、直前に描画したファイルの commit.hash と異なる
+  │     │     → buildCommitSectionHeader(file.commit) を挿入（git log -p 入力のみ。commit が null の
+  │     │        通常の git diff 入力では一切挿入されない）
   │     ├─ file-section > file-header を生成
   │     └─ for each hunk:
   │           ├─ hunkPassesReviewFilter(status, filter) が false → スキップ
@@ -389,6 +394,8 @@ renderDiff()
   ├─ setOverallProgress()   全体進捗バーを更新（承認/要修正/保留の内訳付き）
   └─ setFocusedHunk(0)      キーボードフォーカスをリセット
 ```
+
+`buildCommitSectionHeader(commit)` はコミットの短縮ハッシュ・件名・author・date を表示する `.commit-section-header` 要素を1つ生成するだけの単純な関数です。同じコミットに属するファイルが連続する間は再描画されず（`renderDiff()` 側で直前ファイルの `commit.hash` と比較して判定）、同じファイルパスが複数のコミットにまたがって出現する場合は、コミットごとに別々の `file-section` として重複表示されます（ファイル単位でマージすることはしません）。
 
 ---
 
@@ -803,7 +810,7 @@ diff 行                旧ファイル列       新ファイル列
 
 ### diff パーサーを変更する
 
-`parseDiff()` を変更する際は、`splitLargeHunk()` と `computeLineRecords()` も合わせて確認してください。これらは連携してハンクの構造を扱っています。
+`parseDiff()` を変更する際は、`splitLargeHunk()` と `computeLineRecords()` も合わせて確認してください。これらは連携してハンクの構造を扱っています。`commit` フィールド（`git log -p` 対応）を変更する場合は `renderDiff()` のコミット見出し挿入ロジックと `buildCommitSectionHeader()` も合わせて確認してください。
 
 ### レビュー状態の構造を変更する
 

@@ -17,6 +17,7 @@
 - **文字コード自動判定** — UTF-8 / Shift_JIS / EUC-JP を自動判定して読み込み
 - **複数ファイル一括読み込み / ドラッグ&ドロップ**
 - **キーワードハイライト（カテゴリ別）** / **キーワード行抽出** — 登録したキーワードで diff をハイライト、または追加/削除行を一覧抽出
+- **`git log -p` 対応** — コミット単位のログ+diffを読み込むと、コミットごとに見出し（ハッシュ・件名・author・日時）を挟んでレビューできる
 
 機能ごとの詳しい説明は [docs/FEATURES.md](docs/FEATURES.md) を参照してください。
 
@@ -31,9 +32,12 @@
 ```bash
 # diff ファイルの生成例
 git diff HEAD~1 > review.diff
-git diff main..feature-branch > feature.diff
+git diff main...feature-branch > feature.diff   # main と feature-branch の共通祖先からの最終差分
 git show abc1234 > commit.diff
+git log -p main...feature-branch > feature.diff  # コミットごとにレビューしたい場合
 ```
+
+`git log -p` の出力を読み込むと、コミットごとに見出し（短縮ハッシュ・コミットメッセージ・author・日時）が挿入され、同じファイルが複数コミットで変更されていてもコミットごとに別セクションとして表示されます。ただし `git log -p` はデフォルトではマージコミットの差分を出力しないため、マージコミットはレビュー画面に表示されません（マージで取り込まれた変更を見たい場合は、そのマージ元のブランチ・コミット範囲を指定して別途 `git log -p` / `git diff` を実行してください）。
 
 ## ドキュメント
 

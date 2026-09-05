@@ -931,6 +931,43 @@
       border-radius: 1px;
     }
 
+    /* ===== Commit sections (git log -p input) ===== */
+    .commit-section-header {
+      margin: 32px 0 12px;
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid #d0d7de;
+      background: #eaeef2;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .commit-section-header:first-child { margin-top: 0; }
+
+    .commit-hash {
+      font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: #57606a;
+      background: #d0d7de;
+      padding: 2px 8px;
+      border-radius: 12px;
+      flex-shrink: 0;
+    }
+
+    .commit-subject {
+      font-size: 14px;
+      font-weight: 600;
+      color: #24292e;
+    }
+
+    .commit-meta {
+      font-size: 12px;
+      color: #57606a;
+    }
+
     /* ===== File sections ===== */
     .file-section {
       margin-bottom: 28px;
@@ -3655,16 +3692,31 @@ function projectsByFileName(fileName) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Unified diff parser
 // ─────────────────────────────────────────────────────────────────────────────
+// Matches a `git log` commit header line, e.g. "commit abc1234...".
+// (`--decorate`/other --pretty formats are not recognised; only the default
+// `git log -p` header format is supported.)
+const GIT_LOG_COMMIT_LINE_RE = /^commit ([0-9a-f]{7,40})\b/;
+
 /**
- * Parse a unified diff string into a structured array.
- * @param {string} text
- * @returns {Array<{filePath:string, hunks:Array<{header:string, lines:string[]}>}>}
+ * Parse unified diff text into an array of files, each with its hunks.
+ *
+ * Also recognises `git log -p` output: a `commit <hash>` line (plus the
+ * following `Author:` / `Date:` / `Merge:` header lines and the first line
+ * of the indented commit message) attaches a `commit` descriptor to every
+ * file that follows it, up to the next `commit` line. Plain `git diff` /
+ * `git show` output never matches `commit `, so every file's `commit` stays
+ * null and behavior is unchanged from before commit-awareness was added.
+ * A commit with no diff (e.g. a merge commit, since `git log -p` omits merge
+ * diffs by default) simply produces no file entries and is dropped —
+ * there is nothing to review for it.
  */
 function parseDiff(text) {
   const lines = text.split(/\r?\n/);
   const files = [];
   let curFile = null;
   let curHunk = null;
+  let curCommit = null;      // current git-log commit descriptor, or null for plain diff input
+  let awaitingSubject = false; // true between a "commit " line and the first line of its message body
 
   function commitHunk() {
     if (curHunk && curFile) {
@@ -3679,10 +3731,32 @@ function parseDiff(text) {
   }
 
   for (const line of lines) {
+    const commitMatch = line.match(GIT_LOG_COMMIT_LINE_RE);
+    if (commitMatch) {
+      commitFile();
+      curCommit = { hash: commitMatch[1], shortHash: commitMatch[1].slice(0, 7), author: '', date: '', subject: '' };
+      awaitingSubject = true;
+      continue;
+    }
+
+    if (curCommit && awaitingSubject) {
+      if (line.startsWith('Author:')) { curCommit.author = line.slice(7).trim(); continue; }
+      if (line.startsWith('Date:'))   { curCommit.date   = line.slice(5).trim(); continue; }
+      if (line.startsWith('Merge:'))  { continue; }
+      if (line.trim() !== '' && !line.startsWith('diff --git ')) {
+        // First non-blank line of the indented commit message → its subject.
+        curCommit.subject = line.trim();
+        awaitingSubject = false;
+        continue;
+      }
+      if (line.trim() === '') continue; // blank line within the commit header/message
+    }
+
     if (line.startsWith('diff --git ')) {
       commitFile();
+      awaitingSubject = false;
       const m = line.match(/^diff --git a\/.+ b\/(.+)$/);
-      curFile = { filePath: m ? m[1] : '', hunks: [] };
+      curFile = { filePath: m ? m[1] : '', hunks: [], commit: curCommit };
 
     } else if (line.startsWith('+++ ') && curFile) {
       // "+++ b/path" → prefer this for the file path (handles renames)
@@ -4361,6 +4435,36 @@ function renderStatSummary(files) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Render: full diff view
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Build the heading element shown once before the first file of a
+ * `git log -p` commit group (see parseDiff()'s `commit` field). Never called
+ * for plain `git diff` input, where every file's commit is null.
+ * @param {{shortHash:string, subject:string, author:string, date:string}} commit
+ */
+function buildCommitSectionHeader(commit) {
+  const header = document.createElement('div');
+  header.className = 'commit-section-header';
+
+  const hashEl = document.createElement('span');
+  hashEl.className = 'commit-hash';
+  hashEl.textContent = commit.shortHash;
+  header.appendChild(hashEl);
+
+  const subjectEl = document.createElement('span');
+  subjectEl.className = 'commit-subject';
+  subjectEl.textContent = commit.subject;
+  header.appendChild(subjectEl);
+
+  if (commit.author || commit.date) {
+    const metaEl = document.createElement('span');
+    metaEl.className = 'commit-meta';
+    metaEl.textContent = [commit.author, commit.date].filter(Boolean).join(' · ');
+    header.appendChild(metaEl);
+  }
+
+  return header;
+}
+
 function renderDiff() {
   const container  = document.getElementById('diff-container');
   const emptyState = document.getElementById('empty-state');
@@ -4398,6 +4502,8 @@ function renderDiff() {
 
   renderStatSummary(visibleFiles.length > 0 ? visibleFiles : null);
 
+  let lastCommitHash; // undefined = no commit group started yet; distinct from a real hash and from null (plain-diff files)
+
   for (const file of files) {
     const fileReviews = projectReviews[file.filePath] || Object.create(null);
     let reviewedCnt = 0, needsChangesCnt = 0, onHoldCnt = 0;
@@ -4415,6 +4521,13 @@ function renderDiff() {
     // Skip files with no hunk matching the active filter.
     const hasVisibleHunk = !filterActive || file.hunks.some(h => hunkPassesReviewFilter(fileReviews[h.hash] || null, filter));
     if (!hasVisibleHunk) continue;
+
+    // git-log input: show a commit heading before the first file of each
+    // commit group (never for plain `git diff` input, where commit is null).
+    if (file.commit && file.commit.hash !== lastCommitHash) {
+      container.appendChild(buildCommitSectionHeader(file.commit));
+    }
+    lastCommitHash = file.commit ? file.commit.hash : null;
 
     const section = document.createElement('div');
     section.className = 'file-section';
@@ -6457,7 +6570,7 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
   if (parsed.length === 0) {
     alert(
       `「${file.name}」: 有効なdiff（unified diff形式）が見つかりませんでした。\n` +
-      'git diff または git show の出力を保存したファイルをご利用ください。\n' +
+      'git diff / git show / git log -p の出力を保存したファイルをご利用ください。\n' +
       '文字コードの判定・指定が誤っている可能性もあります。'
     );
     return { conflict: false };
