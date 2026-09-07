@@ -788,7 +788,7 @@ diff 行                旧ファイル列       新ファイル列
                          │
               ┌──────────┴──────────┐
               │                     │
-         decodeAuto()          parseDiff()
+       decodeGitLog()          parseDiff()
          (文字コード判定)      (diff パース)
               │                     │
               └──────────┬──────────┘
