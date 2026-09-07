@@ -95,7 +95,7 @@ test/                ← テスト用 .diff サンプルファイル
 |---|---|
 | **Storage keys** | `localStorage` キー定数 |
 | **Application state** | `app` オブジェクト（ランタイム状態） |
-| **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定 |
+| **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定。`git log -p`/`git show` 出力はコミットメッセージとソースを別々に判定する（`decodeGitLog()`） |
 | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
 | **Diff view mode** | Unified / Side-by-side モード保存（`loadViewMode()`/`saveViewMode()`）。単語単位差分表示（word-diff）のON/OFF永続化（`loadWordDiff()`/`saveWordDiff()`）も同じセクションにある |
 | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で大文字小文字を区別するかどうかも選択可能（issue #95）、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
@@ -147,7 +147,8 @@ test/                ← テスト用 .diff サンプルファイル
           ▼
     loadFile(file)
           │
-          ├─ decodeAuto(buffer)        文字コード自動判定 → テキスト変換
+          ├─ decodeGitLog(buffer, encodingPref)  文字コード自動判定 → テキスト変換
+          │     （`git log -p`/`git show` はコミットメッセージとソースを別々に判定）
           │
           ├─ parseDiff(text)           diff テキスト → 構造化配列
           │     │
@@ -244,7 +245,7 @@ const app = {
 
 ### Character encoding detection
 
-`decodeAuto(buffer: ArrayBuffer)` が中心的な関数です。
+`decodeAuto(buffer: ArrayBuffer)` が単一バッファの自動判定を担う中心的な関数です。
 
 ```
 ArrayBuffer
@@ -256,6 +257,29 @@ ArrayBuffer
 ```
 
 スコアリングは、各文字コードで有効な多バイトシーケンスの出現頻度をバイト列から計算します。
+
+**`git log -p` / `git show` 出力の混在文字コード対応（`decodeGitLog()`）:** Git はコミットメッセージ（`Author:`/`Date:`/本文）を diff 対象のソースファイルとは独立した文字コード（通常 UTF-8）で出力するため、EUC-JP/Shift_JIS で保存されたソースファイルに対して `git log -p` を実行すると、1つのバイト列の中にコミットメッセージ部分（UTF-8）とソース部分（EUC-JP 等）が混在することがある。`decodeAuto()` でバッファ全体を単一の文字コードとして判定・デコードすると、どちらか一方が文字化けする。
+
+`decodeGitLog(buffer, encoding)` はこの問題に対応するため、文字コード自動判定（`encoding === 'auto'`）の場合に限り、デコード前に生バイト列を行単位で走査してセクション分割する：
+
+```
+ArrayBuffer（バイト列のまま）
+     │
+     ├─ splitGitLogByteLines(buffer)
+     │     行頭が "commit " → 以降を 'message' セクションに分類
+     │     行頭が "diff --git " → 以降を 'source' セクションに分類
+     │     （マーカーは ASCII なので UTF-8/Shift_JIS/EUC-JP のいずれでも
+     │      バイト列として同一 → デコード前の分類が可能）
+     │
+     ├─ 'message' セクションのバイトだけを連結 → decodeAuto() で個別に判定・デコード
+     ├─ 'source'  セクションのバイトだけを連結 → decodeAuto() で個別に判定・デコード
+     │
+     └─ 元の行順どおりに再結合して1つのテキストに戻す
+```
+
+`commit ` 行が1つも無い（`git diff` の素の出力など）場合は 'message' セクションが存在しないため、`decodeAuto(buffer)` を1回呼ぶだけの従来どおりの経路にフォールバックする。文字コードを明示指定（`auto` 以外）した場合は、両セクションとも同じ指定文字コードでデコードするだけなので分割自体を行わない。
+
+戻り値は `{text, encoding, messageEncoding}`。`encoding` はソース側の解決済み文字コード（従来どおりプロジェクトの `resolvedEncoding` として保存・表示）、`messageEncoding` はコミットメッセージ側の解決済み文字コード（別判定が行われなかった場合は `undefined`）。プロジェクトの `resolvedMessageEncoding` が `resolvedEncoding` と異なる場合、サイドバーの文字コード選択（「自動判定」オプション）にソース側・コミットメッセージ側の両方が表示される。
 
 ---
 

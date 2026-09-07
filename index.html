@@ -2397,6 +2397,7 @@ let modalSelectedId  = null;
 let modalFileHandle  = null;
 let modalEncoding    = 'auto';
 let modalResolvedEncoding = 'utf-8';
+let modalResolvedMessageEncoding = undefined;
 /** Resolver for the Promise returned by showConflictModal(), so callers can await the user's choice. */
 let modalResolve     = null;
 
@@ -2518,6 +2519,117 @@ function decodeBytes(buffer, encoding) {
     console.error(`Unsupported encoding "${encoding}", falling back to UTF-8`, e);
     return { text: new TextDecoder('utf-8').decode(buffer), encoding: 'utf-8' };
   }
+}
+
+/** True if `bytes[start, end)` begins with the ASCII bytes of `str`. */
+function bytesStartWithAscii(bytes, start, end, str) {
+  if (end - start < str.length) return false;
+  for (let i = 0; i < str.length; i++) {
+    if (bytes[start + i] !== str.charCodeAt(i)) return false;
+  }
+  return true;
+}
+
+/**
+ * Split raw `buffer` bytes into line ranges tagged 'message' (a `git log -p`
+ * / `git show` commit header and message body — hash, `Author:`, `Date:`,
+ * `Merge:` and the indented message text) or 'source' (everything else:
+ * the `diff --git` file headers and hunk bodies).
+ *
+ * Git always writes the commit metadata as its own text (normally UTF-8,
+ * per `i18n.commitEncoding`), independently of the encoding the diffed
+ * source files themselves happen to be saved in (e.g. legacy Shift_JIS /
+ * EUC-JP Japanese source). Both live in the same byte stream, so a single
+ * whole-buffer encoding guess garbles whichever half doesn't match it.
+ *
+ * This classifies *before* decoding, using only the `commit ` / `diff --git
+ * ` line-start markers — both pure ASCII, hence byte-identical whichever of
+ * UTF-8 / Shift_JIS / EUC-JP either half turns out to be — so each half can
+ * later be encoding-detected and decoded on its own (see decodeGitLog()).
+ * Plain `git diff` output (no `commit ` lines) yields a single 'source'
+ * section spanning the whole buffer.
+ * @returns {{bytes: Uint8Array, ranges: Array<{section: 'message'|'source', start: number, end: number}>}}
+ */
+function splitGitLogByteLines(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const ranges = [];
+  let inMessage = false;
+
+  function endLine(start, end) {
+    if (bytesStartWithAscii(bytes, start, end, 'commit ')) inMessage = true;
+    else if (bytesStartWithAscii(bytes, start, end, 'diff --git ')) inMessage = false;
+    ranges.push({ section: inMessage ? 'message' : 'source', start, end });
+  }
+
+  let lineStart = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x0a) { endLine(lineStart, i + 1); lineStart = i + 1; }
+  }
+  if (lineStart < bytes.length) endLine(lineStart, bytes.length);
+
+  return { bytes, ranges };
+}
+
+/** Concatenate the byte ranges in `ranges` (all cut from `bytes`) into one new Uint8Array. */
+function concatByteRanges(bytes, ranges) {
+  let len = 0;
+  for (const r of ranges) len += r.end - r.start;
+  const out = new Uint8Array(len);
+  let pos = 0;
+  for (const r of ranges) { out.set(bytes.subarray(r.start, r.end), pos); pos += r.end - r.start; }
+  return out;
+}
+
+/**
+ * Like decodeBytes(), but for `git log -p` / `git show` output: the commit
+ * message section and the diff/source section are split apart (see
+ * splitGitLogByteLines()) and encoding-detected independently, so e.g. a
+ * UTF-8 commit message on top of an EUC-JP source file decodes correctly
+ * instead of one half turning to mojibake.
+ *
+ * Only applies when `encoding` is 'auto' (or omitted) *and* the input
+ * actually contains both a message and a source section — an explicit
+ * encoding override forces that single encoding on the whole buffer as
+ * before (there is nothing to detect separately), and plain `git diff`
+ * input (no `commit ` lines) has no message section to split out.
+ * @returns {{text: string, encoding: string, messageEncoding: string|undefined}}
+ *   `encoding` is the source/diff section's resolved encoding (shown/stored
+ *   as the project's encoding, same as before this split existed);
+ *   `messageEncoding` is the commit message section's resolved encoding,
+ *   or undefined when no separate detection was performed (see above).
+ */
+function decodeGitLog(buffer, encoding) {
+  if (encoding && encoding !== 'auto') {
+    return { ...decodeBytes(buffer, encoding), messageEncoding: undefined };
+  }
+
+  const { bytes, ranges } = splitGitLogByteLines(buffer);
+  const messageRanges = ranges.filter(r => r.section === 'message');
+  const sourceRanges  = ranges.filter(r => r.section === 'source');
+  if (messageRanges.length === 0 || sourceRanges.length === 0) {
+    return { ...decodeAuto(buffer), messageEncoding: undefined };
+  }
+
+  const messageDecoded = decodeAuto(concatByteRanges(bytes, messageRanges).buffer);
+  const sourceDecoded  = decodeAuto(concatByteRanges(bytes, sourceRanges).buffer);
+  // Both sides' decoded text preserves a literal "\n" at the same relative
+  // positions as the original bytes (0x0a decodes identically, unchanged,
+  // in all three encodings), so splitting each back on "\n" reconstructs
+  // exactly its lines in order; see splitGitLogByteLines() for why slicing
+  // to each section's range count is always exactly right.
+  const messageLines = messageDecoded.text.split('\n').slice(0, messageRanges.length);
+  const sourceLines  = sourceDecoded.text.split('\n').slice(0, sourceRanges.length);
+
+  let mi = 0, si = 0;
+  const lines = ranges.map(r => r.section === 'message' ? messageLines[mi++] : sourceLines[si++]);
+  // join() alone would drop a real trailing blank line vs. decoding the
+  // whole buffer at once, since each bucket's own trailing "\n" (if any)
+  // was already accounted for by the slice() above: restore it here so a
+  // buffer ending in "\n" still decodes to text ending in "\n".
+  let text = lines.join('\n');
+  if (bytes.length > 0 && bytes[bytes.length - 1] === 0x0a) text += '\n';
+
+  return { text, encoding: sourceDecoded.encoding, messageEncoding: messageDecoded.encoding };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4273,9 +4385,17 @@ function renderProjectList() {
     for (const val of VALID_ENCODINGS) {
       const opt = document.createElement('option');
       opt.value = val;
-      opt.textContent = (val === 'auto' && proj.resolvedEncoding)
-        ? `${ENCODING_LABELS.auto}（${ENCODING_LABELS[proj.resolvedEncoding] || proj.resolvedEncoding}）`
-        : ENCODING_LABELS[val];
+      if (val === 'auto' && proj.resolvedEncoding) {
+        const sourceLabel = ENCODING_LABELS[proj.resolvedEncoding] || proj.resolvedEncoding;
+        // git log -p / git show input can carry a commit message encoded
+        // differently from the diffed source (see decodeGitLog()); when
+        // that was detected, show both instead of just the source's.
+        opt.textContent = (proj.resolvedMessageEncoding && proj.resolvedMessageEncoding !== proj.resolvedEncoding)
+          ? `${ENCODING_LABELS.auto}（ソース: ${sourceLabel} / コミットメッセージ: ${ENCODING_LABELS[proj.resolvedMessageEncoding] || proj.resolvedMessageEncoding}）`
+          : `${ENCODING_LABELS.auto}（${sourceLabel}）`;
+      } else {
+        opt.textContent = ENCODING_LABELS[val];
+      }
       encSelect.appendChild(opt);
     }
     // Normalize against the allow-list: a corrupted/legacy/manually-edited
@@ -5835,12 +5955,15 @@ function deleteProject(projectId) {
  * `encodingPref` is the user's encoding choice ('auto' or an explicit
  * override) persisted for future loads/reloads; `resolvedEncoding` is the
  * concrete encoding actually used to decode this file, shown in the UI.
+ * `resolvedMessageEncoding` is the commit message section's own resolved
+ * encoding when it was detected separately from the source (see
+ * decodeGitLog()); undefined when no such separate detection applied.
  */
-function createNewProject(fileName, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8') {
+function createNewProject(fileName, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8', resolvedMessageEncoding = undefined) {
   const id  = generateProjectId(fileName);
   const now = Date.now();
   const projects = loadProjects();
-  projects.push({ id, fileName, createdAt: now, lastUpdated: now, encoding: encodingPref, resolvedEncoding });
+  projects.push({ id, fileName, createdAt: now, lastUpdated: now, encoding: encodingPref, resolvedEncoding, resolvedMessageEncoding });
   saveProjects(projects);
   scheduleSettingsAutoSave();
   saveFileContent(id, rawText);
@@ -5859,13 +5982,19 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
 }
 
 /** Update an existing project's metadata and display its (new) diff */
-function updateExistingProject(projectId, parsed, rawText, fileHandle = null, encodingPref = undefined, resolvedEncoding = undefined) {
+function updateExistingProject(projectId, parsed, rawText, fileHandle = null, encodingPref = undefined, resolvedEncoding = undefined, resolvedMessageEncoding = undefined) {
   const projects = loadProjects();
   const proj = projects.find(p => p.id === projectId);
   if (proj) {
     proj.lastUpdated = Date.now();
     if (encodingPref !== undefined) proj.encoding = encodingPref;
-    if (resolvedEncoding !== undefined) proj.resolvedEncoding = resolvedEncoding;
+    // Set together with resolvedEncoding (always passed as a pair from
+    // decodeGitLog()'s result) so a stale message-encoding note from a
+    // previous mixed-encoding load is cleared once it no longer applies.
+    if (resolvedEncoding !== undefined) {
+      proj.resolvedEncoding = resolvedEncoding;
+      proj.resolvedMessageEncoding = resolvedMessageEncoding;
+    }
     saveProjects(projects);
     scheduleSettingsAutoSave();
   }
@@ -5922,12 +6051,13 @@ function sanitizeImportedProjects(rawProjects) {
     const lastUpdated = typeof p.lastUpdated === 'number' ? p.lastUpdated : createdAt;
     const encoding = normalizeEncoding(p.encoding);
     const resolvedEncoding = ['utf-8', 'shift_jis', 'euc-jp'].includes(p.resolvedEncoding) ? p.resolvedEncoding : undefined;
+    const resolvedMessageEncoding = ['utf-8', 'shift_jis', 'euc-jp'].includes(p.resolvedMessageEncoding) ? p.resolvedMessageEncoding : undefined;
     // Only meaningful together with a FileSystemFileHandle for the same ID
     // in this browser's IndexedDB (see checkProjectFileUpdates()) — carried
     // through as-is so a same-machine settings-folder reload doesn't lose
     // the external-update-check baseline; harmless dead data otherwise.
     const fileLastModified = typeof p.fileLastModified === 'number' ? p.fileLastModified : undefined;
-    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding, fileLastModified });
+    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding, resolvedMessageEncoding, fileLastModified });
   }
   return result;
 }
@@ -6452,13 +6582,14 @@ async function reloadSettingsFromFolderManually() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Conflict modal (same filename detected)
 // ─────────────────────────────────────────────────────────────────────────────
-function showConflictModal(fileName, existingProjects, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8') {
+function showConflictModal(fileName, existingProjects, parsed, rawText, fileHandle = null, encodingPref = 'auto', resolvedEncoding = 'utf-8', resolvedMessageEncoding = undefined) {
   modalFileName   = fileName;
   modalParsedDiff = parsed;
   modalRawText    = rawText;
   modalFileHandle = fileHandle;
   modalEncoding   = encodingPref;
   modalResolvedEncoding = resolvedEncoding;
+  modalResolvedMessageEncoding = resolvedMessageEncoding;
 
   document.getElementById('modal-desc').textContent =
     `ファイル名「${fileName}」の既存プロジェクトが ${existingProjects.length} 件あります。` +
@@ -6535,6 +6666,7 @@ function hideModal() {
   modalFileHandle = null;
   modalEncoding   = 'auto';
   modalResolvedEncoding = 'utf-8';
+  modalResolvedMessageEncoding = undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6568,7 +6700,7 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
     return { conflict: false };
   }
 
-  const { text, encoding } = decodeBytes(buffer, encodingPref);
+  const { text, encoding, messageEncoding } = decodeGitLog(buffer, encodingPref);
 
   const parsed = parseDiff(text);
   if (parsed.length === 0) {
@@ -6601,16 +6733,16 @@ async function loadDiffFile(file, fileHandle = null, encodingPref = 'auto', { ba
         const mostRecent = [...updatable].sort(
           (a, b) => (b.lastUpdated || b.createdAt) - (a.lastUpdated || a.createdAt)
         )[0];
-        updateExistingProject(mostRecent.id, parsed, text, fileHandle, encodingPref, encoding);
+        updateExistingProject(mostRecent.id, parsed, text, fileHandle, encodingPref, encoding, messageEncoding);
         return { conflict: true };
       }
     } else {
-      await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding);
+      await showConflictModal(fileName, existing, parsed, text, fileHandle, encodingPref, encoding, messageEncoding);
       return { conflict: true };
     }
   }
 
-  const newId = createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding);
+  const newId = createNewProject(fileName, parsed, text, fileHandle, encodingPref, encoding, messageEncoding);
   if (batchCreatedIds) batchCreatedIds.add(newId);
   return { conflict: false };
 }
@@ -6692,7 +6824,7 @@ async function reloadProjectFile(projectId) {
 
     const file = await handle.getFile();
     const buffer = await file.arrayBuffer();
-    const { text, encoding } = decodeBytes(buffer, normalizeEncoding(proj.encoding));
+    const { text, encoding, messageEncoding } = decodeGitLog(buffer, normalizeEncoding(proj.encoding));
     const parsed = parseDiff(text);
     if (parsed.length === 0) {
       alert(
@@ -6703,7 +6835,7 @@ async function reloadProjectFile(projectId) {
       return;
     }
     await computeAllHashes(parsed);
-    updateExistingProject(projectId, parsed, text, handle, proj.encoding, encoding);
+    updateExistingProject(projectId, parsed, text, handle, proj.encoding, encoding, messageEncoding);
   } catch (err) {
     console.error('Failed to reload file for project', projectId, err);
     alert(
@@ -6845,8 +6977,9 @@ document.getElementById('modal-btn-new').addEventListener('click', () => {
   const handle  = modalFileHandle;
   const encPref = modalEncoding;
   const encResolved = modalResolvedEncoding;
+  const encMessageResolved = modalResolvedMessageEncoding;
   hideModal();
-  createNewProject(fn, parsed, rawText, handle, encPref, encResolved);
+  createNewProject(fn, parsed, rawText, handle, encPref, encResolved, encMessageResolved);
   resolvePendingModal();
 });
 
@@ -6858,8 +6991,9 @@ document.getElementById('modal-btn-update').addEventListener('click', () => {
   const handle  = modalFileHandle;
   const encPref = modalEncoding;
   const encResolved = modalResolvedEncoding;
+  const encMessageResolved = modalResolvedMessageEncoding;
   hideModal();
-  updateExistingProject(id, parsed, rawText, handle, encPref, encResolved);
+  updateExistingProject(id, parsed, rawText, handle, encPref, encResolved, encMessageResolved);
   resolvePendingModal();
 });
 
