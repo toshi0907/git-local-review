@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- 本アプリは全処理をブラウザ内で完結させ、外部サーバーと通信しない。
        CSP で connect-src 等を封じ、通信コードの混入を検知・防止する。 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';">
   <title>Git Local Review</title>
+  <!-- favicon: 差分の追加行(緑)/削除行(赤)を表す2本バー。外部ファイルなしで完結させるため data URI で埋め込み。 -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzFjMjQyMCIvPjxyZWN0IHg9IjciIHk9IjkiIHdpZHRoPSIxOCIgaGVpZ2h0PSI1IiByeD0iMS41IiBmaWxsPSIjM2ZiOTY4Ii8+PHJlY3QgeD0iNyIgeT0iMTgiIHdpZHRoPSIxMiIgaGVpZ2h0PSI1IiByeD0iMS41IiBmaWxsPSIjZjI1NTVmIi8+PC9zdmc+">
   <!-- highlight.js (v11.9.0, minified and bundled for offline use) -->
   <style>
     pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}/*!
