@@ -508,13 +508,14 @@ setFocusedHunkStatus(value)  // 1/2/3 の処理
 diff の1行に付けるレビューコメントです。
 
 ```
-LineComment: { id, text, createdAt, updatedAt, lineType: '+'|'-'|' ', lineText, oldLabel, newLabel }
+LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', lineText, oldLabel, newLabel }
 保存先: SK_LINE_COMMENTS[projectId][filePath][hunk.hash][lineIdx] = LineComment[]
 ```
 
 - **紐付け:** `(filePath, hunk.hash, lineIdx)` で行を特定します。`lineIdx` は `hunk.lines`（= `computeLineRecords()` の `idx`）内の位置です。ハンクハッシュはハンク本文から計算されるため（[ハンクの同一性判定](#ハンクの同一性判定-hunk-hash)）、レビュー状態と同様に、ハンクの内容が同じなら行番号がずれてもコメントが引き継がれます。`lineType` 以降はコメント時点の行のスナップショットで、元の行が見つからなくなったコメント（孤立コメント）の表示に使います。
 - **描画:** `buildUnifiedTbody()` / `buildSplitTbody()` は各行の行番号セルに `buildLineCommentAddButton()` の「+」ボタン（行ホバーで表示）を置き、行の `<tr>` に `data-anchor-idx`（Split の左右ペア行では2つのidxを空白区切り）、各セルに `data-line-idx` を付けます。保存済みコメントは `appendLineCommentRows()` が該当行の直後に `.line-attached-row.line-comment-row`（`colspan` は Unified 3 / Split 4）として挿入します。
 - **操作:** 追加・編集・削除はハンクカード単位の委譲リスナー `handleLineCommentCardClick` が処理し、`renderDiff()` を呼ばずに該当行の周辺だけ DOM を差し替えます（入力中の他フォームやスクロール位置を保つため）。入力欄は `openLineCommentComposer(card, idx)`、編集は `startEditingLineComment(card, row)` が生成し、どちらも `buildLineCommentForm()`（`Ctrl/Cmd+Enter` で保存、`Esc` でキャンセル。`Esc` は `stopPropagation()` でメモパネルを閉じるハンドラーへ伝播させない）を使います。変更後は `afterLineCommentsChanged(card)` が設定フォルダへの自動保存予約・件数バッジ・一覧の更新を行い、「コメントあり」フィルタ中にハンクのコメントが0件になった場合のみ `renderDiff()` で再描画します。
+- **チェック状態（issue #120）:** `done` はメモのチェックボックスと同様のチェック状態です（欠損時は `false`。既存データ・古いエクスポートもそのまま読み込めます）。コメント行のヘッダーとメモパネルの一覧項目に `buildLineCommentDoneCheckbox()` のチェックボックスを置き、`setLineCommentDone()` で保存します。diff 側はカード単位の委譲 `change` リスナー `handleLineCommentCardChange`、一覧側は項目ごとのリスナーが処理し、`applyLineCommentDoneToRow()` でもう一方（diff のコメント行）にも反映したうえで `afterLineCommentsChanged()` を呼びます。チェック済みのコメントは本文に取り消し線が付き（`.done`）、一覧の見出しには「チェック済み/全件」を表示します。マウスでクリックした場合はフォーカスを外し、`j`/`k`/`c` 等のショートカットがそのまま効くようにします。
 - **再描画時の下書き保持:** `renderDiff()` はカードを作り直すため、冒頭で `captureLineCommentDrafts()` が開いている入力欄・編集フォームの未保存テキスト（とフォーカス・選択範囲）を退避し、末尾で `restoreLineCommentDrafts()` が新しいカードに復元します（フィルタで非表示になったハンクの下書きは復元されません）。
 - **同一内容のハンク:** 紐付けはレビュー状態と同じく `(filePath, hunk.hash)` 単位のため、同じファイル内（`git log -p` で同じファイルが複数コミットに現れる場合を含む）に内容がまったく同じハンクが複数あると、それらはコメントを共有します。
 - **`c` キー:** カードのクリック時に最後にクリックした行を `card.dataset.activeLineIdx` に記録し、`c` ではその行（無ければハンク内最初の `+`/`-` 行）の入力欄を開きます。
