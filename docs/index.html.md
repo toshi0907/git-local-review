@@ -215,6 +215,7 @@ const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 const SK_LINE_COMMENTS   = 'gitLocalReview_lineComments';
 const SK_COMMENT_FILTER  = 'gitLocalReview_commentFilter';
+const SK_HIDE_DONE_LINE_COMMENTS = 'gitLocalReview_hideDoneLineComments';
 const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
 const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
@@ -232,7 +233,7 @@ const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 
 `SK_WORD_DIFF` は `'true' | 'false'` の文字列一つだけを保持する単純なキーで、トップバーの「単語単位で差分表示」チェックボックスの状態を `SK_VIEW_MODE`（Unified / Split）とは独立に永続化します（`loadWordDiff()` / `saveWordDiff()`）。詳細は [Word-level diff highlighting](#build-a-single-hunk-card) を参照してください。
 
-`SK_LINE_COMMENTS` は行コメントを `{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } }` の形で保持します（`loadAllLineComments()` / `saveAllLineComments()`、不正値は `sanitizeLineCommentsData()` が除去）。`SK_COMMENT_FILTER` は「💬コメントあり」表示フィルタの ON/OFF を `'true' | 'false'` の文字列で保持し、`SK_REVIEW_FILTER` とは独立しています（`loadCommentFilter()` / `saveCommentFilter()`）。詳細は [Line comments](#line-comments) を参照してください。
+`SK_LINE_COMMENTS` は行コメントを `{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } }` の形で保持します（`loadAllLineComments()` / `saveAllLineComments()`、不正値は `sanitizeLineCommentsData()` が除去）。`SK_COMMENT_FILTER` は「💬コメントあり」表示フィルタの ON/OFF を `'true' | 'false'` の文字列で保持し、`SK_REVIEW_FILTER` とは独立しています（`loadCommentFilter()` / `saveCommentFilter()`）。`SK_HIDE_DONE_LINE_COMMENTS`（issue #124）は設定モーダルの「チェック済みの行コメントを差分内で非表示にする」の ON/OFF を `'true' | 'false'` の文字列で保持します（`loadHideDoneLineComments()` / `saveHideDoneLineComments()`）。詳細は [Line comments](#line-comments) を参照してください。
 
 `SK_AUTO_COMMENT_RULES` / `SK_PROJECT_AUTO_COMMENT_RULES` は自動行コメントのルール（全体設定の配列 / `{ [projectId]: rule[] }`）、`SK_AUTO_COMMENT_APPLIED` は「どのルールをどの行に適用済みか」のログ（`{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }`）です。詳細は [Auto line comments](#auto-line-comments) を参照してください。
 
@@ -254,6 +255,8 @@ const app = {
   wordDiff: false,           // 単語単位差分表示（word-diff）のON/OFF。viewMode とは独立
   reviewFilter: { unreviewed: true, approved: true, needs_changes: true, on_hold: true }, // 表示するハンクをステータス別に絞り込むチェックボックス群の状態
   commentFilter: false,      // true のとき行コメントが付いたハンクのみ表示（reviewFilter と AND）
+  hideDoneLineComments: false, // true のとき diff 内のチェック済み行コメントを非表示（SK_HIDE_DONE_LINE_COMMENTS に保存）
+  hideAllLineComments: false,  // true のとき diff 内の行コメントを一時的にすべて非表示（保存しない。再読み込みで表示に戻る）
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
 ```
@@ -526,6 +529,7 @@ LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', line
 - **描画:** `buildUnifiedTbody()` / `buildSplitTbody()` は各行の行番号セルに `buildLineCommentAddButton()` の「+」ボタン（行ホバーで表示）を置き、行の `<tr>` に `data-anchor-idx`（Split の左右ペア行では2つのidxを空白区切り）、各セルに `data-line-idx` を付けます。保存済みコメントは `appendLineCommentRows()` が該当行の直後に `.line-attached-row.line-comment-row`（`colspan` は Unified 3 / Split 4）として挿入します。
 - **操作:** 追加・編集・削除はハンクカード単位の委譲リスナー `handleLineCommentCardClick` が処理し、`renderDiff()` を呼ばずに該当行の周辺だけ DOM を差し替えます（入力中の他フォームやスクロール位置を保つため）。入力欄は `openLineCommentComposer(card, idx)`、編集は `startEditingLineComment(card, row)` が生成し、どちらも `buildLineCommentForm()`（`Ctrl/Cmd+Enter` で保存、`Esc` でキャンセル。`Esc` は `stopPropagation()` でメモパネルを閉じるハンドラーへ伝播させない）を使います。変更後は `afterLineCommentsChanged(card)` が設定フォルダへの自動保存予約・件数バッジ・トップバーのメモバッジ（`refreshMemoBadge()`。未チェックのメモ＋未チェックの行コメント（`countOpenLineComments()`）の合計）・一覧の更新を行い、「コメントあり」フィルタ中にハンクのコメントが0件になった場合のみ `renderDiff()` で再描画します。
 - **チェック状態（issue #120）:** `done` はメモのチェックボックスと同様のチェック状態です（欠損時は `false`。既存データ・古いエクスポートもそのまま読み込めます）。コメント行のヘッダーとメモパネルの一覧項目に `buildLineCommentDoneCheckbox()` のチェックボックスを置き、`setLineCommentDone()` で保存します。diff 側はカード単位の委譲 `change` リスナー `handleLineCommentCardChange`、一覧側は項目ごとのリスナーが処理し、`applyLineCommentDoneToRow()` でもう一方（diff のコメント行）にも反映したうえで `afterLineCommentsChanged()` を呼びます。チェック済みのコメントは本文に取り消し線が付き（`.done`）、一覧の見出しには「チェック済み/全件」を表示します。マウスでクリックした場合はフォーカスを外し、`j`/`k`/`c` 等のショートカットがそのまま効くようにします。
+- **表示切り替え（issue #124）:** diff 内のコメント行の表示を切り替えます（既定はすべて表示）。トップバーの「💬コメントあり」の隣にある「非表示」トグルボタン（`#hide-all-line-comments-btn`、`aria-pressed`）は `app.hideAllLineComments`（保存しない一時的な状態）を、設定モーダルの「チェック済みの行コメントを差分内で非表示にする」チェックボックス（`#hide-done-line-comments-checkbox`）は `app.hideDoneLineComments`（`SK_HIDE_DONE_LINE_COMMENTS` に保存）を切り替えます。`applyLineCommentVisibility()` が `#diff-container` に `.hide-done-line-comments` / `.hide-all-line-comments` クラスを付け外しし、CSS でコメント行を `display: none` にするだけなので `renderDiff()` は不要で、ハンクの件数バッジ・「コメントあり」フィルタ・メモパネルの一覧には影響しません。編集フォームを開いているコメント行（`:has(.line-comment-form)`）と新規コメントの入力欄は非表示になりません。非表示のコメントへ一覧からジャンプした場合、`jumpToLineComment()` はコメント行の代わりにコメント対象の行へスクロールします。
 - **再描画時の下書き保持:** `renderDiff()` はカードを作り直すため、冒頭で `captureLineCommentDrafts()` が開いている入力欄・編集フォームの未保存テキスト（とフォーカス・選択範囲）を退避し、末尾で `restoreLineCommentDrafts()` が新しいカードに復元します（フィルタで非表示になったハンクの下書きは復元されません）。
 - **同一内容のハンク:** 紐付けはレビュー状態と同じく `(filePath, hunk.hash)` 単位のため、同じファイル内（`git log -p` で同じファイルが複数コミットに現れる場合を含む）に内容がまったく同じハンクが複数あると、それらはコメントを共有します。
 - **`c` キー:** カードのクリック時に最後にクリックした行を `card.dataset.activeLineIdx` に記録し、`c` ではその行（無ければハンク内最初の `+`/`-` 行）の入力欄を開きます。
@@ -745,6 +749,7 @@ init()
   ├─ loadViewMode() → updateViewModeButtons()
   ├─ reviewFilter（表示フィルター）の復元
   ├─ commentFilter（「コメントあり」フィルター）の復元
+  ├─ hideDoneLineComments（行コメントの「チェック済み非表示」）の復元 → applyLineCommentVisibility()
   ├─ refreshHandleIndex()
   ├─ [File System Access 対応ブラウザのみ]
   │     ├─ refreshOpenFolderUI()
@@ -769,6 +774,7 @@ init()
 │  app.wordDiff                                       │
 │  app.reviewFilter                                   │
 │  app.commentFilter                                  │
+│  app.hideDoneLineComments / app.hideAllLineComments │
 │  app.focusedHunkIndex                               │
 │  app.fileProgressEls (DOM 参照キャッシュ)             │
 │  app.projectBadgeEls (DOM 参照キャッシュ)             │
@@ -798,6 +804,8 @@ init()
 │                                文字（全プロジェクト共通）│
 │  gitLocalReview_lineComments  行コメント              │
 │  gitLocalReview_commentFilter 「コメントあり」フィルタ │
+│  gitLocalReview_hideDoneLineComments チェック済み行   │
+│                                コメントの非表示ON/OFF   │
 │  gitLocalReview_autoCommentRules 自動行コメントのルール│
 │                                （全体設定）             │
 │  gitLocalReview_projectAutoCommentRules 同上          │

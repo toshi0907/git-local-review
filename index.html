@@ -135,6 +135,22 @@
 
     .word-diff-toggle { margin-right: 16px; }
 
+    /* "非表示" (hide all line comments) toggle in the top bar (issue #124). */
+    .line-comment-hide-all-btn {
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      background: #2d333b;
+      color: #adbac7;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .line-comment-hide-all-btn:hover:not([aria-pressed="true"]) { background: #373e47; }
+    .line-comment-hide-all-btn[aria-pressed="true"] { background: #58a6ff; color: #0b1116; }
+
     .filter-checkbox-group-label {
       white-space: nowrap;
     }
@@ -353,6 +369,13 @@
     }
 
     .encoding-row label { flex-shrink: 0; }
+
+    .settings-checkbox-row label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
 
     .encoding-row select,
     .proj-encoding select {
@@ -1397,6 +1420,12 @@
 
     .line-comment-row.flash .line-comment-cell { animation: line-comment-flash 1.5s ease-out; }
 
+    /* Line comment visibility (issue #124): classes set on #diff-container by
+       applyLineCommentVisibility(). Rows being edited stay visible so an
+       in-progress edit isn't hidden mid-typing. */
+    .hide-done-line-comments .line-comment-row.done:not(:has(.line-comment-form)),
+    .hide-all-line-comments .line-comment-row:not(:has(.line-comment-form)) { display: none; }
+
     /* ===== Drag & drop overlay ===== */
     .drop-overlay {
       display: none;
@@ -2225,6 +2254,7 @@
   </div>
   <div class="filter-checkbox-group comment-filter-toggle" id="comment-filter-group">
     <label class="filter-checkbox-label" title="行コメントが付いたハンクのみ表示します（レビュー状態の絞り込みと併用可）"><input type="checkbox" id="comment-filter-checkbox">💬コメントあり</label>
+    <button type="button" class="line-comment-hide-all-btn" id="hide-all-line-comments-btn" aria-pressed="false" aria-label="差分内の行コメントを一時的にすべて非表示" title="差分内の行コメントを一時的にすべて非表示にします（再読み込みで表示に戻ります）。チェック済みのみの非表示は設定から切り替えられます">非表示</button>
   </div>
   <button type="button" class="settings-toggle-btn" id="settings-modal-open-btn" title="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">⚙️</span> 設定
@@ -2404,6 +2434,9 @@
           <option value="euc-jp">EUC-JP</option>
         </select>
       </div>
+      <div class="encoding-row settings-checkbox-row">
+        <label title="チェック済みの行コメントを差分内に表示しません（メモパネルの一覧には表示されます）"><input type="checkbox" id="hide-done-line-comments-checkbox">チェック済みの行コメントを差分内で非表示にする</label>
+      </div>
     </div>
   </div>
 </div>
@@ -2552,6 +2585,8 @@ const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 const SK_LINE_COMMENTS    = 'gitLocalReview_lineComments';
 /** "コメントありのみ" diff filter toggle ('true' | 'false'), independent of SK_REVIEW_FILTER. */
 const SK_COMMENT_FILTER   = 'gitLocalReview_commentFilter';
+/** "チェック済み非表示" toggle for line comments in the diff ('true' | 'false'); issue #124. */
+const SK_HIDE_DONE_LINE_COMMENTS = 'gitLocalReview_hideDoneLineComments';
 /** Global auto line-comment rules: keyword → comment text added to matching diff lines. */
 const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
 /** Per-project auto line-comment rules: { [projectId]: rule[] }, same rule shape as SK_AUTO_COMMENT_RULES. */
@@ -2619,6 +2654,10 @@ const app = {
   reviewFilter: loadReviewFilter(),
   /** @type {boolean} When true, renderDiff() shows only hunks with at least one line comment (AND-ed with reviewFilter) */
   commentFilter: false,
+  /** @type {boolean} When true, checked (done) line comments are hidden in the diff (persisted, SK_HIDE_DONE_LINE_COMMENTS) */
+  hideDoneLineComments: false,
+  /** @type {boolean} When true, every line comment is temporarily hidden in the diff (not persisted; resets on reload) */
+  hideAllLineComments: false,
   /** Index into the flat, document-order list of currently rendered hunk cards
    *  that has keyboard focus (j/k to move, Space to cycle its review status). -1 = none. */
   focusedHunkIndex: -1,
@@ -3177,6 +3216,23 @@ function saveCommentFilter(enabled) {
     localStorage.setItem(SK_COMMENT_FILTER, enabled ? 'true' : 'false');
   } catch (e) {
     console.error('Failed to save comment filter preference:', e);
+  }
+}
+
+function loadHideDoneLineComments() {
+  try {
+    return localStorage.getItem(SK_HIDE_DONE_LINE_COMMENTS) === 'true';
+  } catch (e) {
+    console.error('Failed to load hide-done line comments preference:', e);
+    return false;
+  }
+}
+
+function saveHideDoneLineComments(enabled) {
+  try {
+    localStorage.setItem(SK_HIDE_DONE_LINE_COMMENTS, enabled ? 'true' : 'false');
+  } catch (e) {
+    console.error('Failed to save hide-done line comments preference:', e);
   }
 }
 
@@ -5872,6 +5928,21 @@ function updateHunkCommentBadge(badge, count) {
   badge.hidden = count === 0;
 }
 
+/**
+ * Reflects app.hideDoneLineComments / app.hideAllLineComments (issue #124)
+ * on the diff container's classes (CSS hides the rows, so no re-render is
+ * needed and the hunk filters/badges are unaffected) and on the top-bar controls.
+ */
+function applyLineCommentVisibility() {
+  const container = document.getElementById('diff-container');
+  container.classList.toggle('hide-done-line-comments', app.hideDoneLineComments);
+  container.classList.toggle('hide-all-line-comments', app.hideAllLineComments);
+  const checkbox = document.getElementById('hide-done-line-comments-checkbox');
+  if (checkbox) checkbox.checked = app.hideDoneLineComments;
+  const btn = document.getElementById('hide-all-line-comments-btn');
+  if (btn) btn.setAttribute('aria-pressed', String(app.hideAllLineComments));
+}
+
 /** The "+" button shown on hover in a line's line-number cell. */
 function buildLineCommentAddButton(record) {
   const btn = document.createElement('button');
@@ -6313,6 +6384,12 @@ function jumpToLineComment(filePath, hash, commentId) {
   }
 
   const row = Array.from(card.querySelectorAll('.line-comment-row')).find(r => r.dataset.commentId === commentId);
+  // A row hidden by the line-comment visibility toggles (issue #124) has no
+  // layout box, so scroll to the commented line itself instead.
+  if (row && row.getClientRects().length === 0) {
+    (findLineAnchorRow(card, Number(row.dataset.lineIdx)) || card).scrollIntoView({ block: 'center' });
+    return;
+  }
   const target = row || card;
   target.scrollIntoView({ block: 'center' });
   if (row) {
@@ -9900,6 +9977,18 @@ autoCommentModalOverlay.addEventListener('click', (e) => {
     app.commentFilter = commentFilterCheckbox.checked;
     saveCommentFilter(app.commentFilter);
     renderDiff();
+  });
+
+  app.hideDoneLineComments = loadHideDoneLineComments();
+  applyLineCommentVisibility();
+  document.getElementById('hide-done-line-comments-checkbox').addEventListener('change', (e) => {
+    app.hideDoneLineComments = e.target.checked;
+    saveHideDoneLineComments(app.hideDoneLineComments);
+    applyLineCommentVisibility();
+  });
+  document.getElementById('hide-all-line-comments-btn').addEventListener('click', () => {
+    app.hideAllLineComments = !app.hideAllLineComments;
+    applyLineCommentVisibility();
   });
 
   document.getElementById('project-sort-select').value = loadProjectSort();
