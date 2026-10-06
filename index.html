@@ -1323,6 +1323,24 @@
 
     .line-comment-time { font-size: 11px; color: #8b949e; margin-right: auto; }
 
+    /* Checked-state checkbox on a line comment (issue #120), styled like the memo checkbox. */
+    .line-comment-done-cb {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      flex-shrink: 0;
+      cursor: pointer;
+      accent-color: #1a7f37;
+    }
+
+    .line-comment-item .line-comment-done-cb { margin-top: 2px; }
+
+    .line-comment-row.done .line-comment-text,
+    .line-comment-item.done .line-comment-item-text {
+      text-decoration: line-through;
+      color: #8b949e;
+    }
+
     .line-comment-edit-btn,
     .line-comment-delete-btn {
       background: none;
@@ -3023,6 +3041,7 @@ function sanitizeLineCommentsData(parsed) {
                 text: c.text,
                 createdAt,
                 updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : createdAt,
+                done: !!c.done,
                 lineType: VALID_LINE_COMMENT_TYPES.includes(c.lineType) ? c.lineType : ' ',
                 lineText: typeof c.lineText === 'string' ? c.lineText.slice(0, LINE_COMMENT_SNAPSHOT_MAX) : '',
                 oldLabel: typeof c.oldLabel === 'number' ? c.oldLabel : '',
@@ -5518,6 +5537,7 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   // plain click — a leftover selection elsewhere on the page shouldn't block
   // focusing this hunk.
   card.addEventListener('click', handleLineCommentCardClick);
+  card.addEventListener('change', handleLineCommentCardChange);
   card.addEventListener('click', () => {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed &&
@@ -5700,6 +5720,7 @@ function addLineComment(filePath, hash, record, text) {
     text: trimmed,
     createdAt: now,
     updatedAt: now,
+    done: false,
     lineType: record.type,
     lineText: record.content.slice(0, LINE_COMMENT_SNAPSHOT_MAX),
     oldLabel: record.oldLabel,
@@ -5725,6 +5746,17 @@ function editLineComment(filePath, hash, idx, commentId, text) {
   if (!comment) return null;
   comment.text = trimmed;
   comment.updatedAt = Date.now();
+  saveAllLineComments(all);
+  return comment;
+}
+
+/** Sets a comment's checked (done) state, like a memo's checkbox. Returns the updated comment, or null if not found. */
+function setLineCommentDone(filePath, hash, idx, commentId, done) {
+  if (!app.currentProjectId) return null;
+  const all = loadAllLineComments();
+  const comment = findStoredLineComment(all, filePath, hash, idx, commentId);
+  if (!comment) return null;
+  comment.done = !!done;
   saveAllLineComments(all);
   return comment;
 }
@@ -5788,13 +5820,31 @@ function appendLineCommentRows(tbody, records, lineComments, colSpan) {
   }
 }
 
+/** The checked-state checkbox shown on a line comment (in the diff and in the memo panel list). */
+function buildLineCommentDoneCheckbox(done) {
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'line-comment-done-cb';
+  cb.checked = !!done;
+  cb.title = 'チェック（対応済み）';
+  cb.setAttribute('aria-label', '行コメントをチェック済みにする');
+  return cb;
+}
+
+/** Reflects a comment's checked state on its rendered diff row (if any). */
+function applyLineCommentDoneToRow(row, done) {
+  row.classList.toggle('done', done);
+  const cb = row.querySelector('.line-comment-done-cb');
+  if (cb) cb.checked = done;
+}
+
 /**
  * A rendered (read-only) comment row. Its edit/delete buttons are handled by
  * the hunk card's delegated click listener (handleLineCommentCardClick).
  */
 function buildLineCommentRow(idx, comment, colSpan) {
   const tr = document.createElement('tr');
-  tr.className = 'line-attached-row line-comment-row';
+  tr.className = 'line-attached-row line-comment-row' + (comment.done ? ' done' : '');
   tr.dataset.lineIdx = String(idx);
   tr.dataset.commentId = comment.id;
 
@@ -5807,6 +5857,8 @@ function buildLineCommentRow(idx, comment, colSpan) {
 
   const head = document.createElement('div');
   head.className = 'line-comment-head';
+
+  const doneCb = buildLineCommentDoneCheckbox(comment.done);
 
   const label = document.createElement('span');
   label.className = 'line-comment-label';
@@ -5830,6 +5882,7 @@ function buildLineCommentRow(idx, comment, colSpan) {
   delBtn.setAttribute('aria-label', 'コメントを削除');
   delBtn.textContent = '🗑';
 
+  head.appendChild(doneCb);
   head.appendChild(label);
   head.appendChild(time);
   head.appendChild(editBtn);
@@ -6096,6 +6149,10 @@ function handleLineCommentCardClick(e) {
   const lineEl = e.target.closest('[data-line-idx]');
   if (lineEl && card.contains(lineEl)) card.dataset.activeLineIdx = lineEl.dataset.lineIdx;
 
+  // A mouse click on a comment's checkbox shouldn't leave focus on it, or the
+  // keydown listener would treat it as typing and ignore j/k/c etc. afterwards.
+  if (e.target.classList.contains('line-comment-done-cb') && e.detail > 0) e.target.blur();
+
   const addBtn = e.target.closest('.line-comment-add-btn');
   if (addBtn) {
     openLineCommentComposer(card, Number(addBtn.dataset.lineIdx));
@@ -6113,6 +6170,22 @@ function handleLineCommentCardClick(e) {
       afterLineCommentsChanged(card);
     }
   }
+}
+
+/** Delegated change handler on each hunk card for the line comments' checkboxes. */
+function handleLineCommentCardChange(e) {
+  const cb = e.target.closest('.line-comment-done-cb');
+  if (!cb) return;
+  const card = e.currentTarget;
+  const row = cb.closest('.line-comment-row');
+  if (!row) return;
+  const comment = setLineCommentDone(card.dataset.filePath, card.dataset.hunkHash, Number(row.dataset.lineIdx), row.dataset.commentId, cb.checked);
+  if (!comment) {
+    cb.checked = !cb.checked; // not found in storage: revert
+    return;
+  }
+  applyLineCommentDoneToRow(row, comment.done);
+  afterLineCommentsChanged(card);
 }
 
 /**
@@ -6170,7 +6243,22 @@ function jumpToLineComment(filePath, hash, commentId) {
  */
 function buildLineCommentListItem(loc, comment, live) {
   const li = document.createElement('li');
-  li.className = 'line-comment-item' + (live ? '' : ' orphan');
+  li.className = 'line-comment-item' + (live ? '' : ' orphan') + (comment.done ? ' done' : '');
+
+  const doneCb = buildLineCommentDoneCheckbox(comment.done);
+  doneCb.addEventListener('change', () => {
+    const updated = setLineCommentDone(loc.filePath, loc.hash, loc.idx, comment.id, doneCb.checked);
+    if (!updated) {
+      doneCb.checked = !doneCb.checked;
+      return;
+    }
+    const card = getHunkCards().find(c => c.dataset.filePath === loc.filePath && c.dataset.hunkHash === loc.hash);
+    if (card) {
+      const row = Array.from(card.querySelectorAll('.line-comment-row')).find(r => r.dataset.commentId === comment.id);
+      if (row) applyLineCommentDoneToRow(row, updated.done);
+    }
+    afterLineCommentsChanged(card || null);
+  });
 
   const main = document.createElement(live ? 'button' : 'div');
   main.className = 'line-comment-item-main';
@@ -6214,6 +6302,7 @@ function buildLineCommentListItem(loc, comment, live) {
     afterLineCommentsChanged(card || null);
   });
 
+  li.appendChild(doneCb);
   li.appendChild(main);
   li.appendChild(delBtn);
   return li;
@@ -6268,7 +6357,9 @@ function renderLineCommentList() {
   }
 
   const total = live.length + orphans.length;
-  countEl.textContent = total > 0 ? `（${total}）` : '';
+  const doneCount = live.concat(orphans).filter(e => e.comment.done).length;
+  countEl.textContent = total > 0 ? `（${doneCount}/${total}）` : '';
+  countEl.title = total > 0 ? `チェック済み ${doneCount} 件 / 全 ${total} 件` : '';
   if (total === 0) {
     emptyEl.textContent = '行コメントはまだありません。行番号にマウスを乗せて「+」で追加できます。';
     emptyEl.style.display = 'block';
