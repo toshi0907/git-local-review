@@ -1321,6 +1321,15 @@
 
     div.line-comment-label { margin-bottom: 6px; }
 
+    .line-comment-auto-tag {
+      margin-left: 6px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #ddf4ff;
+      color: #0969da;
+      font-weight: 600;
+    }
+
     .line-comment-time { font-size: 11px; color: #8b949e; margin-right: auto; }
 
     /* Checked-state checkbox on a line comment (issue #120), styled like the memo checkbox. */
@@ -1710,6 +1719,37 @@
       cursor: pointer;
     }
     .extract-keyword-remove-btn:hover { background: #ffeef0; color: #cf222e; }
+
+    /* ===== Auto line comment modal ===== */
+    .auto-comment-help {
+      margin: 0 0 12px;
+      font-size: 12px;
+      color: #57606a;
+      line-height: 1.6;
+    }
+
+    .auto-comment-rule {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+    }
+
+    .auto-comment-text-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .auto-comment-text-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+    .auto-comment-apply-status { font-size: 12px; color: #1a7f37; }
 
     .extract-results-heading {
       font-weight: 600;
@@ -2195,6 +2235,9 @@
   <button type="button" class="extract-toggle-btn" id="extract-modal-open-btn" title="キーワード行抽出" aria-haspopup="dialog" aria-controls="extract-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">🔎</span> 抽出
   </button>
+  <button type="button" class="extract-toggle-btn" id="auto-comment-modal-open-btn" title="自動行コメント" aria-haspopup="dialog" aria-controls="auto-comment-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🤖</span> 自動コメント
+  </button>
   <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
     <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
   </button>
@@ -2455,6 +2498,29 @@
   </div>
 </div>
 
+<!-- Auto line comment modal: rules that add a fixed line comment to every
+     added/removed diff line matching a keyword, on diff load or on demand. -->
+<div class="modal-overlay" id="auto-comment-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auto-comment-modal-title">
+  <div class="modal extract-modal">
+    <div class="settings-modal-header">
+      <h2 id="auto-comment-modal-title">🤖 自動行コメント</h2>
+      <button type="button" class="settings-modal-close" id="auto-comment-modal-close" aria-label="閉じる">✕</button>
+    </div>
+    <div class="extract-modal-body">
+      <p class="auto-comment-help">キーワードに一致した差分行（追加・削除行）に、指定したコメントを行コメントとして追加します。diffファイルの読み込み・再読み込み時に自動で実行されるほか、「今すぐ適用」で手動実行もできます。同じ行に同じルールのコメントが二重に追加されることはなく、削除したコメントが再び追加されることもありません。</p>
+      <div class="extract-keywords-row-header">
+        <label>ルール</label>
+        <div class="extract-keywords-row-header-actions">
+          <span class="auto-comment-apply-status" id="auto-comment-apply-status" role="status"></span>
+          <button type="button" id="auto-comment-apply-btn" class="extract-keyword-bulk-toggle-btn" title="表示中のdiffにルールを今すぐ適用する">▶ 今すぐ適用</button>
+          <button type="button" id="auto-comment-add-btn" class="extract-keyword-add-btn" title="ルールを追加">+ ルール</button>
+        </div>
+      </div>
+      <div id="auto-comment-rules" class="extract-keywords"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -2486,6 +2552,12 @@ const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 const SK_LINE_COMMENTS    = 'gitLocalReview_lineComments';
 /** "コメントありのみ" diff filter toggle ('true' | 'false'), independent of SK_REVIEW_FILTER. */
 const SK_COMMENT_FILTER   = 'gitLocalReview_commentFilter';
+/** Global auto line-comment rules: keyword → comment text added to matching diff lines. */
+const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
+/** Per-project auto line-comment rules: { [projectId]: rule[] }, same rule shape as SK_AUTO_COMMENT_RULES. */
+const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
+/** Which auto rules already ran on which line: { [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }. */
+const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -3046,6 +3118,8 @@ function sanitizeLineCommentsData(parsed) {
                 lineText: typeof c.lineText === 'string' ? c.lineText.slice(0, LINE_COMMENT_SNAPSHOT_MAX) : '',
                 oldLabel: typeof c.oldLabel === 'number' ? c.oldLabel : '',
                 newLabel: typeof c.newLabel === 'number' ? c.newLabel : '',
+                // Set only on comments added by an auto line-comment rule.
+                autoRuleId: typeof c.autoRuleId === 'string' ? c.autoRuleId : '',
               };
             });
           if (list.length > 0) safeLines[idx] = list;
@@ -3069,12 +3143,15 @@ function loadAllLineComments() {
   }
 }
 
+/** @returns {boolean} whether the save succeeded */
 function saveAllLineComments(comments) {
   try {
     localStorage.setItem(SK_LINE_COMMENTS, JSON.stringify(comments));
+    return true;
   } catch (e) {
     console.error('Failed to save line comments to localStorage:', e);
     alert('行コメントの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+    return false;
   }
 }
 
@@ -5708,16 +5785,19 @@ function addLineComment(filePath, hash, record, text) {
   const trimmed = text.trim();
   if (!app.currentProjectId || !trimmed) return null;
   const all = loadAllLineComments();
-  const pid = app.currentProjectId;
-  if (!all[pid]) all[pid] = Object.create(null);
-  if (!all[pid][filePath]) all[pid][filePath] = Object.create(null);
-  if (!all[pid][filePath][hash]) all[pid][filePath][hash] = Object.create(null);
-  const lineMap = all[pid][filePath][hash];
-  if (!lineMap[record.idx]) lineMap[record.idx] = [];
+  const list = ensureChild(ensureChild(ensureChild(ensureChild(all, app.currentProjectId), filePath), hash), record.idx, true);
+  const comment = createLineCommentObject(record, trimmed);
+  list.push(comment);
+  saveAllLineComments(all);
+  return comment;
+}
+
+/** A new stored LineComment for `record` with already-trimmed `text`; `autoRuleId` marks one added by an auto rule. */
+function createLineCommentObject(record, text, autoRuleId = '') {
   const now = Date.now();
-  const comment = {
+  return {
     id: generateLineCommentId(),
-    text: trimmed,
+    text,
     createdAt: now,
     updatedAt: now,
     done: false,
@@ -5725,10 +5805,8 @@ function addLineComment(filePath, hash, record, text) {
     lineText: record.content.slice(0, LINE_COMMENT_SNAPSHOT_MAX),
     oldLabel: record.oldLabel,
     newLabel: record.newLabel,
+    autoRuleId,
   };
-  lineMap[record.idx].push(comment);
-  saveAllLineComments(all);
-  return comment;
 }
 
 function findStoredLineComment(all, filePath, hash, idx, commentId) {
@@ -5863,6 +5941,13 @@ function buildLineCommentRow(idx, comment, colSpan) {
   const label = document.createElement('span');
   label.className = 'line-comment-label';
   label.textContent = `💬 ${formatLineCommentLabel(comment.lineType, comment.oldLabel, comment.newLabel)}`;
+  if (comment.autoRuleId) {
+    const autoTag = document.createElement('span');
+    autoTag.className = 'line-comment-auto-tag';
+    autoTag.textContent = '🤖 自動';
+    autoTag.title = '自動行コメントのルールによって追加されたコメントです';
+    label.appendChild(autoTag);
+  }
 
   const time = document.createElement('span');
   time.className = 'line-comment-time';
@@ -6966,8 +7051,10 @@ async function activateProject(projectId) {
   // The active project's own keyword categories (issue #68) join the global
   // ones in the merged view, so the sidebar list changes with the project.
   renderKeywordCategoryList();
-  // Same reasoning applies to the extraction modal's own keyword list (issue #79).
+  // Same reasoning applies to the extraction modal's own keyword list (issue #79)
+  // and the auto line comment rules.
   renderExtractKeywordList();
+  renderAutoCommentRuleList();
 
   renderProjectList();
   // Clear the previous project's diff (and its checkboxes) immediately so
@@ -7042,6 +7129,7 @@ function deleteProject(projectId) {
   deleteLineCommentsForProject(projectId);
   deleteProjectKeywordCategories(projectId);
   deleteProjectExtractKeywords(projectId);
+  deleteAutoCommentDataForProject(projectId);
   deleteFileContent(projectId);
   deleteFileHandleRecord(projectId);
   invalidateProjectProgressCache(projectId);
@@ -7056,6 +7144,7 @@ function deleteProject(projectId) {
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
     renderKeywordCategoryList();
     renderExtractKeywordList();
+    renderAutoCommentRuleList();
   }
   refreshMemoUI();
 
@@ -7084,9 +7173,11 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   app.currentProjectId = id;
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, id);
+  applyAutoLineComments();
   refreshMemoUI();
   renderKeywordCategoryList();
   renderExtractKeywordList();
+  renderAutoCommentRuleList();
 
   renderProjectList();
   renderDiff();
@@ -7116,9 +7207,11 @@ function updateExistingProject(projectId, parsed, rawText, fileHandle = null, en
   app.currentProjectId = projectId;
   app.parsedDiff = parsed;
   localStorage.setItem(SK_CURRENT, projectId);
+  applyAutoLineComments();
   refreshMemoUI();
   renderKeywordCategoryList();
   renderExtractKeywordList();
+  renderAutoCommentRuleList();
 
   renderProjectList();
   renderDiff();
@@ -7192,10 +7285,14 @@ function sanitizeImportedProjects(rawProjects) {
  * same global/per-project split as `keywordCategories`/`projectKeywordCategories`.
  * schemaVersion 6: added `lineComments` (SK_LINE_COMMENTS per-line review
  * comments), merged per project on import the same way as `memos`.
+ * schemaVersion 7: added `autoCommentRules`/`projectAutoCommentRules` (auto
+ * line comment rules, merged by id like `extractKeywords`) and
+ * `autoCommentApplied` (SK_AUTO_COMMENT_APPLIED, replaced per project on
+ * import together with `lineComments`).
  */
 function buildExportData() {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     reviews: loadAllReviews(),
@@ -7205,6 +7302,9 @@ function buildExportData() {
     projectKeywordCategories: loadAllProjectKeywordCategories(),
     extractKeywords: loadGlobalExtractKeywords(),
     projectExtractKeywords: loadAllProjectExtractKeywords(),
+    autoCommentRules: loadGlobalAutoCommentRules(),
+    projectAutoCommentRules: loadAllProjectAutoCommentRules(),
+    autoCommentApplied: loadAllAutoCommentApplied(),
   };
 }
 
@@ -7264,6 +7364,26 @@ function mergeImportedExtractKeywords(rawGlobal, rawByProjectId) {
   saveAllProjectExtractKeywords(allProjectKeywords);
 }
 
+/** Merge imported auto line comment rules by id, same policy as mergeImportedExtractKeywords(). */
+function mergeImportedAutoCommentRules(rawGlobal, rawByProjectId) {
+  const importedGlobal = sanitizeAutoCommentRules(rawGlobal);
+  if (importedGlobal.length > 0) {
+    const byId = new Map(loadGlobalAutoCommentRules().map(r => [r.id, r]));
+    for (const r of importedGlobal) byId.set(r.id, r);
+    saveGlobalAutoCommentRules([...byId.values()]);
+  }
+
+  const importedByProject = sanitizeProjectAutoCommentRulesMap(rawByProjectId);
+  if (Object.keys(importedByProject).length === 0) return;
+  const allProjectRules = loadAllProjectAutoCommentRules();
+  for (const pid of Object.keys(importedByProject)) {
+    const byId = new Map((allProjectRules[pid] || []).map(r => [r.id, r]));
+    for (const r of importedByProject[pid]) byId.set(r.id, r);
+    allProjectRules[pid] = [...byId.values()];
+  }
+  saveAllProjectAutoCommentRules(allProjectRules);
+}
+
 /**
  * Merge parsed app-data (projects + reviews + keyword categories + extraction
  * keywords) into localStorage: same-ID projects/categories/keywords are
@@ -7280,6 +7400,7 @@ function mergeImportedData(data) {
   // (e.g. an auto-saved settings file written before any project was loaded).
   mergeImportedKeywordCategories(data.keywordCategories, data.projectKeywordCategories);
   mergeImportedExtractKeywords(data.extractKeywords, data.projectExtractKeywords);
+  mergeImportedAutoCommentRules(data.autoCommentRules, data.projectAutoCommentRules);
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
@@ -7304,6 +7425,18 @@ function mergeImportedData(data) {
     lineComments[pid] = importedLineComments[pid];
   }
   saveAllLineComments(lineComments);
+
+  // Keep each project's applied log in step with its (replaced) line comments:
+  // a project whose comments were replaced but has no imported log (e.g. a
+  // pre-v7 export) gets its local log dropped, so its auto comments can be
+  // re-added on the next load instead of being blocked by a stale log.
+  const importedApplied = sanitizeAutoCommentAppliedData(data.autoCommentApplied);
+  const applied = loadAllAutoCommentApplied();
+  for (const pid of new Set([...Object.keys(importedLineComments), ...Object.keys(importedApplied)])) {
+    if (importedApplied[pid]) applied[pid] = importedApplied[pid];
+    else delete applied[pid];
+  }
+  saveAllAutoCommentApplied(applied);
 
   return importedProjects.length;
 }
@@ -8280,6 +8413,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.key === 'Escape' && isAutoCommentModalOpen()) {
+    closeAutoCommentModal();
+    return;
+  }
+
   if (e.key === 'Escape' && !WIDE_LAYOUT_MEDIA_QUERY.matches && isMemoPanelOpen()) {
     closeMemoPanel();
     return;
@@ -8296,7 +8434,7 @@ document.addEventListener('keydown', (e) => {
   const tag = e.target && e.target.tagName;
   const isTyping = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable);
   const focusInMemoPanel = document.getElementById('memo-panel').contains(e.target);
-  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen() || focusInMemoPanel) return;
+  if (isTyping || modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen() || isAutoCommentModalOpen() || focusInMemoPanel) return;
 
   if (e.key === 'j') {
     e.preventDefault();
@@ -8387,7 +8525,7 @@ window.addEventListener('drop', async (e) => {
   dropOverlay.classList.remove('active');
 
   // Avoid stacking a new load on top of an already-open conflict, settings, keyword-highlight, or extraction modal.
-  if (modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen()) return;
+  if (modalOverlay.classList.contains('active') || isSettingsModalOpen() || isKeywordModalOpen() || isExtractModalOpen() || isAutoCommentModalOpen()) return;
 
   const { files, handles } = await filesFromDataTransfer(e.dataTransfer);
   if (files.length === 0) return;
@@ -9239,6 +9377,504 @@ extractModalOverlay.addEventListener('click', (e) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Auto line comments
+//
+// Each rule pairs a keyword (comma-separated, OR — parsed via parseKeywords())
+// with a comment text. Every added/removed diff line matching the rule (the
+// same matching as keyword line extraction: plain substring search,
+// case-insensitive unless `caseSensitive`, optional `addedOnly` and
+// `fileFilter`) gets a line comment with that text, marked with the rule's id
+// (LineComment.autoRuleId). Rules run automatically whenever a diff file is
+// loaded/reloaded into a project (createNewProject()/updateExistingProject()),
+// and manually via the modal's "今すぐ適用" button.
+//
+// Repeated runs must not add the same comment twice, and a comment the user
+// deleted must not come back, so applyAutoLineComments() skips a
+// (rule, filePath, hunk hash, line index) when any of these holds:
+// - SK_AUTO_COMMENT_APPLIED already records that rule for that line;
+// - the line already has a comment from the same rule;
+// - the line already has a comment with exactly the same text.
+// Each line a rule matched is recorded in SK_AUTO_COMMENT_APPLIED (even when
+// skipped for the latter two reasons). Because the key includes the hunk
+// hash, a hunk whose content changed counts as new and is commented again.
+//
+// Rules have the same global/project scope split as extraction keywords:
+// SK_AUTO_COMMENT_RULES holds a JSON-encoded array of
+// { id, keyword, comment, fileFilter, caseSensitive, addedOnly, enabled }
+// rules, SK_PROJECT_AUTO_COMMENT_RULES a { [projectId]: rule[] } map.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateAutoCommentRuleId() {
+  return `acr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Keep only well-formed rules; drop anything with an unexpected shape. */
+function sanitizeAutoCommentRules(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const result = [];
+  for (const r of rawList) {
+    if (!r || typeof r !== 'object' || typeof r.keyword !== 'string') continue;
+    result.push({
+      id: typeof r.id === 'string' && r.id ? r.id : generateAutoCommentRuleId(),
+      keyword: r.keyword,
+      comment: typeof r.comment === 'string' ? r.comment : '',
+      fileFilter: typeof r.fileFilter === 'string' ? r.fileFilter : '',
+      caseSensitive: r.caseSensitive === true,
+      addedOnly: r.addedOnly === true,
+      enabled: r.enabled !== false,
+    });
+  }
+  return result;
+}
+
+function loadGlobalAutoCommentRules() {
+  try {
+    return sanitizeAutoCommentRules(JSON.parse(localStorage.getItem(SK_AUTO_COMMENT_RULES) || '[]'));
+  } catch (e) {
+    console.error('Failed to load auto comment rules from localStorage:', e);
+    return [];
+  }
+}
+
+function saveGlobalAutoCommentRules(rules) {
+  try {
+    localStorage.setItem(SK_AUTO_COMMENT_RULES, JSON.stringify(rules));
+  } catch (e) {
+    console.error('Failed to save auto comment rules to localStorage:', e);
+    alert('自動行コメントのルールの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+// Same prototype-pollution defense as sanitizeProjectExtractKeywordsMap().
+function sanitizeProjectAutoCommentRulesMap(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+  for (const pid of Object.keys(parsed)) {
+    const rules = sanitizeAutoCommentRules(parsed[pid]);
+    if (rules.length > 0) safe[pid] = rules;
+  }
+  return safe;
+}
+
+function loadAllProjectAutoCommentRules() {
+  try {
+    return sanitizeProjectAutoCommentRulesMap(JSON.parse(localStorage.getItem(SK_PROJECT_AUTO_COMMENT_RULES) || '{}'));
+  } catch (e) {
+    console.error('Failed to load project auto comment rules from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllProjectAutoCommentRules(byProjectId) {
+  try {
+    localStorage.setItem(SK_PROJECT_AUTO_COMMENT_RULES, JSON.stringify(byProjectId));
+  } catch (e) {
+    console.error('Failed to save project auto comment rules to localStorage:', e);
+    alert('自動行コメントのルールの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function loadProjectAutoCommentRules(projectId) {
+  if (!projectId) return [];
+  return loadAllProjectAutoCommentRules()[projectId] || [];
+}
+
+function saveProjectAutoCommentRules(projectId, rules) {
+  if (!projectId) return;
+  const all = loadAllProjectAutoCommentRules();
+  all[projectId] = rules;
+  saveAllProjectAutoCommentRules(all);
+}
+
+/** Merged, scope-tagged view (global + the active project's own rules), like loadExtractKeywords(). */
+function loadAutoCommentRules() {
+  const global = loadGlobalAutoCommentRules().map(r => ({ ...r, scope: 'global' }));
+  if (!app.currentProjectId) return global;
+  const project = loadProjectAutoCommentRules(app.currentProjectId).map(r => ({ ...r, scope: 'project' }));
+  return [...global, ...project];
+}
+
+/**
+ * Rebuild the applied-rule log with validated shapes and null-prototype maps
+ * (it may come from imported JSON). Same nesting as SK_LINE_COMMENTS, with
+ * a de-duplicated rule-id array as each leaf; empty leaves are dropped.
+ */
+function sanitizeAutoCommentAppliedData(parsed) {
+  const safe = Object.create(null);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+  for (const pid of Object.keys(parsed)) {
+    const fileMap = parsed[pid];
+    if (!fileMap || typeof fileMap !== 'object') continue;
+    const safeFiles = Object.create(null);
+    for (const fp of Object.keys(fileMap)) {
+      const hashMap = fileMap[fp];
+      if (!hashMap || typeof hashMap !== 'object') continue;
+      const safeHashes = Object.create(null);
+      for (const h of Object.keys(hashMap)) {
+        const lineMap = hashMap[h];
+        if (!lineMap || typeof lineMap !== 'object') continue;
+        const safeLines = Object.create(null);
+        for (const idx of Object.keys(lineMap)) {
+          if (!/^\d+$/.test(idx) || !Array.isArray(lineMap[idx])) continue;
+          const ids = [...new Set(lineMap[idx].filter(id => typeof id === 'string' && id))];
+          if (ids.length > 0) safeLines[idx] = ids;
+        }
+        if (Object.keys(safeLines).length > 0) safeHashes[h] = safeLines;
+      }
+      if (Object.keys(safeHashes).length > 0) safeFiles[fp] = safeHashes;
+    }
+    if (Object.keys(safeFiles).length > 0) safe[pid] = safeFiles;
+  }
+  return safe;
+}
+
+function loadAllAutoCommentApplied() {
+  try {
+    return sanitizeAutoCommentAppliedData(JSON.parse(localStorage.getItem(SK_AUTO_COMMENT_APPLIED) || '{}'));
+  } catch (e) {
+    console.error('Failed to load auto comment log from localStorage:', e);
+    return Object.create(null);
+  }
+}
+
+function saveAllAutoCommentApplied(applied) {
+  try {
+    localStorage.setItem(SK_AUTO_COMMENT_APPLIED, JSON.stringify(applied));
+  } catch (e) {
+    console.error('Failed to save auto comment log to localStorage:', e);
+    alert('自動行コメントの適用履歴の保存に失敗しました。ストレージの容量が不足している可能性があります。\n削除した自動コメントが再び追加されることがあります。');
+  }
+}
+
+/** Drops a deleted project's own auto rules and applied-rule log; global rules are untouched. */
+function deleteAutoCommentDataForProject(projectId) {
+  const rules = loadAllProjectAutoCommentRules();
+  if (projectId in rules) {
+    delete rules[projectId];
+    saveAllProjectAutoCommentRules(rules);
+  }
+  const applied = loadAllAutoCommentApplied();
+  if (projectId in applied) {
+    delete applied[projectId];
+    saveAllAutoCommentApplied(applied);
+  }
+}
+
+/** Returns obj[key], creating it as a null-prototype object (or `[]` when `asArray`) first if missing. */
+function ensureChild(obj, key, asArray = false) {
+  if (!obj[key]) obj[key] = asArray ? [] : Object.create(null);
+  return obj[key];
+}
+
+/**
+ * Runs every enabled, non-empty auto rule against the current project's
+ * loaded diff (app.parsedDiff) and adds the resulting line comments,
+ * skipping lines already handled (see this section's header comment).
+ * Saves only when something changed. Does not re-render.
+ * @returns {number} number of comments added
+ */
+function applyAutoLineComments() {
+  const pid = app.currentProjectId;
+  if (!pid || !app.parsedDiff) return 0;
+  const rules = loadAutoCommentRules()
+    .map(r => {
+      const keywords = parseKeywords(r.keyword);
+      return {
+        ...r,
+        matchKeywords: r.caseSensitive ? keywords : keywords.map(kw => kw.toLowerCase()),
+        lowerFileFilter: r.fileFilter.trim().toLowerCase(),
+        text: r.comment.trim(),
+      };
+    })
+    .filter(r => r.enabled && r.matchKeywords.length > 0 && r.text);
+  if (rules.length === 0) return 0;
+
+  const allComments = loadAllLineComments();
+  const allApplied = loadAllAutoCommentApplied();
+  let added = 0;
+  let logChanged = false;
+
+  for (const file of app.parsedDiff) {
+    const lowerPath = file.filePath.toLowerCase();
+    const fileRules = rules.filter(r => !r.lowerFileFilter || lowerPath.includes(r.lowerFileFilter));
+    if (fileRules.length === 0) continue;
+    for (const hunk of file.hunks) {
+      for (const record of computeLineRecords(hunk)) {
+        if (record.type !== '+' && record.type !== '-') continue;
+        let lowerContent = null;
+        for (const rule of fileRules) {
+          if (rule.addedOnly && record.type !== '+') continue;
+          let content = record.content;
+          if (!rule.caseSensitive) {
+            if (lowerContent === null) lowerContent = record.content.toLowerCase();
+            content = lowerContent;
+          }
+          if (!rule.matchKeywords.some(kw => content.includes(kw))) continue;
+
+          const appliedIds = ensureChild(ensureChild(ensureChild(ensureChild(allApplied, pid), file.filePath), hunk.hash), record.idx, true);
+          if (appliedIds.includes(rule.id)) continue;
+          appliedIds.push(rule.id);
+          logChanged = true;
+
+          const projectComments = allComments[pid];
+          const existing = (projectComments && projectComments[file.filePath] && projectComments[file.filePath][hunk.hash] &&
+            projectComments[file.filePath][hunk.hash][record.idx]) || [];
+          if (existing.some(c => c.autoRuleId === rule.id || c.text === rule.text)) continue;
+
+          const list = ensureChild(ensureChild(ensureChild(ensureChild(allComments, pid), file.filePath), hunk.hash), record.idx, true);
+          list.push(createLineCommentObject(record, rule.text, rule.id));
+          added++;
+        }
+      }
+    }
+  }
+
+  // Comments first: if they fail to save, don't record those lines as done,
+  // so the next run can still add them.
+  if (added > 0 && !saveAllLineComments(allComments)) return 0;
+  if (logChanged) saveAllAutoCommentApplied(allApplied);
+  if (logChanged || added > 0) scheduleSettingsAutoSave();
+  return added;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto line comments UI: a modal listing every rule (global + the active
+// project's own), editable in place like the extraction keyword rows, plus
+// a "今すぐ適用" button that runs applyAutoLineComments() on demand.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Which store (global or the active project's own) an auto rule id currently lives in, or null if neither. */
+function findAutoCommentRuleScope(id) {
+  if (loadGlobalAutoCommentRules().some(r => r.id === id)) return 'global';
+  if (app.currentProjectId && loadProjectAutoCommentRules(app.currentProjectId).some(r => r.id === id)) return 'project';
+  return null;
+}
+
+/** Updates a single rule's fields in place without rebuilding the row list, so the input being edited keeps focus. */
+function updateAutoCommentRule(id, patch) {
+  const scope = findAutoCommentRuleScope(id);
+  if (scope === 'global') {
+    const rules = loadGlobalAutoCommentRules();
+    const rule = rules.find(r => r.id === id);
+    if (!rule) return;
+    Object.assign(rule, patch);
+    saveGlobalAutoCommentRules(rules);
+  } else if (scope === 'project') {
+    const rules = loadProjectAutoCommentRules(app.currentProjectId);
+    const rule = rules.find(r => r.id === id);
+    if (!rule) return;
+    Object.assign(rule, patch);
+    saveProjectAutoCommentRules(app.currentProjectId, rules);
+  } else {
+    return;
+  }
+  scheduleSettingsAutoSave();
+}
+
+/** Moves a rule between the global store and the active project's own store, keeping its id (so its applied log still matches). */
+function moveAutoCommentRuleScope(id, newScope) {
+  const fromScope = findAutoCommentRuleScope(id);
+  if (!fromScope || fromScope === newScope) return;
+  if (newScope === 'project' && !app.currentProjectId) return;
+
+  const fromRules = fromScope === 'global' ? loadGlobalAutoCommentRules() : loadProjectAutoCommentRules(app.currentProjectId);
+  const idx = fromRules.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const [rule] = fromRules.splice(idx, 1);
+  if (fromScope === 'global') saveGlobalAutoCommentRules(fromRules);
+  else saveProjectAutoCommentRules(app.currentProjectId, fromRules);
+
+  if (newScope === 'global') {
+    saveGlobalAutoCommentRules([...loadGlobalAutoCommentRules(), rule]);
+  } else {
+    saveProjectAutoCommentRules(app.currentProjectId, [...loadProjectAutoCommentRules(app.currentProjectId), rule]);
+  }
+  scheduleSettingsAutoSave();
+  renderAutoCommentRuleList();
+}
+
+/** Deletes a rule. Comments it already added are kept (they're ordinary line comments from then on). */
+function deleteAutoCommentRule(id) {
+  const scope = findAutoCommentRuleScope(id);
+  if (scope === 'global') {
+    saveGlobalAutoCommentRules(loadGlobalAutoCommentRules().filter(r => r.id !== id));
+  } else if (scope === 'project') {
+    saveProjectAutoCommentRules(app.currentProjectId, loadProjectAutoCommentRules(app.currentProjectId).filter(r => r.id !== id));
+  }
+  scheduleSettingsAutoSave();
+  renderAutoCommentRuleList();
+}
+
+/** New rules always start global; move them to the active project via the scope selector afterwards. */
+function addAutoCommentRule() {
+  const rules = loadGlobalAutoCommentRules();
+  rules.push({ id: generateAutoCommentRuleId(), keyword: '', comment: '', fileFilter: '', caseSensitive: false, addedOnly: false, enabled: true });
+  saveGlobalAutoCommentRules(rules);
+  scheduleSettingsAutoSave();
+  renderAutoCommentRuleList();
+}
+
+/** A labelled checkbox (e.g. "Aa", "+のみ") bound to one boolean rule field. */
+function buildAutoCommentRuleToggle(rule, field, text, title, ariaLabel) {
+  const label = document.createElement('label');
+  label.className = 'extract-keyword-case-label';
+  label.title = title;
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'extract-keyword-case-toggle';
+  cb.checked = !!rule[field];
+  cb.setAttribute('aria-label', ariaLabel);
+  cb.addEventListener('change', () => updateAutoCommentRule(rule.id, { [field]: cb.checked }));
+  label.appendChild(cb);
+  label.appendChild(document.createTextNode(text));
+  return label;
+}
+
+function buildAutoCommentRuleRow(rule) {
+  const wrap = document.createElement('div');
+  wrap.className = 'auto-comment-rule';
+  if (!rule.enabled) wrap.classList.add('extract-keyword-row-disabled');
+
+  const row = document.createElement('div');
+  row.className = 'extract-keyword-row';
+
+  const enableToggle = document.createElement('input');
+  enableToggle.type = 'checkbox';
+  enableToggle.className = 'extract-keyword-enable-toggle';
+  enableToggle.checked = rule.enabled;
+  enableToggle.title = 'このルールを有効にする';
+  enableToggle.setAttribute('aria-label', 'このルールを有効にする');
+  enableToggle.addEventListener('change', () => {
+    updateAutoCommentRule(rule.id, { enabled: enableToggle.checked });
+    wrap.classList.toggle('extract-keyword-row-disabled', !enableToggle.checked);
+  });
+
+  const keywordInput = document.createElement('input');
+  keywordInput.type = 'text';
+  keywordInput.className = 'extract-keyword-input';
+  keywordInput.value = rule.keyword;
+  keywordInput.placeholder = 'キーワード 例: TODO, FIXME';
+  keywordInput.title = 'カンマ区切りで複数指定できます（いずれかに一致した行が対象）';
+  keywordInput.setAttribute('aria-label', 'キーワード（カンマ区切り）');
+  keywordInput.addEventListener('input', () => updateAutoCommentRule(rule.id, { keyword: keywordInput.value }));
+
+  const fileFilterInput = document.createElement('input');
+  fileFilterInput.type = 'text';
+  fileFilterInput.className = 'extract-keyword-file-input';
+  fileFilterInput.value = rule.fileFilter;
+  fileFilterInput.placeholder = '対象ファイル名（任意）';
+  fileFilterInput.title = 'ファイルパスの部分一致で絞り込みます（大文字小文字は区別しません）。未入力なら全ファイルが対象です';
+  fileFilterInput.setAttribute('aria-label', '対象ファイル名（部分一致、未入力なら全ファイル）');
+  fileFilterInput.addEventListener('input', () => updateAutoCommentRule(rule.id, { fileFilter: fileFilterInput.value }));
+
+  const scopeSelect = document.createElement('select');
+  scopeSelect.className = 'extract-keyword-scope-select';
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
+  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
+  const globalOption = document.createElement('option');
+  globalOption.value = 'global';
+  globalOption.textContent = '全体';
+  const projectOption = document.createElement('option');
+  projectOption.value = 'project';
+  projectOption.textContent = 'プロジェクト';
+  projectOption.disabled = !app.currentProjectId;
+  scopeSelect.appendChild(globalOption);
+  scopeSelect.appendChild(projectOption);
+  scopeSelect.value = rule.scope;
+  scopeSelect.addEventListener('change', () => moveAutoCommentRuleScope(rule.id, scopeSelect.value));
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'extract-keyword-remove-btn';
+  removeBtn.title = 'このルールを削除（追加済みのコメントは残ります）';
+  removeBtn.setAttribute('aria-label', 'ルールを削除');
+  removeBtn.textContent = '×';
+  removeBtn.addEventListener('click', () => deleteAutoCommentRule(rule.id));
+
+  row.appendChild(enableToggle);
+  row.appendChild(keywordInput);
+  row.appendChild(buildAutoCommentRuleToggle(rule, 'caseSensitive', 'Aa',
+    'オンにすると、キーワードの大文字小文字を区別して一致させます（オフなら区別しません）', 'このルールで大文字小文字を区別する'));
+  row.appendChild(buildAutoCommentRuleToggle(rule, 'addedOnly', '+のみ',
+    'オンにすると、追加された行（+ で始まる行）のみを対象にします', 'このルールで追加された行のみを対象にする'));
+  row.appendChild(fileFilterInput);
+  row.appendChild(scopeSelect);
+  row.appendChild(removeBtn);
+
+  const commentInput = document.createElement('textarea');
+  commentInput.className = 'auto-comment-text-input';
+  commentInput.rows = 2;
+  commentInput.maxLength = 5000;
+  commentInput.value = rule.comment;
+  commentInput.placeholder = '一致した行に追加するコメント';
+  commentInput.setAttribute('aria-label', '追加するコメント');
+  commentInput.addEventListener('input', () => updateAutoCommentRule(rule.id, { comment: commentInput.value }));
+
+  wrap.appendChild(row);
+  wrap.appendChild(commentInput);
+  return wrap;
+}
+
+function renderAutoCommentRuleList() {
+  const container = document.getElementById('auto-comment-rules');
+  container.innerHTML = '';
+  document.getElementById('auto-comment-apply-btn').disabled = !app.parsedDiff;
+  const rules = loadAutoCommentRules();
+  if (rules.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'extract-keywords-empty';
+    empty.textContent = 'ルールがありません。「+ ルール」から追加してください。';
+    container.appendChild(empty);
+    return;
+  }
+  for (const rule of rules) container.appendChild(buildAutoCommentRuleRow(rule));
+}
+
+/** "今すぐ適用": runs the rules on the current diff and reports how many comments were added. */
+function runAutoLineCommentsManually() {
+  if (!app.parsedDiff) return;
+  const added = applyAutoLineComments();
+  if (added > 0) {
+    renderDiff();
+    refreshMemoBadge();
+  }
+  const status = document.getElementById('auto-comment-apply-status');
+  status.textContent = added > 0 ? `${added} 件の行コメントを追加しました。` : '新たに追加する行コメントはありませんでした。';
+}
+
+renderAutoCommentRuleList();
+document.getElementById('auto-comment-add-btn').addEventListener('click', addAutoCommentRule);
+document.getElementById('auto-comment-apply-btn').addEventListener('click', runAutoLineCommentsManually);
+
+// Auto line comment modal open/close: its own overlay/backdrop-click/Escape handling.
+const autoCommentModalOverlay = document.getElementById('auto-comment-modal-overlay');
+
+function isAutoCommentModalOpen() {
+  return autoCommentModalOverlay.classList.contains('active');
+}
+
+function openAutoCommentModal() {
+  autoCommentModalOverlay.classList.add('active');
+  document.getElementById('auto-comment-apply-status').textContent = '';
+  renderAutoCommentRuleList();
+  document.getElementById('auto-comment-modal-open-btn').setAttribute('aria-expanded', 'true');
+  document.getElementById('auto-comment-modal-close').focus();
+}
+
+function closeAutoCommentModal() {
+  autoCommentModalOverlay.classList.remove('active');
+  const openBtn = document.getElementById('auto-comment-modal-open-btn');
+  openBtn.setAttribute('aria-expanded', 'false');
+  if (autoCommentModalOverlay.contains(document.activeElement)) openBtn.focus();
+}
+
+document.getElementById('auto-comment-modal-open-btn').addEventListener('click', openAutoCommentModal);
+document.getElementById('auto-comment-modal-close').addEventListener('click', closeAutoCommentModal);
+autoCommentModalOverlay.addEventListener('click', (e) => {
+  if (e.target === autoCommentModalOverlay) closeAutoCommentModal();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
@@ -9297,6 +9933,7 @@ extractModalOverlay.addEventListener('click', (e) => {
       // renderExtractKeywordList() calls at script load couldn't have shown yet.
       renderKeywordCategoryList();
       renderExtractKeywordList();
+      renderAutoCommentRuleList();
       await restoreProjectDiff(proj);
     }
   } else {

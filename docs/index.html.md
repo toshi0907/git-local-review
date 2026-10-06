@@ -24,6 +24,7 @@
    - [Build a single hunk card](#build-a-single-hunk-card)
    - [Keyboard navigation](#keyboard-navigation)
    - [Line comments](#line-comments)
+   - [Auto line comments](#auto-line-comments)
    - [Review memos](#review-memos)
    - [Export / Import](#export--import)
    - [File System Access API — file handles](#file-system-access-api--file-handles)
@@ -133,6 +134,8 @@ test/                ← テスト用 .diff サンプルファイル
 | **Drag & drop** | ドラッグ&ドロップ対応 |
 | **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う。UI自体はトップバーの「🎨 ハイライト」ボタンで開く専用モーダル `#keyword-modal-overlay`（issue #93。以前は設定モーダル内にあった）にある |
 | **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・対象ファイル名（issue #92）・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
+| **Auto line comments** | 自動行コメントのデータ層。ルール（キーワード＋コメント本文）の保存（全体/プロジェクト）、適用済みログ、ルールを現在の diff に適用する `applyAutoLineComments()`。詳細は [Auto line comments](#auto-line-comments) を参照 |
+| **Auto line comments UI** | トップバーの「🤖 自動コメント」ボタンで開くモーダル `#auto-comment-modal-overlay` のルール編集UI（有効/無効・キーワード・Aa・+のみ・対象ファイル名・適用範囲・削除・コメント本文）、「▶ 今すぐ適用」ボタン（`runAutoLineCommentsManually()`）、モーダルの開閉処理。行編集UIの見た目はキーワード行抽出のクラス（`.extract-keyword-*`）を流用する |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
@@ -166,6 +169,8 @@ test/                ← テスト用 .diff サンプルファイル
           ├─ saveProjects() / saveFileContent()  localStorage に保存
           │
           ├─ app.currentProjectId = id  ランタイム状態を更新
+          │
+          ├─ applyAutoLineComments()  自動行コメントのルールを適用
           │
           └─ renderDiff()             画面を再描画
 ```
@@ -210,6 +215,9 @@ const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 const SK_LINE_COMMENTS   = 'gitLocalReview_lineComments';
 const SK_COMMENT_FILTER  = 'gitLocalReview_commentFilter';
+const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
+const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
+const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 ```
 
 `SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled, caseSensitive }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。モーダル上部の「全て有効」「全て無効」ボタン（`setAllKeywordCategoriesEnabled(enabled, scope)`、issue #111）では、現在表示中の全カテゴリ（全体設定 + アクティブプロジェクト自身のカテゴリ）の `enabled` を一括変更できます（キーワード行抽出の `setAllExtractKeywordsEnabled()` と同じパターン）。`scope` 引数（省略時 `'all'`、issue #113）に `'global'` / `'project'` を渡すと、対象を全体設定または現在のプロジェクト自身のカテゴリだけに絞れます。これに対応する「全体設定を全て有効」「全体設定を全て無効」「プロジェクトの設定を全て有効」「プロジェクトの設定を全て無効」の4ボタンがモーダル上部に並び、プロジェクト側の2ボタンはアクティブなプロジェクトが無いとき無効化されます（`renderKeywordCategoryList()` が毎回 `disabled` を更新）。`caseSensitive`（issue #95、真偽値）はこのカテゴリのキーワード一致で大文字小文字を区別するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトは区別しない＝従来通りの挙動）。`findRawKeywordRanges(text, keywords, caseSensitive)` がこのフラグに応じて比較前の `toLowerCase()` をスキップし、`getActiveKeywordGroups()` の返す各グループにも `caseSensitive` が含まれて `findKeywordRanges()`／`applyKeywordHighlight()` に伝播します。件数バッジ（`countKeywordMatches(keywords, caseSensitive)`）にも同じフラグが渡されるため、大文字小文字の区別有無でカウント結果も変わります。設定UIではカテゴリ行の「Aa」チェックボックスで切り替えます。
@@ -225,6 +233,8 @@ const SK_COMMENT_FILTER  = 'gitLocalReview_commentFilter';
 `SK_WORD_DIFF` は `'true' | 'false'` の文字列一つだけを保持する単純なキーで、トップバーの「単語単位で差分表示」チェックボックスの状態を `SK_VIEW_MODE`（Unified / Split）とは独立に永続化します（`loadWordDiff()` / `saveWordDiff()`）。詳細は [Word-level diff highlighting](#build-a-single-hunk-card) を参照してください。
 
 `SK_LINE_COMMENTS` は行コメントを `{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } }` の形で保持します（`loadAllLineComments()` / `saveAllLineComments()`、不正値は `sanitizeLineCommentsData()` が除去）。`SK_COMMENT_FILTER` は「💬コメントあり」表示フィルタの ON/OFF を `'true' | 'false'` の文字列で保持し、`SK_REVIEW_FILTER` とは独立しています（`loadCommentFilter()` / `saveCommentFilter()`）。詳細は [Line comments](#line-comments) を参照してください。
+
+`SK_AUTO_COMMENT_RULES` / `SK_PROJECT_AUTO_COMMENT_RULES` は自動行コメントのルール（全体設定の配列 / `{ [projectId]: rule[] }`）、`SK_AUTO_COMMENT_APPLIED` は「どのルールをどの行に適用済みか」のログ（`{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }`）です。詳細は [Auto line comments](#auto-line-comments) を参照してください。
 
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
@@ -508,7 +518,7 @@ setFocusedHunkStatus(value)  // 1/2/3 の処理
 diff の1行に付けるレビューコメントです。
 
 ```
-LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', lineText, oldLabel, newLabel }
+LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', lineText, oldLabel, newLabel, autoRuleId }
 保存先: SK_LINE_COMMENTS[projectId][filePath][hunk.hash][lineIdx] = LineComment[]
 ```
 
@@ -521,6 +531,25 @@ LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', line
 - **`c` キー:** カードのクリック時に最後にクリックした行を `card.dataset.activeLineIdx` に記録し、`c` ではその行（無ければハンク内最初の `+`/`-` 行）の入力欄を開きます。
 - **一覧:** `renderLineCommentList()` がメモパネルの `#line-comment-section` に、`app.parsedDiff` の順でコメントを並べます。クリックで `jumpToLineComment()` が該当ハンクを展開・フォーカスし、コメント行をスクロール表示して一瞬ハイライト（`.flash`）します。現在の diff に `(filePath, hash)` が存在しない、または `lineIdx` が範囲外のコメントは「現在の diff に見つからないコメント」として末尾にまとめ、削除のみ可能です。
 - **ライフサイクル:** プロジェクト削除（`deleteProject()`）で削除されます。プロジェクトの「リセット」（レビュー状態のクリア）では削除しません。エクスポート/インポートの対象です。
+- **自動コメント:** `autoRuleId` は [Auto line comments](#auto-line-comments) のルールが追加したコメントにだけ入るルールID（手動コメントは `''`）で、コメント行のラベルに「🤖 自動」タグを表示します（`buildLineCommentRow()`）。それ以外は通常のコメントと同じく編集・チェック・削除できます。
+
+---
+
+### Auto line comments
+
+キーワードに一致した差分行に、決まったコメントを行コメントとして自動追加する機能です。
+
+```
+Rule: { id, keyword, comment, fileFilter, caseSensitive, addedOnly, enabled }
+保存先: SK_AUTO_COMMENT_RULES = Rule[]（全体）/ SK_PROJECT_AUTO_COMMENT_RULES[projectId] = Rule[]
+適用済みログ: SK_AUTO_COMMENT_APPLIED[projectId][filePath][hunk.hash][lineIdx] = ruleId[]
+```
+
+- **一致判定:** キーワード行抽出（`extractKeywordMatches()`）と同じです。対象は追加/削除行のみ（コンテキスト行は対象外）、`keyword` は `parseKeywords()` でカンマ区切り（OR）、`caseSensitive` / `addedOnly` / `fileFilter`（ファイルパスの部分一致、大文字小文字を区別しない）も同じ意味です。`enabled: false`、キーワードが空、コメント本文が空のルールは無視します。
+- **スコープ:** キーワード行抽出と同じ全体/プロジェクトの2ストア構成で、`loadAutoCommentRules()` がマージ済みビュー（各要素に `scope`）を返し、`moveAutoCommentRuleScope()` がストア間を移動します（ID は維持されるため適用済みログもそのまま有効）。
+- **実行タイミング:** `createNewProject()` / `updateExistingProject()`（diff ファイルの新規読み込み・同名プロジェクトの更新・再読み込みボタンのすべてがここを通る）が `renderDiff()` の前に `applyAutoLineComments()` を呼びます。プロジェクト切り替え（保存済み diff の復元）では実行しません。手動実行はモーダルの「▶ 今すぐ適用」（`runAutoLineCommentsManually()`。追加件数をモーダル内に表示し、追加があれば `renderDiff()`）です。
+- **重複防止:** 一致した (ルール, filePath, hunk.hash, lineIdx) ごとに次のいずれかに当てはまれば追加しません。(1) 適用済みログにそのルールIDがある、(2) その行に同じルールのコメント（`autoRuleId` 一致）がある、(3) その行に同じ本文のコメントがある。一致した行は（スキップした場合も含め）適用済みログに記録するため、ユーザーが削除した自動コメントが再追加されることはありません。ログのキーにハンクハッシュを含むため、内容が変わったハンクは新しいハンクとして再度評価されます。ルールのコメント本文を後から変更しても、適用済みの行には再追加されません。コメントの保存に失敗した場合は適用済みログも保存しないため、次回の実行で再度追加されます。
+- **ライフサイクル:** ルール削除時、追加済みのコメントは残ります。プロジェクト削除時は `deleteAutoCommentDataForProject()` がプロジェクト固有のルールと適用済みログを削除します。ルールと適用済みログはエクスポート/インポートの対象です。
 
 ---
 
@@ -550,7 +579,7 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "reviews": {
@@ -575,6 +604,15 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
     "projectId": [
       { "id": "exkw_...", "keyword": "HACK" }
     ]
+  },
+  "autoCommentRules": [
+    { "id": "acr_...", "keyword": "TODO", "comment": "対応予定を確認" }
+  ],
+  "projectAutoCommentRules": {
+    "projectId": [ { "id": "acr_...", "keyword": "HACK", "comment": "..." } ]
+  },
+  "autoCommentApplied": {
+    "projectId": { "filePath": { "hunkHash": { "3": ["acr_..."] } } }
   }
 }
 ```
@@ -588,6 +626,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 `extractKeywords` / `projectExtractKeywords`（issue #79 で追加、`schemaVersion: 5`）は、上記のキーワードハイライトとは別機能であるキーワード行抽出のキーワード（`SK_EXTRACT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS`）です。形状・マージ方針（`mergeImportedExtractKeywords(rawGlobal, rawByProjectId)`）とも `keywordCategories` / `projectKeywordCategories` と同じパターンで、`schemaVersion: 4` 以前のエクスポートにはこれらのキーが存在しませんが同様に安全にスキップされます。
 
 `lineComments`（`schemaVersion: 6`）は行コメント（`SK_LINE_COMMENTS`）です。`mergeImportedData()` は `memos` と同様にプロジェクトID単位で上書きします（インポートデータに含まれるプロジェクトのコメントは丸ごと置き換え、それ以外のプロジェクトのコメントは保持）。`schemaVersion: 5` 以前のエクスポートにはこのキーがありませんが、`sanitizeLineCommentsData()` が空マップとして扱うため安全にスキップされます。手動インポート（`importAppData()`）の後は、表示中の diff があれば `renderDiff()` で再描画します。
+
+`autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます（`lineComments` が置き換えられたのに適用済みログを含まないプロジェクトは、ローカルのログを削除してコメントとの整合を保ちます）。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
@@ -758,6 +798,12 @@ init()
 │                                文字（全プロジェクト共通）│
 │  gitLocalReview_lineComments  行コメント              │
 │  gitLocalReview_commentFilter 「コメントあり」フィルタ │
+│  gitLocalReview_autoCommentRules 自動行コメントのルール│
+│                                （全体設定）             │
+│  gitLocalReview_projectAutoCommentRules 同上          │
+│                        （プロジェクトID → 配列）      │
+│  gitLocalReview_autoCommentApplied 自動行コメントの   │
+│                                適用済みログ             │
 └─────────────────────────────────────────────────────┘
           ↕ read/write（File System Access API 対応のみ）
 ┌─────────────────────────────────────────────────────┐
@@ -859,6 +905,11 @@ diff 行                旧ファイル列       新ファイル列
               │        (ユーザー選択待ち)  同名プロジェクトを自動更新
               │               │           │
               └───────────────┴───────────┘
+                         │
+                         ▼
+     createNewProject() / updateExistingProject()
+                         │
+              applyAutoLineComments()  自動行コメント
                          │
                          ▼
          renderDiff() / renderProjectList()
