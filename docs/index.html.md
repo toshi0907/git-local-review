@@ -23,6 +23,7 @@
    - [Render: full diff view](#render-full-diff-view)
    - [Build a single hunk card](#build-a-single-hunk-card)
    - [Keyboard navigation](#keyboard-navigation)
+   - [Line comments](#line-comments)
    - [Review memos](#review-memos)
    - [Export / Import](#export--import)
    - [File System Access API — file handles](#file-system-access-api--file-handles)
@@ -118,8 +119,9 @@ test/                ← テスト用 .diff サンプルファイル
 | **Set collapsed state** | ハンクの折りたたみ |
 | **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
 | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
-| **Review memos** | レビューメモ（スライドパネル、リサイズハンドル） |
-| **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` ショートカット |
+| **Line comments** | 行コメントの追加・編集・削除（`addLineComment()` 等）、diff 内のコメント行・入力欄の描画、ハンクヘッダーの件数バッジ、`c` キー処理（`openLineCommentComposerForFocusedHunk()`）、メモパネル内の一覧描画（`renderLineCommentList()`）とジャンプ（`jumpToLineComment()`）。詳細は [Line comments](#line-comments) を参照 |
+| **Review memos** | レビューメモ（スライドパネル、リサイズハンドル）。パネル下部には行コメント一覧（`#line-comment-section`）も同居するが、その描画は「Line comments」セクション側にある |
+| **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` / `c` ショートカット（キー処理自体は Event listeners セクションの `keydown` リスナー） |
 | **View mode toggle** | Unified ↔ Split ボタン処理 |
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |
@@ -206,6 +208,8 @@ const SK_PROJECT_KEYWORDS = 'gitLocalReview_projectKeywords';
 const SK_EXTRACT_KEYWORDS = 'gitLocalReview_extractKeywords';
 const SK_PROJECT_EXTRACT_KEYWORDS = 'gitLocalReview_projectExtractKeywords';
 const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
+const SK_LINE_COMMENTS   = 'gitLocalReview_lineComments';
+const SK_COMMENT_FILTER  = 'gitLocalReview_commentFilter';
 ```
 
 `SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled, caseSensitive }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。モーダル上部の「全て有効」「全て無効」ボタン（`setAllKeywordCategoriesEnabled(enabled, scope)`、issue #111）では、現在表示中の全カテゴリ（全体設定 + アクティブプロジェクト自身のカテゴリ）の `enabled` を一括変更できます（キーワード行抽出の `setAllExtractKeywordsEnabled()` と同じパターン）。`scope` 引数（省略時 `'all'`、issue #113）に `'global'` / `'project'` を渡すと、対象を全体設定または現在のプロジェクト自身のカテゴリだけに絞れます。これに対応する「全体設定を全て有効」「全体設定を全て無効」「プロジェクトの設定を全て有効」「プロジェクトの設定を全て無効」の4ボタンがモーダル上部に並び、プロジェクト側の2ボタンはアクティブなプロジェクトが無いとき無効化されます（`renderKeywordCategoryList()` が毎回 `disabled` を更新）。`caseSensitive`（issue #95、真偽値）はこのカテゴリのキーワード一致で大文字小文字を区別するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトは区別しない＝従来通りの挙動）。`findRawKeywordRanges(text, keywords, caseSensitive)` がこのフラグに応じて比較前の `toLowerCase()` をスキップし、`getActiveKeywordGroups()` の返す各グループにも `caseSensitive` が含まれて `findKeywordRanges()`／`applyKeywordHighlight()` に伝播します。件数バッジ（`countKeywordMatches(keywords, caseSensitive)`）にも同じフラグが渡されるため、大文字小文字の区別有無でカウント結果も変わります。設定UIではカテゴリ行の「Aa」チェックボックスで切り替えます。
@@ -219,6 +223,8 @@ const SK_MEMO_BULK_DELIMITER = 'gitLocalReview_memoBulkDelimiter';
 `SK_REVIEW_FILTER` は #56 以降、JSON エンコードされた `{ unreviewed, approved, needs_changes, on_hold }` の真偽値マップ（`REVIEW_FILTER_KEYS`）です。キーに対応するチェックボックスがオンのステータスのハンクのみが表示対象になります（OR 条件）。全キーが `true`（初期値）のとき、および全キーが `false`（何もチェックしていない状態）のときは、いずれもフィルタなし＝すべて表示として扱われます（`isReviewFilterActive()`）。#51〜#55 時代の単一選択文字列値（`'all' | 'unreviewed' | 'needs_changes'`）、およびそれ以前の真偽値のみの `gitLocalReview_unreviewedOnly` キーは、初回読み込み時に新しいマップ形式へ自動移行されます（`loadReviewFilter()`）。
 
 `SK_WORD_DIFF` は `'true' | 'false'` の文字列一つだけを保持する単純なキーで、トップバーの「単語単位で差分表示」チェックボックスの状態を `SK_VIEW_MODE`（Unified / Split）とは独立に永続化します（`loadWordDiff()` / `saveWordDiff()`）。詳細は [Word-level diff highlighting](#build-a-single-hunk-card) を参照してください。
+
+`SK_LINE_COMMENTS` は行コメントを `{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } }` の形で保持します（`loadAllLineComments()` / `saveAllLineComments()`、不正値は `sanitizeLineCommentsData()` が除去）。`SK_COMMENT_FILTER` は「💬コメントあり」表示フィルタの ON/OFF を `'true' | 'false'` の文字列で保持し、`SK_REVIEW_FILTER` とは独立しています（`loadCommentFilter()` / `saveCommentFilter()`）。詳細は [Line comments](#line-comments) を参照してください。
 
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
@@ -237,6 +243,7 @@ const app = {
   viewMode: 'unified',       // 'unified' | 'split'
   wordDiff: false,           // 単語単位差分表示（word-diff）のON/OFF。viewMode とは独立
   reviewFilter: { unreviewed: true, approved: true, needs_changes: true, on_hold: true }, // 表示するハンクをステータス別に絞り込むチェックボックス群の状態
+  commentFilter: false,      // true のとき行コメントが付いたハンクのみ表示（reviewFilter と AND）
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
 ```
@@ -300,8 +307,11 @@ ArrayBuffer（バイト列のまま）
 | `loadFileContent(projectId)` | diff テキスト本文を返す |
 | `saveFileContent(projectId, text)` | diff テキスト本文を保存 |
 | `deleteFileContent(projectId)` | diff テキスト本文を削除 |
+| `loadAllLineComments()` | `{ projectId: { filePath: { hunkHash: { lineIdx: LineComment[] } } } }` 形式で返す |
+| `saveAllLineComments(comments)` | 行コメントを保存 |
+| `deleteLineCommentsForProject(projectId)` | プロジェクト削除時にそのプロジェクトの行コメントを削除 |
 
-`sanitizeReviewsData()` / `sanitizeMemosData()` / `sanitizeFilesData()` は localStorage の値が不正なフォーマットだった場合に安全なデフォルト値に戻すガード関数です。
+`sanitizeReviewsData()` / `sanitizeMemosData()` / `sanitizeLineCommentsData()` / `sanitizeFilesData()` は localStorage の値が不正なフォーマットだった場合に安全なデフォルト値に戻すガード関数です。
 
 ---
 
@@ -405,17 +415,19 @@ renderDiff()
   ├─ app.parsedDiff が null → 空状態表示して終了
   │
   ├─ for each file:
-  │     ├─ isReviewFilterActive(filter) が true かつ、絞り込み条件に合うハンクが1つも無い → ファイルごとスキップ
-  │     │  （表示フィルタのチェックボックス「未レビュー/承認/要修正/保留」で選ばれたステータスのみ表示）
+  │     ├─ フィルタ（isReviewFilterActive(filter) または app.commentFilter）が有効かつ、条件に合うハンクが1つも無い → ファイルごとスキップ
+  │     │  （表示フィルタのチェックボックス「未レビュー/承認/要修正/保留」で選ばれたステータスのみ表示。
+  │     │   「💬コメントあり」が ON なら、さらに行コメントのあるハンクに限定（AND））
   │     ├─ file.commit があり、直前に描画したファイルの commit.hash と異なる
   │     │     → buildCommitSectionHeader(file.commit) を挿入（git log -p 入力のみ。commit が null の
   │     │        通常の git diff 入力では一切挿入されない）
   │     ├─ file-section > file-header を生成
   │     └─ for each hunk:
-  │           ├─ hunkPassesReviewFilter(status, filter) が false → スキップ
-  │           └─ buildHunkCard(filePath, hunk, status, language) → section に追加
+  │           ├─ hunkVisible(filePath, hunk, status) が false → スキップ
+  │           └─ buildHunkCard(filePath, hunk, status, language, lineComments) → section に追加
   │
   ├─ setOverallProgress()   全体進捗バーを更新（承認/要修正/保留の内訳付き）
+  ├─ renderLineCommentList() メモパネルが開いていれば行コメント一覧を更新
   └─ setFocusedHunk(0)      キーボードフォーカスをリセット
 ```
 
@@ -426,8 +438,10 @@ renderDiff()
 ### Build a single hunk card
 
 ```javascript
-buildHunkCard(filePath, hunk, status, language): HTMLElement
+buildHunkCard(filePath, hunk, status, language, lineComments?): HTMLElement
 ```
+
+`lineComments` はこのハンクの `{ [lineIdx]: LineComment[] }`（無ければ `null`）。省略時は localStorage から読み込みます（`renderDiff()` は1回だけ読み込んだものを渡します）。
 
 `status` は `'approved' | 'needs_changes' | 'on_hold' | null`（`null` = 未レビュー）。カードには `status-approved` 等のクラスが付き、`status === 'approved'` のときのみ初期状態で折りたたまれます。
 
@@ -438,17 +452,20 @@ buildHunkCard(filePath, hunk, status, language): HTMLElement
 1. `computeLineRecords(hunk)` — 行ごとに `{ type, content, oldLabel, newLabel }` を計算
 2. `highlightHunkLines()` — syntax highlight HTML を生成（`language` が null の場合はスキップ）
 3. `REVIEW_STATUSES` から承認/要修正/保留の3ボタン（`.review-status-group`）を生成。クリックで `setHunkReviewStatus()` を呼び出し、既にアクティブなボタンをもう一度押すと未レビューに戻る
-4. Unified / Split の分岐で異なる `<table>` 構造を構築
+4. Unified / Split の分岐で異なる `<table>` 構造を構築（行コメントの「+」ボタンとコメント行もここで生成。[Line comments](#line-comments) 参照）
 5. キーワードハイライト (`applyKeywordHighlight()`) を適用
+6. ハンクヘッダーに行コメント件数バッジ（`.hunk-comment-badge`）を配置し、行コメント操作用の委譲クリックリスナー（`handleLineCommentCardClick`）を登録
 
 **Unified 表示の行構造:**
 
 ```html
-<tr class="line-added | line-removed | line-context">
-  <td class="line-num old">旧行番号</td>
-  <td class="line-num new">新行番号</td>
-  <td class="line-prefix">+/-/ </td>
-  <td class="line-content">...</td>
+<tr class="line-added | line-removed | line-context" data-anchor-idx="行インデックス">
+  <td class="line-num old" data-line-idx="…">旧行番号<button class="line-comment-add-btn">+</button></td>
+  <td class="line-num new" data-line-idx="…">新行番号</td>
+  <td class="line-content" data-line-idx="…"><span class="line-prefix">+/-/ </span>...</td>
+</tr>
+<tr class="line-attached-row line-comment-row" data-line-idx="…" data-comment-id="…">  ← 行コメント（あれば）
+  <td class="line-comment-cell" colspan="3">...</td>
 </tr>
 ```
 
@@ -472,6 +489,7 @@ Unified 表示では、同じペアの `-` 行・`+` 行が別々の `<tr>` と�
 ### Keyboard navigation
 
 ```javascript
+// c → フォーカス中のハンクに行コメントを追加（openLineCommentComposerForFocusedHunk、Ctrl/Cmd/Alt 併用時は無視）
 // j → 次のハンク、k → 前のハンク
 // Space → レビュー状態を 未レビュー → 承認 → 要修正 → 保留 → 未レビュー… の順で循環
 // 1 / 2 / 3 → 承認 / 要修正 / 保留 を直接設定（同じ状態をもう一度押すと未レビューに戻る）
@@ -485,6 +503,26 @@ setFocusedHunkStatus(value)  // 1/2/3 の処理
 
 ---
 
+### Line comments
+
+diff の1行に付けるレビューコメントです。
+
+```
+LineComment: { id, text, createdAt, updatedAt, lineType: '+'|'-'|' ', lineText, oldLabel, newLabel }
+保存先: SK_LINE_COMMENTS[projectId][filePath][hunk.hash][lineIdx] = LineComment[]
+```
+
+- **紐付け:** `(filePath, hunk.hash, lineIdx)` で行を特定します。`lineIdx` は `hunk.lines`（= `computeLineRecords()` の `idx`）内の位置です。ハンクハッシュはハンク本文から計算されるため（[ハンクの同一性判定](#ハンクの同一性判定-hunk-hash)）、レビュー状態と同様に、ハンクの内容が同じなら行番号がずれてもコメントが引き継がれます。`lineType` 以降はコメント時点の行のスナップショットで、元の行が見つからなくなったコメント（孤立コメント）の表示に使います。
+- **描画:** `buildUnifiedTbody()` / `buildSplitTbody()` は各行の行番号セルに `buildLineCommentAddButton()` の「+」ボタン（行ホバーで表示）を置き、行の `<tr>` に `data-anchor-idx`（Split の左右ペア行では2つのidxを空白区切り）、各セルに `data-line-idx` を付けます。保存済みコメントは `appendLineCommentRows()` が該当行の直後に `.line-attached-row.line-comment-row`（`colspan` は Unified 3 / Split 4）として挿入します。
+- **操作:** 追加・編集・削除はハンクカード単位の委譲リスナー `handleLineCommentCardClick` が処理し、`renderDiff()` を呼ばずに該当行の周辺だけ DOM を差し替えます（入力中の他フォームやスクロール位置を保つため）。入力欄は `openLineCommentComposer(card, idx)`、編集は `startEditingLineComment(card, row)` が生成し、どちらも `buildLineCommentForm()`（`Ctrl/Cmd+Enter` で保存、`Esc` でキャンセル。`Esc` は `stopPropagation()` でメモパネルを閉じるハンドラーへ伝播させない）を使います。変更後は `afterLineCommentsChanged(card)` が設定フォルダへの自動保存予約・件数バッジ・一覧の更新を行い、「コメントあり」フィルタ中にハンクのコメントが0件になった場合のみ `renderDiff()` で再描画します。
+- **再描画時の下書き保持:** `renderDiff()` はカードを作り直すため、冒頭で `captureLineCommentDrafts()` が開いている入力欄・編集フォームの未保存テキスト（とフォーカス・選択範囲）を退避し、末尾で `restoreLineCommentDrafts()` が新しいカードに復元します（フィルタで非表示になったハンクの下書きは復元されません）。
+- **同一内容のハンク:** 紐付けはレビュー状態と同じく `(filePath, hunk.hash)` 単位のため、同じファイル内（`git log -p` で同じファイルが複数コミットに現れる場合を含む）に内容がまったく同じハンクが複数あると、それらはコメントを共有します。
+- **`c` キー:** カードのクリック時に最後にクリックした行を `card.dataset.activeLineIdx` に記録し、`c` ではその行（無ければハンク内最初の `+`/`-` 行）の入力欄を開きます。
+- **一覧:** `renderLineCommentList()` がメモパネルの `#line-comment-section` に、`app.parsedDiff` の順でコメントを並べます。クリックで `jumpToLineComment()` が該当ハンクを展開・フォーカスし、コメント行をスクロール表示して一瞬ハイライト（`.flash`）します。現在の diff に `(filePath, hash)` が存在しない、または `lineIdx` が範囲外のコメントは「現在の diff に見つからないコメント」として末尾にまとめ、削除のみ可能です。
+- **ライフサイクル:** プロジェクト削除（`deleteProject()`）で削除されます。プロジェクトの「リセット」（レビュー状態のクリア）では削除しません。エクスポート/インポートの対象です。
+
+---
+
 ### Review memos
 
 `#memo-panel`（`.layout` 内、`.main` の右隣に配置）で管理されるプロジェクト単位のチェックリストメモです。
@@ -493,7 +531,7 @@ setFocusedHunkStatus(value)  // 1/2/3 の処理
 MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedAt: number }
 ```
 
-`loadAllMemos()` / `saveAllMemos()` で `SK_MEMOS` キーに保存されます。メモは diff の特定ファイルやハンクには紐付いておらず、プロジェクト全体に対するフリーメモです。
+`loadAllMemos()` / `saveAllMemos()` で `SK_MEMOS` キーに保存されます。メモは diff の特定ファイルやハンクには紐付いておらず、プロジェクト全体に対するフリーメモです（行単位のコメントは [Line comments](#line-comments) を参照）。メモ一覧と行コメント一覧は `.memo-panel-scroll` 内で一緒にスクロールし、`renderMemoList()` は冒頭で `renderLineCommentList()` も呼び出します。
 
 メモ入力欄は複数行入力に対応した `<textarea>`（`maxlength="5000"`）で、長文やコードの貼り付けにも対応します。`Ctrl+Enter`（macOS では `Cmd+Enter`）でも「追加」ボタンと同じくメモを追加できます（`#memo-input` の `keydown` リスナーが `#memo-add-form` を `requestSubmit()`）。パネル左端の `#memo-panel-resizer` ハンドルをドラッグすると Pointer Events（`initMemoPanelResizer()`）でパネル幅を変更できます（幅は `localStorage` には保存されず、セッション内のみ有効）。
 
@@ -511,13 +549,16 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "reviews": {
     "projectId": { "filePath": { "hunkHash": "needs_changes" } }
   },
   "memos": { ... },
+  "lineComments": {
+    "projectId": { "filePath": { "hunkHash": { "3": [ { "id": "lc_...", "text": "..." } ] } } }
+  },
   "keywordCategories": [
     { "id": "kwcat_...", "keywords": "TODO,FIXME", "color": "#fff000" }
   ],
@@ -544,6 +585,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 `keywordCategories`（issue #58 で追加）は全体設定のキーワードハイライトのカテゴリ／色設定（`SK_KEYWORDS`、`loadGlobalKeywordCategories()`/`saveGlobalKeywordCategories()` 参照）です。`projectKeywordCategories`（issue #68 で追加、`schemaVersion: 4`）はプロジェクト毎のキーワードカテゴリ（`SK_PROJECT_KEYWORDS`）を `{ [projectId]: category[] }` の形でそのまま保持します。`mergeImportedKeywordCategories(rawGlobal, rawByProjectId)` は `keywordCategories` を同じ `id` のカテゴリで上書きし、`projectKeywordCategories` は各プロジェクトIDごとに同じ `id` のカテゴリを上書きします（いずれもそれ以外の既存カテゴリはそのまま保持、プロジェクトと同じマージ方針）。`schemaVersion: 2` 以前のエクスポートには `keywordCategories` が、`schemaVersion: 3` 以前には `projectKeywordCategories` が存在しませんが、`sanitizeKeywordCategories()` が非配列（`undefined` を含む）を空配列として扱うため、インポート時は何もマージされずスキップされるだけで安全です。
 
 `extractKeywords` / `projectExtractKeywords`（issue #79 で追加、`schemaVersion: 5`）は、上記のキーワードハイライトとは別機能であるキーワード行抽出のキーワード（`SK_EXTRACT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS`）です。形状・マージ方針（`mergeImportedExtractKeywords(rawGlobal, rawByProjectId)`）とも `keywordCategories` / `projectKeywordCategories` と同じパターンで、`schemaVersion: 4` 以前のエクスポートにはこれらのキーが存在しませんが同様に安全にスキップされます。
+
+`lineComments`（`schemaVersion: 6`）は行コメント（`SK_LINE_COMMENTS`）です。`mergeImportedData()` は `memos` と同様にプロジェクトID単位で上書きします（インポートデータに含まれるプロジェクトのコメントは丸ごと置き換え、それ以外のプロジェクトのコメントは保持）。`schemaVersion: 5` 以前のエクスポートにはこのキーがありませんが、`sanitizeLineCommentsData()` が空マップとして扱うため安全にスキップされます。手動インポート（`importAppData()`）の後は、表示中の diff があれば `renderDiff()` で再描画します。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
@@ -660,6 +703,7 @@ init()
   │
   ├─ loadViewMode() → updateViewModeButtons()
   ├─ reviewFilter（表示フィルター）の復元
+  ├─ commentFilter（「コメントあり」フィルター）の復元
   ├─ refreshHandleIndex()
   ├─ [File System Access 対応ブラウザのみ]
   │     ├─ refreshOpenFolderUI()
@@ -683,6 +727,7 @@ init()
 │  app.viewMode                                       │
 │  app.wordDiff                                       │
 │  app.reviewFilter                                   │
+│  app.commentFilter                                  │
 │  app.focusedHunkIndex                               │
 │  app.fileProgressEls (DOM 参照キャッシュ)             │
 │  app.projectBadgeEls (DOM 参照キャッシュ)             │
@@ -710,6 +755,8 @@ init()
 │                        （プロジェクトID → 配列）      │
 │  gitLocalReview_memoBulkDelimiter メモ一括登録の区切り│
 │                                文字（全プロジェクト共通）│
+│  gitLocalReview_lineComments  行コメント              │
+│  gitLocalReview_commentFilter 「コメントあり」フィルタ │
 └─────────────────────────────────────────────────────┘
           ↕ read/write（File System Access API 対応のみ）
 ┌─────────────────────────────────────────────────────┐
@@ -740,6 +787,9 @@ hunk.lines（例: ["-old line", "+new line", " context"]）
 レビュー状態の保存形式:
   reviews[projectId][filePath][hunk.hash] = 'approved' | 'needs_changes' | 'on_hold'
   （キーが存在しなければ未レビュー）
+
+行コメントの保存形式（同じハッシュに、ハンク内の行インデックスを加えて紐付け）:
+  lineComments[projectId][filePath][hunk.hash][lineIdx] = LineComment[]
 ```
 
 この設計により、`git rebase` や `git merge` で行番号が変化しても、変更内容が同じハンクは正しく元のレビュー状態と紐付きます。
