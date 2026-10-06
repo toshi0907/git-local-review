@@ -28,6 +28,11 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
+      # Claude Code 用の設定・スキル(myskills submodule への symlink)は公開不要。
+      # submodule 未展開のため symlink がリンク切れとなり artifact 作成に失敗するので除外する
+      - name: Exclude Claude Code files
+        run: rm -rf .claude .myskills .gitmodules
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
