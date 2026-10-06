@@ -3143,12 +3143,15 @@ function loadAllLineComments() {
   }
 }
 
+/** @returns {boolean} whether the save succeeded */
 function saveAllLineComments(comments) {
   try {
     localStorage.setItem(SK_LINE_COMMENTS, JSON.stringify(comments));
+    return true;
   } catch (e) {
     console.error('Failed to save line comments to localStorage:', e);
     alert('行コメントの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+    return false;
   }
 }
 
@@ -5782,14 +5785,9 @@ function addLineComment(filePath, hash, record, text) {
   const trimmed = text.trim();
   if (!app.currentProjectId || !trimmed) return null;
   const all = loadAllLineComments();
-  const pid = app.currentProjectId;
-  if (!all[pid]) all[pid] = Object.create(null);
-  if (!all[pid][filePath]) all[pid][filePath] = Object.create(null);
-  if (!all[pid][filePath][hash]) all[pid][filePath][hash] = Object.create(null);
-  const lineMap = all[pid][filePath][hash];
-  if (!lineMap[record.idx]) lineMap[record.idx] = [];
+  const list = ensureChild(ensureChild(ensureChild(ensureChild(all, app.currentProjectId), filePath), hash), record.idx, true);
   const comment = createLineCommentObject(record, trimmed);
-  lineMap[record.idx].push(comment);
+  list.push(comment);
   saveAllLineComments(all);
   return comment;
 }
@@ -7428,10 +7426,15 @@ function mergeImportedData(data) {
   }
   saveAllLineComments(lineComments);
 
+  // Keep each project's applied log in step with its (replaced) line comments:
+  // a project whose comments were replaced but has no imported log (e.g. a
+  // pre-v7 export) gets its local log dropped, so its auto comments can be
+  // re-added on the next load instead of being blocked by a stale log.
   const importedApplied = sanitizeAutoCommentAppliedData(data.autoCommentApplied);
   const applied = loadAllAutoCommentApplied();
-  for (const pid of Object.keys(importedApplied)) {
-    applied[pid] = importedApplied[pid];
+  for (const pid of new Set([...Object.keys(importedLineComments), ...Object.keys(importedApplied)])) {
+    if (importedApplied[pid]) applied[pid] = importedApplied[pid];
+    else delete applied[pid];
   }
   saveAllAutoCommentApplied(applied);
 
@@ -9539,6 +9542,7 @@ function saveAllAutoCommentApplied(applied) {
     localStorage.setItem(SK_AUTO_COMMENT_APPLIED, JSON.stringify(applied));
   } catch (e) {
     console.error('Failed to save auto comment log to localStorage:', e);
+    alert('自動行コメントの適用履歴の保存に失敗しました。ストレージの容量が不足している可能性があります。\n削除した自動コメントが再び追加されることがあります。');
   }
 }
 
@@ -9573,8 +9577,16 @@ function applyAutoLineComments() {
   const pid = app.currentProjectId;
   if (!pid || !app.parsedDiff) return 0;
   const rules = loadAutoCommentRules()
-    .map(r => ({ ...r, keywords: parseKeywords(r.keyword), text: r.comment.trim() }))
-    .filter(r => r.enabled && r.keywords.length > 0 && r.text);
+    .map(r => {
+      const keywords = parseKeywords(r.keyword);
+      return {
+        ...r,
+        matchKeywords: r.caseSensitive ? keywords : keywords.map(kw => kw.toLowerCase()),
+        lowerFileFilter: r.fileFilter.trim().toLowerCase(),
+        text: r.comment.trim(),
+      };
+    })
+    .filter(r => r.enabled && r.matchKeywords.length > 0 && r.text);
   if (rules.length === 0) return 0;
 
   const allComments = loadAllLineComments();
@@ -9584,18 +9596,20 @@ function applyAutoLineComments() {
 
   for (const file of app.parsedDiff) {
     const lowerPath = file.filePath.toLowerCase();
-    const fileRules = rules.filter(r => !r.fileFilter.trim() || lowerPath.includes(r.fileFilter.trim().toLowerCase()));
+    const fileRules = rules.filter(r => !r.lowerFileFilter || lowerPath.includes(r.lowerFileFilter));
     if (fileRules.length === 0) continue;
     for (const hunk of file.hunks) {
       for (const record of computeLineRecords(hunk)) {
         if (record.type !== '+' && record.type !== '-') continue;
-        const lowerContent = record.content.toLowerCase();
+        let lowerContent = null;
         for (const rule of fileRules) {
           if (rule.addedOnly && record.type !== '+') continue;
-          const hit = rule.caseSensitive
-            ? rule.keywords.some(kw => record.content.includes(kw))
-            : rule.keywords.some(kw => lowerContent.includes(kw.toLowerCase()));
-          if (!hit) continue;
+          let content = record.content;
+          if (!rule.caseSensitive) {
+            if (lowerContent === null) lowerContent = record.content.toLowerCase();
+            content = lowerContent;
+          }
+          if (!rule.matchKeywords.some(kw => content.includes(kw))) continue;
 
           const appliedIds = ensureChild(ensureChild(ensureChild(ensureChild(allApplied, pid), file.filePath), hunk.hash), record.idx, true);
           if (appliedIds.includes(rule.id)) continue;
@@ -9615,8 +9629,10 @@ function applyAutoLineComments() {
     }
   }
 
+  // Comments first: if they fail to save, don't record those lines as done,
+  // so the next run can still add them.
+  if (added > 0 && !saveAllLineComments(allComments)) return 0;
   if (logChanged) saveAllAutoCommentApplied(allApplied);
-  if (added > 0) saveAllLineComments(allComments);
   if (logChanged || added > 0) scheduleSettingsAutoSave();
   return added;
 }

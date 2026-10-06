@@ -548,7 +548,7 @@ Rule: { id, keyword, comment, fileFilter, caseSensitive, addedOnly, enabled }
 - **一致判定:** キーワード行抽出（`extractKeywordMatches()`）と同じです。対象は追加/削除行のみ（コンテキスト行は対象外）、`keyword` は `parseKeywords()` でカンマ区切り（OR）、`caseSensitive` / `addedOnly` / `fileFilter`（ファイルパスの部分一致、大文字小文字を区別しない）も同じ意味です。`enabled: false`、キーワードが空、コメント本文が空のルールは無視します。
 - **スコープ:** キーワード行抽出と同じ全体/プロジェクトの2ストア構成で、`loadAutoCommentRules()` がマージ済みビュー（各要素に `scope`）を返し、`moveAutoCommentRuleScope()` がストア間を移動します（ID は維持されるため適用済みログもそのまま有効）。
 - **実行タイミング:** `createNewProject()` / `updateExistingProject()`（diff ファイルの新規読み込み・同名プロジェクトの更新・再読み込みボタンのすべてがここを通る）が `renderDiff()` の前に `applyAutoLineComments()` を呼びます。プロジェクト切り替え（保存済み diff の復元）では実行しません。手動実行はモーダルの「▶ 今すぐ適用」（`runAutoLineCommentsManually()`。追加件数をモーダル内に表示し、追加があれば `renderDiff()`）です。
-- **重複防止:** 一致した (ルール, filePath, hunk.hash, lineIdx) ごとに次のいずれかに当てはまれば追加しません。(1) 適用済みログにそのルールIDがある、(2) その行に同じルールのコメント（`autoRuleId` 一致）がある、(3) その行に同じ本文のコメントがある。一致した行は（スキップした場合も含め）適用済みログに記録するため、ユーザーが削除した自動コメントが再追加されることはありません。ログのキーにハンクハッシュを含むため、内容が変わったハンクは新しいハンクとして再度評価されます。ルールのコメント本文を後から変更しても、適用済みの行には再追加されません。
+- **重複防止:** 一致した (ルール, filePath, hunk.hash, lineIdx) ごとに次のいずれかに当てはまれば追加しません。(1) 適用済みログにそのルールIDがある、(2) その行に同じルールのコメント（`autoRuleId` 一致）がある、(3) その行に同じ本文のコメントがある。一致した行は（スキップした場合も含め）適用済みログに記録するため、ユーザーが削除した自動コメントが再追加されることはありません。ログのキーにハンクハッシュを含むため、内容が変わったハンクは新しいハンクとして再度評価されます。ルールのコメント本文を後から変更しても、適用済みの行には再追加されません。コメントの保存に失敗した場合は適用済みログも保存しないため、次回の実行で再度追加されます。
 - **ライフサイクル:** ルール削除時、追加済みのコメントは残ります。プロジェクト削除時は `deleteAutoCommentDataForProject()` がプロジェクト固有のルールと適用済みログを削除します。ルールと適用済みログはエクスポート/インポートの対象です。
 
 ---
@@ -627,7 +627,7 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 `lineComments`（`schemaVersion: 6`）は行コメント（`SK_LINE_COMMENTS`）です。`mergeImportedData()` は `memos` と同様にプロジェクトID単位で上書きします（インポートデータに含まれるプロジェクトのコメントは丸ごと置き換え、それ以外のプロジェクトのコメントは保持）。`schemaVersion: 5` 以前のエクスポートにはこのキーがありませんが、`sanitizeLineCommentsData()` が空マップとして扱うため安全にスキップされます。手動インポート（`importAppData()`）の後は、表示中の diff があれば `renderDiff()` で再描画します。
 
-`autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます。
+`autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます（`lineComments` が置き換えられたのに適用済みログを含まないプロジェクトは、ローカルのログを削除してコメントとの整合を保ちます）。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
