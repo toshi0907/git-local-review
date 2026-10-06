@@ -62,3 +62,9 @@
 
 - 対象はチャットでの対話作業時のみでよい（Issue 対応など非対話的なセッションでは不要）。
 - スクリーンショット画像ファイルはリポジトリにコミットしない（一時ディレクトリに保存してチャットで提示するだけにとどめる）。
+
+---
+
+## スキル（myskills 由来）
+
+`.claude/skills/` には [myskills](https://github.com/toshi0907/myskills)（submodule `.myskills`）の各スキルへの symlink が登録されています（SessionStart hook `.claude/hooks/myskills-skills-sync.sh` で更新・追加。既存のものは上書きしない）。作業開始前に各 `SKILL.md` の description を確認し、該当するスキルがあれば優先的に使ってください。
