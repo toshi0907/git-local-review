@@ -3013,16 +3013,22 @@ function sanitizeLineCommentsData(parsed) {
           if (!/^\d+$/.test(idx) || !Array.isArray(lineMap[idx])) continue;
           const list = lineMap[idx]
             .filter(c => c && typeof c === 'object' && typeof c.id === 'string' && typeof c.text === 'string' && c.text.trim() !== '')
-            .map(c => ({
-              id: c.id,
-              text: c.text,
-              createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
-              updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Date.now(),
-              lineType: VALID_LINE_COMMENT_TYPES.includes(c.lineType) ? c.lineType : ' ',
-              lineText: typeof c.lineText === 'string' ? c.lineText.slice(0, LINE_COMMENT_SNAPSHOT_MAX) : '',
-              oldLabel: typeof c.oldLabel === 'number' ? c.oldLabel : '',
-              newLabel: typeof c.newLabel === 'number' ? c.newLabel : '',
-            }));
+            .map(c => {
+              // Missing timestamps fall back to a fixed 0 (not Date.now()) so
+              // they stay stable across loads, and updatedAt falls back to
+              // createdAt so such a comment isn't shown as "（編集済み）".
+              const createdAt = typeof c.createdAt === 'number' ? c.createdAt : 0;
+              return {
+                id: c.id,
+                text: c.text,
+                createdAt,
+                updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : createdAt,
+                lineType: VALID_LINE_COMMENT_TYPES.includes(c.lineType) ? c.lineType : ' ',
+                lineText: typeof c.lineText === 'string' ? c.lineText.slice(0, LINE_COMMENT_SNAPSHOT_MAX) : '',
+                oldLabel: typeof c.oldLabel === 'number' ? c.oldLabel : '',
+                newLabel: typeof c.newLabel === 'number' ? c.newLabel : '',
+              };
+            });
           if (list.length > 0) safeLines[idx] = list;
         }
         if (Object.keys(safeLines).length > 0) safeHashes[h] = safeLines;
@@ -3062,7 +3068,12 @@ function deleteLineCommentsForProject(projectId) {
 }
 
 function loadCommentFilter() {
-  return localStorage.getItem(SK_COMMENT_FILTER) === 'true';
+  try {
+    return localStorage.getItem(SK_COMMENT_FILTER) === 'true';
+  } catch (e) {
+    console.error('Failed to load comment filter preference:', e);
+    return false;
+  }
 }
 
 function saveCommentFilter(enabled) {
@@ -4882,6 +4893,9 @@ function buildCommitSectionHeader(commit) {
 function renderDiff() {
   const container  = document.getElementById('diff-container');
   const emptyState = document.getElementById('empty-state');
+  // Open line-comment forms are part of the DOM being rebuilt; carry their
+  // unsaved text over to the new cards (see restoreLineCommentDrafts()).
+  const lineCommentDrafts = captureLineCommentDrafts();
   container.innerHTML = '';
   app.fileProgressEls.clear();
 
@@ -5007,6 +5021,7 @@ function renderDiff() {
   // Reset keyboard hunk focus to the first hunk of the freshly rendered diff
   // (the previous focus index may point at an element that no longer exists).
   setFocusedHunk(0, { scroll: false });
+  restoreLineCommentDrafts(lineCommentDrafts);
 }
 
 /**
@@ -5735,6 +5750,7 @@ function deleteLineComment(filePath, hash, idx, commentId) {
 }
 
 function formatLineCommentTime(ts) {
+  if (!ts) return ''; // unknown (imported data without timestamps)
   const d = new Date(ts);
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -5928,24 +5944,30 @@ function afterLineCommentsChanged(card) {
   if (isMemoPanelOpen()) renderLineCommentList();
 }
 
-/** Opens (or focuses, if already open) the new-comment form below line `idx` of `card`. */
-function openLineCommentComposer(card, idx) {
+/**
+ * Opens (or focuses, if already open) the new-comment form below line `idx`
+ * of `card` and returns its textarea. `focus: false` (used when restoring
+ * drafts after a re-render) skips scrolling to and focusing it.
+ */
+function openLineCommentComposer(card, idx, { focus = true } = {}) {
   const anchor = findLineAnchorRow(card, idx);
-  if (!anchor) return;
+  if (!anchor) return null;
   if (card.classList.contains('collapsed')) setHunkCollapsedState(card, false);
 
   const existing = card.querySelector(`.line-comment-composer[data-line-idx="${idx}"] textarea`);
   if (existing) {
-    existing.scrollIntoView({ block: 'nearest' });
-    focusTextareaAtEnd(existing);
-    return;
+    if (focus) {
+      existing.scrollIntoView({ block: 'nearest' });
+      focusTextareaAtEnd(existing);
+    }
+    return existing;
   }
 
   const filePath = card.dataset.filePath;
   const hash = card.dataset.hunkHash;
   const hunk = findParsedHunk(filePath, hash);
   const record = hunk ? computeLineRecords(hunk)[idx] : null;
-  if (!record || record.type === '\\') return;
+  if (!record || record.type === '\\') return null;
 
   const tr = document.createElement('tr');
   tr.className = 'line-attached-row line-comment-composer';
@@ -5982,18 +6004,21 @@ function openLineCommentComposer(card, idx) {
   last.after(tr);
 
   const textarea = form.querySelector('textarea');
-  tr.scrollIntoView({ block: 'nearest' });
-  textarea.focus();
+  if (focus) {
+    tr.scrollIntoView({ block: 'nearest' });
+    textarea.focus();
+  }
+  return textarea;
 }
 
-/** Swaps a rendered comment row's content for an inline edit form. */
-function startEditingLineComment(card, row) {
+/** Swaps a rendered comment row's content for an inline edit form and returns its textarea. */
+function startEditingLineComment(card, row, { focus = true } = {}) {
   const filePath = card.dataset.filePath;
   const hash = card.dataset.hunkHash;
   const idx = Number(row.dataset.lineIdx);
   const commentId = row.dataset.commentId;
   const comment = findStoredLineComment(loadAllLineComments(), filePath, hash, idx, commentId);
-  if (!comment) return;
+  if (!comment) return null;
 
   const box = row.querySelector('.line-comment-box');
   const label = box.querySelector('.line-comment-label').cloneNode(true);
@@ -6010,7 +6035,57 @@ function startEditingLineComment(card, row) {
   }, restore);
 
   box.replaceChildren(label, form);
-  focusTextareaAtEnd(form.querySelector('textarea'));
+  const textarea = form.querySelector('textarea');
+  if (focus) focusTextareaAtEnd(textarea);
+  return textarea;
+}
+
+/**
+ * Snapshot of every open line-comment form (new-comment composers and
+ * in-progress edits) in the diff, so renderDiff() can rebuild the cards
+ * without discarding unsaved text.
+ */
+function captureLineCommentDrafts() {
+  const drafts = [];
+  const container = document.getElementById('diff-container');
+  for (const textarea of container.querySelectorAll('.line-comment-form textarea')) {
+    const row = textarea.closest('tr');
+    const card = textarea.closest('.hunk-card');
+    if (!row || !card) continue;
+    drafts.push({
+      filePath: card.dataset.filePath,
+      hash: card.dataset.hunkHash,
+      idx: Number(row.dataset.lineIdx),
+      commentId: row.classList.contains('line-comment-row') ? row.dataset.commentId : null,
+      text: textarea.value,
+      focused: document.activeElement === textarea,
+      selection: [textarea.selectionStart, textarea.selectionEnd],
+    });
+  }
+  return drafts;
+}
+
+/** Re-opens the forms captured by captureLineCommentDrafts() on the freshly rendered cards. */
+function restoreLineCommentDrafts(drafts) {
+  if (drafts.length === 0) return;
+  const cards = getHunkCards();
+  for (const d of drafts) {
+    const card = cards.find(c => c.dataset.filePath === d.filePath && c.dataset.hunkHash === d.hash);
+    if (!card) continue; // hunk hidden by the current filters
+    let textarea = null;
+    if (d.commentId) {
+      const row = Array.from(card.querySelectorAll('.line-comment-row')).find(r => r.dataset.commentId === d.commentId);
+      if (row) textarea = startEditingLineComment(card, row, { focus: false });
+    } else {
+      textarea = openLineCommentComposer(card, d.idx, { focus: false });
+    }
+    if (!textarea) continue;
+    textarea.value = d.text;
+    if (d.focused) {
+      textarea.focus();
+      textarea.setSelectionRange(d.selection[0], d.selection[1]);
+    }
+  }
 }
 
 /** Delegated click handler on each hunk card for the line-comment controls. */
@@ -6071,6 +6146,12 @@ function jumpToLineComment(filePath, hash, commentId) {
   if (!WIDE_LAYOUT_MEDIA_QUERY.matches && isMemoPanelOpen()) closeMemoPanel();
   if (card.classList.contains('collapsed')) setHunkCollapsedState(card, false);
   setFocusedHunk(getHunkCards().indexOf(card), { scroll: false });
+
+  // Release focus from the clicked list button so the memo-panel focus guard
+  // in the keydown listener doesn't swallow j/k/c etc. right after a jump.
+  if (document.activeElement && document.getElementById('memo-panel').contains(document.activeElement)) {
+    document.activeElement.blur();
+  }
 
   const row = Array.from(card.querySelectorAll('.line-comment-row')).find(r => r.dataset.commentId === commentId);
   const target = row || card;
@@ -6158,12 +6239,12 @@ function renderLineCommentList() {
 
   const projectComments = getProjectLineComments();
   const live = [];
-  const seen = new Set(); // "filePath\0hash" pairs present in the current diff
+  const seen = new Map(); // "filePath\0hash" -> hunk, for hunks present in the current diff
   for (const file of app.parsedDiff || []) {
     for (const hunk of file.hunks) {
       const key = file.filePath + '\0' + hunk.hash;
       if (seen.has(key)) continue;
-      seen.add(key);
+      seen.set(key, hunk);
       const lineMap = lineCommentsForHunk(projectComments, file.filePath, hunk.hash);
       if (!lineMap) continue;
       const idxs = Object.keys(lineMap).map(Number).filter(i => i < hunk.lines.length).sort((a, b) => a - b);
@@ -6176,7 +6257,7 @@ function renderLineCommentList() {
   const orphans = [];
   for (const filePath of Object.keys(projectComments)) {
     for (const hash of Object.keys(projectComments[filePath])) {
-      const hunk = seen.has(filePath + '\0' + hash) ? findParsedHunk(filePath, hash) : null;
+      const hunk = seen.get(filePath + '\0' + hash) || null;
       const lineMap = projectComments[filePath][hash];
       for (const idxKey of Object.keys(lineMap)) {
         const idx = Number(idxKey);
@@ -7415,6 +7496,8 @@ async function maybeLoadExistingSettingsAfterFolderPick(dirHandle) {
     const count = mergeImportedData(data);
     hideSettingsExternalUpdateNotice();
     renderProjectList();
+    if (app.currentProjectId && app.parsedDiff) renderDiff();
+    refreshMemoUI();
     alert(`${count} 件のプロジェクトを読み込みました。`);
   } catch (err) {
     console.error('Failed to load existing settings file', err);
