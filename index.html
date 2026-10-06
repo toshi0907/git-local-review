@@ -5985,6 +5985,7 @@ function insertLineCommentRow(anchor, row, idx) {
  */
 function afterLineCommentsChanged(card) {
   scheduleSettingsAutoSave();
+  refreshMemoBadge();
   if (card) {
     const count = countLineComments(getHunkLineComments(card.dataset.filePath, card.dataset.hunkHash));
     const badge = card.querySelector('.hunk-comment-badge');
@@ -6391,12 +6392,28 @@ function getCurrentProjectMemos() {
   return loadAllMemos()[app.currentProjectId] || [];
 }
 
-/** Refresh the always-visible topbar badge (count of not-yet-done memos). */
+/** Number of the current project's line comments that aren't checked yet. */
+function countOpenLineComments() {
+  const projectComments = getProjectLineComments();
+  let n = 0;
+  for (const filePath of Object.keys(projectComments)) {
+    for (const hash of Object.keys(projectComments[filePath])) {
+      const lineMap = projectComments[filePath][hash];
+      for (const idx of Object.keys(lineMap)) n += lineMap[idx].filter(c => !c.done).length;
+    }
+  }
+  return n;
+}
+
+/** Refresh the always-visible topbar badge (count of not-yet-done memos + unchecked line comments). */
 function refreshMemoBadge() {
   const badge = document.getElementById('memo-badge');
   if (!badge) return;
-  const openCount = getCurrentProjectMemos().filter(m => !m.done).length;
+  const openMemos = getCurrentProjectMemos().filter(m => !m.done).length;
+  const openComments = countOpenLineComments();
+  const openCount = openMemos + openComments;
   badge.textContent = String(openCount);
+  badge.title = `未完了: メモ ${openMemos} 件 / 行コメント ${openComments} 件`;
   badge.hidden = openCount === 0;
 }
 
