@@ -69,7 +69,9 @@ test/                ← テスト用 .diff サンプルファイル
                                    `initSidebarResizer()`。メモパネルの `#memo-panel-resizer` と同じ Pointer Events
                                    パターン。幅は `localStorage` には保存されず、セッション内のみ有効）
       <main id="main">
-        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）
+        <div id="top-bar">      ← ヘッダーバー（ビュー切替・フィルター・設定/メモボタン・進捗。実装では class="topbar"）。
+                                   各項目は絵文字アイコンのみで表示し、説明は data-tooltip のカスタムツールチップ
+                                   （#topbar-tooltip）で表示する
         <div class="autosave-warning-banner" id="autosave-warning-banner"> ← 自動保存失敗時の警告バナー（トップバー直下、通常は非表示。#60）
         <div id="diff-container"> ← diff 表示エリア（JS で動的生成）
         <div id="empty-state">  ← 未読み込み時の案内テキスト
@@ -136,6 +138,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・対象ファイル名（issue #92）・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
 | **Auto line comments** | 自動行コメントのデータ層。ルール（キーワード＋コメント本文）の保存（全体/プロジェクト）、適用済みログ、ルールを現在の diff に適用する `applyAutoLineComments()`。詳細は [Auto line comments](#auto-line-comments) を参照 |
 | **Auto line comments UI** | トップバーの「🤖 自動コメント」ボタンで開くモーダル `#auto-comment-modal-overlay` のルール編集UI（有効/無効・キーワード・Aa・+のみ・対象ファイル名・適用範囲・削除・コメント本文）、「▶ 今すぐ適用」ボタン（`runAutoLineCommentsManually()`）、モーダルの開閉処理。行編集UIの見た目はキーワード行抽出のクラス（`.extract-keyword-*`）を流用する |
+| **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
 | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
@@ -746,6 +749,7 @@ projectsByFileName(fileName): Project[]
 ```
 init()
   │
+  ├─ initTopbarTooltips()                      トップバーのカスタムツールチップを登録
   ├─ loadViewMode() → updateViewModeButtons()
   ├─ reviewFilter（表示フィルター）の復元
   ├─ commentFilter（「コメントあり」フィルター）の復元
