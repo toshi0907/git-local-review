@@ -181,6 +181,28 @@
     .memo-toggle-btn:hover, .settings-toggle-btn:hover, .keyword-toggle-btn:hover, .extract-toggle-btn:hover { background: #373e47; }
     .memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"], .keyword-toggle-btn[aria-expanded="true"], .extract-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
 
+    /* Icon-only top bar controls: the emoji is the label, the description
+       lives in data-tooltip (shown by #topbar-tooltip). */
+    .topbar .topbar-icon { font-size: 16px; line-height: 1; }
+    .topbar button.topbar-icon { padding: 4px 8px; }
+    .topbar .filter-checkbox-group-label.topbar-icon { cursor: help; }
+
+    .topbar-tooltip {
+      position: fixed;
+      z-index: 1000;
+      max-width: 320px;
+      padding: 6px 10px;
+      background: #1c2128;
+      color: #e6edf3;
+      border: 1px solid #444c56;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: normal;
+      pointer-events: none;
+    }
+
     .memo-badge {
       display: inline-flex;
       align-items: center;
@@ -2234,45 +2256,48 @@
 </head>
 <body>
 
-<!-- Top bar -->
+<!-- Top bar: every control is icon-only; its description is shown in the
+     custom tooltip (see "Top bar tooltips" in the script) via data-tooltip. -->
 <div class="topbar">
   <h1>🔍 Git Local Review</h1>
   <div class="spacer"></div>
   <div class="view-mode-toggle" id="view-mode-toggle" role="group" aria-label="差分の表示切り替え">
-    <button type="button" class="view-mode-btn" id="view-mode-unified" data-mode="unified" aria-pressed="true">Unified</button>
-    <button type="button" class="view-mode-btn" id="view-mode-split" data-mode="split" aria-pressed="false">左右表示</button>
+    <button type="button" class="view-mode-btn topbar-icon" id="view-mode-unified" data-mode="unified" aria-pressed="true" aria-label="Unified 表示" data-tooltip="Unified 表示（変更前後を1列で表示）"><span aria-hidden="true">📄</span></button>
+    <button type="button" class="view-mode-btn topbar-icon" id="view-mode-split" data-mode="split" aria-pressed="false" aria-label="左右表示" data-tooltip="左右表示（変更前と変更後を並べて表示）"><span aria-hidden="true">📖</span></button>
   </div>
   <div class="filter-checkbox-group word-diff-toggle" id="word-diff-toggle-group">
-    <label class="filter-checkbox-label"><input type="checkbox" id="word-diff-checkbox">単語単位で差分表示</label>
+    <label class="filter-checkbox-label" data-tooltip="単語単位で差分表示（変更行の中で変わった部分を強調）"><input type="checkbox" id="word-diff-checkbox" aria-label="単語単位で差分表示"><span class="topbar-icon" aria-hidden="true">🔤</span></label>
   </div>
   <div class="filter-checkbox-group" id="review-filter-group" role="group" aria-label="表示するハンクをレビュー状態で絞り込みます">
-    <span class="filter-checkbox-group-label">表示:</span>
-    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-unreviewed">未レビュー</label>
-    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-approved">承認</label>
-    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-needs_changes">要修正</label>
-    <label class="filter-checkbox-label"><input type="checkbox" id="review-filter-on_hold">保留</label>
+    <span class="filter-checkbox-group-label topbar-icon" aria-hidden="true" data-tooltip="表示するハンクをレビュー状態で絞り込みます（チェックがすべて外れているときは全件表示）">👁️</span>
+    <label class="filter-checkbox-label" data-tooltip="未レビューのハンクを表示"><input type="checkbox" id="review-filter-unreviewed" aria-label="未レビュー"><span class="topbar-icon" aria-hidden="true">❔</span></label>
+    <label class="filter-checkbox-label" data-tooltip="承認したハンクを表示"><input type="checkbox" id="review-filter-approved" aria-label="承認"><span class="topbar-icon" aria-hidden="true">✅</span></label>
+    <label class="filter-checkbox-label" data-tooltip="要修正のハンクを表示"><input type="checkbox" id="review-filter-needs_changes" aria-label="要修正"><span class="topbar-icon" aria-hidden="true">✏️</span></label>
+    <label class="filter-checkbox-label" data-tooltip="保留のハンクを表示"><input type="checkbox" id="review-filter-on_hold" aria-label="保留"><span class="topbar-icon" aria-hidden="true">⏸️</span></label>
   </div>
   <div class="filter-checkbox-group comment-filter-toggle" id="comment-filter-group">
-    <label class="filter-checkbox-label" title="行コメントが付いたハンクのみ表示します（レビュー状態の絞り込みと併用可）"><input type="checkbox" id="comment-filter-checkbox">💬コメントあり</label>
-    <button type="button" class="line-comment-hide-all-btn" id="hide-all-line-comments-btn" aria-pressed="false" aria-label="差分内の行コメントを一時的にすべて非表示" title="差分内の行コメントを一時的にすべて非表示にします（再読み込みで表示に戻ります）。チェック済みのみの非表示は設定から切り替えられます">非表示</button>
+    <label class="filter-checkbox-label" data-tooltip="行コメントが付いたハンクのみ表示します（レビュー状態の絞り込みと併用可）"><input type="checkbox" id="comment-filter-checkbox" aria-label="コメントあり"><span class="topbar-icon" aria-hidden="true">💬</span></label>
+    <button type="button" class="line-comment-hide-all-btn topbar-icon" id="hide-all-line-comments-btn" aria-pressed="false" aria-label="差分内の行コメントを一時的にすべて非表示" data-tooltip="差分内の行コメントを一時的にすべて非表示にします（再読み込みで表示に戻ります）。チェック済みのみの非表示は設定から切り替えられます"><span aria-hidden="true">🙈</span></button>
   </div>
-  <button type="button" class="settings-toggle-btn" id="settings-modal-open-btn" title="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
-    <span aria-hidden="true">⚙️</span> 設定
+  <button type="button" class="settings-toggle-btn topbar-icon" id="settings-modal-open-btn" aria-label="設定" data-tooltip="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">⚙️</span>
   </button>
-  <button type="button" class="keyword-toggle-btn" id="keyword-modal-open-btn" title="キーワードハイライト" aria-haspopup="dialog" aria-controls="keyword-modal-overlay" aria-expanded="false">
-    <span aria-hidden="true">🎨</span> ハイライト
+  <button type="button" class="keyword-toggle-btn topbar-icon" id="keyword-modal-open-btn" aria-label="キーワードハイライト" data-tooltip="キーワードハイライト" aria-haspopup="dialog" aria-controls="keyword-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🎨</span>
   </button>
-  <button type="button" class="extract-toggle-btn" id="extract-modal-open-btn" title="キーワード行抽出" aria-haspopup="dialog" aria-controls="extract-modal-overlay" aria-expanded="false">
-    <span aria-hidden="true">🔎</span> 抽出
+  <button type="button" class="extract-toggle-btn topbar-icon" id="extract-modal-open-btn" aria-label="キーワード行抽出" data-tooltip="キーワード行抽出" aria-haspopup="dialog" aria-controls="extract-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🔎</span>
   </button>
-  <button type="button" class="extract-toggle-btn" id="auto-comment-modal-open-btn" title="自動行コメント" aria-haspopup="dialog" aria-controls="auto-comment-modal-overlay" aria-expanded="false">
-    <span aria-hidden="true">🤖</span> 自動コメント
+  <button type="button" class="extract-toggle-btn topbar-icon" id="auto-comment-modal-open-btn" aria-label="自動行コメント" data-tooltip="自動行コメント" aria-haspopup="dialog" aria-controls="auto-comment-modal-overlay" aria-expanded="false">
+    <span aria-hidden="true">🤖</span>
   </button>
-  <button type="button" class="memo-toggle-btn" id="memo-toggle-btn" title="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
-    <span aria-hidden="true">📝</span> メモ<span class="memo-badge" id="memo-badge" hidden>0</span>
+  <button type="button" class="memo-toggle-btn topbar-icon" id="memo-toggle-btn" aria-label="レビューメモ" data-tooltip="レビューメモ" aria-expanded="false" aria-controls="memo-panel">
+    <span aria-hidden="true">📝</span><span class="memo-badge" id="memo-badge" hidden>0</span>
   </button>
   <span id="overall-progress"></span>
 </div>
+
+<div class="topbar-tooltip" id="topbar-tooltip" role="tooltip" hidden></div>
 
 <!-- Auto-save failure warning (issue #60): shown only while a settings
      auto-save folder is configured AND the last save attempt (or a
@@ -6575,8 +6600,15 @@ function refreshMemoBadge() {
   const openComments = countOpenLineComments();
   const openCount = openMemos + openComments;
   badge.textContent = String(openCount);
-  badge.title = `未完了: メモ ${openMemos} 件 / 行コメント ${openComments} 件`;
   badge.hidden = openCount === 0;
+  // The badge sits inside the icon-only toggle button, so its breakdown goes
+  // into the button's custom tooltip rather than a native title.
+  const toggleBtn = document.getElementById('memo-toggle-btn');
+  if (toggleBtn) {
+    toggleBtn.dataset.tooltip = openCount === 0
+      ? 'レビューメモ'
+      : `レビューメモ（未完了: メモ ${openMemos} 件 / 行コメント ${openComments} 件）`;
+  }
 }
 
 /** id of the memo currently being edited inline, or null. Reset whenever
@@ -9952,9 +9984,62 @@ autoCommentModalOverlay.addEventListener('click', (e) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Top bar tooltips
+// ─────────────────────────────────────────────────────────────────────────────
+// The top bar controls are icon-only, so their descriptions (data-tooltip) are
+// shown immediately on hover / keyboard focus in a single shared element that
+// is clamped to the viewport (the right-most buttons would otherwise overflow).
+function initTopbarTooltips() {
+  const topbar = document.querySelector('.topbar');
+  const tooltip = document.getElementById('topbar-tooltip');
+  if (!topbar || !tooltip) return;
+  let current = null;
+
+  const show = (target) => {
+    current = target;
+    tooltip.textContent = target.dataset.tooltip;
+    tooltip.hidden = false;
+    const rect = target.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.min(
+      Math.max(margin, rect.left + rect.width / 2 - tipRect.width / 2),
+      window.innerWidth - tipRect.width - margin
+    );
+    tooltip.style.left = `${Math.max(margin, left)}px`;
+    tooltip.style.top = `${rect.bottom + 6}px`;
+    const describedBy = target.matches('label') ? target.querySelector('input') : target;
+    if (describedBy) describedBy.setAttribute('aria-describedby', 'topbar-tooltip');
+  };
+  const hide = () => {
+    if (!current) return;
+    const describedBy = current.matches('label') ? current.querySelector('input') : current;
+    if (describedBy) describedBy.removeAttribute('aria-describedby');
+    current = null;
+    tooltip.hidden = true;
+  };
+
+  topbar.addEventListener('mouseover', (e) => {
+    const target = e.target.closest('[data-tooltip]');
+    if (target && target !== current) show(target);
+    else if (!target) hide();
+  });
+  topbar.addEventListener('mouseleave', hide);
+  topbar.addEventListener('focusin', (e) => {
+    const target = e.target.closest('[data-tooltip]');
+    if (target) show(target);
+  });
+  topbar.addEventListener('focusout', hide);
+  // Clicking opens modals / re-renders; drop the tooltip so it doesn't linger.
+  topbar.addEventListener('click', hide);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
+  initTopbarTooltips();
   app.viewMode = loadViewMode();
   updateViewModeButtons();
   app.wordDiff = loadWordDiff();
