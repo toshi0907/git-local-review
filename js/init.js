@@ -8,11 +8,8 @@
 // is clamped to the viewport (the right-most buttons would otherwise overflow).
 // Hover wins over keyboard focus; programmatic focus (e.g. a modal handing focus
 // back to its button) is ignored unless it is :focus-visible.
-// A hoisted function (not a `let`) because refreshMemoBadge() can run during
-// script load, before this section is evaluated.
-function refreshTopbarTooltip() {
-  if (refreshTopbarTooltip.render) refreshTopbarTooltip.render();
-}
+// refreshTopbarTooltip() lives in js/utils.js (see there); initTopbarTooltips()
+// attaches its renderer as refreshTopbarTooltip.render.
 
 function initTopbarTooltips() {
   const topbar = document.querySelector('.topbar');

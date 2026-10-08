@@ -220,3 +220,14 @@ function parseHunkHeader(header) {
   const m = header.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
   return m ? { oldStart: +m[1], newStart: +m[2] } : { oldStart: 1, newStart: 1 };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top bar tooltip refresh hook
+// ─────────────────────────────────────────────────────────────────────────────
+// Re-renders the shared top bar tooltip (see "Top bar tooltips" in js/init.js,
+// which attaches the renderer as refreshTopbarTooltip.render). Declared here,
+// in an early-loaded file, because refreshMemoBadge() (js/comments.js) calls it
+// and may run before js/init.js has been loaded; until then it is a no-op.
+function refreshTopbarTooltip() {
+  if (refreshTopbarTooltip.render) refreshTopbarTooltip.render();
+}

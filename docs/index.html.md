@@ -125,6 +125,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/utils.js` | **Hashing** | Web Crypto API / djb2 フォールバック |
 | `js/utils.js` | **HTML escaping** | `esc()` ユーティリティ |
 | `js/utils.js` | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| `js/utils.js` | **Top bar tooltip refresh hook** | `refreshTopbarTooltip()` — トップバーの共有ツールチップを再描画するフック。描画処理本体は「Top bar tooltips」（`js/init.js`）の `initTopbarTooltips()` が `refreshTopbarTooltip.render` として後から登録する。`refreshMemoBadge()`（`js/comments.js`）から呼ばれるため、`js/init.js` より先に読み込まれるこのファイルに置いている（登録前は何もしない） |
 | `js/sidebar.js` | **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
 | `js/sidebar.js` | **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示）。プロジェクト1件の描画は `buildProjectItem()`、コレクションのグループ表示は `buildCollectionGroup()` |
 | `js/sidebar.js` | **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、コレクション操作バー `#project-select-bar` の描画（`renderProjectSelectBar()`） |
