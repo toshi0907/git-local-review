@@ -425,7 +425,7 @@ renderProjectList()
 
 **レビュー進捗バッジ:** 各プロジェクトのファイル名の左に `.proj-progress-badge`（`<span>`）を1つ配置し、`updateProjectProgressBadge(projectId, el)` が中身を描画します。未レビューのハンクが残っていれば残数（`.badge-remaining`、赤系）、diff の全ハンクにレビューステータスが付いていれば ✓（`.badge-complete`、緑系。ハンクが0件の diff も「残りが無い」として ✓ 扱いになります）を表示し、そのプロジェクトの diff テキストが保存されていない、または計算がまだ完了していない（進捗が不明）場合のみバッジ自体を非表示（`hidden`）にします。
 
-現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化する必要があるため、その結果のハンクキー（ファイルパス＋ハッシュ）を `projectProgressCache`（`Map<projectId, {sig, files}>`）にキャッシュし、そのプロジェクトの diff テキストの `djb2hex()` 署名 `sig` が変わらない限り再計算しません（`getKnownProjectHunkFiles()`）。件数自体はキャッシュせず、描画のたびにその時点のレビュー状態（`loadAllReviews()[getStateOwnerId(projectId)]`）から数えるため、リセット・インポートや、同じコレクションの別プロジェクトでのレビュー変更でバッジが古くなることはありません。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。ハンクのレビューステータスが変わるたびに `refreshProgress()` → `refreshActiveProjectProgressBadges()` が、アクティブなプロジェクト（コレクション所属中はコレクションの全メンバーとコレクション見出し）のバッジを更新します。
+現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化する必要があるため、その結果のハンクキー（ファイルパス＋ハッシュ）を `projectProgressCache`（`Map<projectId, {files}>`）にキャッシュします（`getKnownProjectHunkFiles()`）。キャッシュは `saveFileContent()` / `deleteFileContent()` で diff テキストが変わったときに破棄されるため、レビューのたびに diff テキスト全体を読み直すことはありません。件数自体はキャッシュせず、描画のたびにその時点のレビュー状態（`loadAllReviews()[getStateOwnerId(projectId)]`）から数えるため、リセット・インポートや、同じコレクションの別プロジェクトでのレビュー変更でバッジが古くなることはありません。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。ハンクのレビューステータスが変わるたびに `refreshProgress()` → `refreshActiveProjectProgressBadges()` が、アクティブなプロジェクト（コレクション所属中はコレクションの全メンバーとコレクション見出し）のバッジを更新します。
 
 **コレクションのグループ表示:** コレクションに所属するプロジェクトは `buildCollectionGroup()` が1つのグループ（`.collection-group`）にまとめて描画します。グループはソート順で最初に現れるメンバーの位置に表示し、中に全メンバーをソート順で並べます。見出し（`.collection-header`）には折りたたみトグル・残レビュー数バッジ・コレクション名・件数・名前変更（✏️）・解散（✕）ボタンがあり、見出しクリックで折りたたみます（`collapsedCollectionIds`）。見出しのバッジ（`updateCollectionProgressBadge()`）は、全メンバーのハンクキーが判明した時点で、メンバー間で重複を除いた（同じファイルパス＋ハッシュは1件と数える）ハンク数から残数を表示します。
 
@@ -455,7 +455,7 @@ renderProjectList()
 | プロジェクトの削除 | 状態をコピーせずに除外（共有状態は残りのメンバーのために残す）。最後の1件なら自動削除 |
 | リセット | 所属中はコレクションで共有しているレビュー状態をリセット |
 
-操作後は `refreshAfterCollectionChange()` がメモ・各設定モーダル・サイドバー・diff を再描画します。インポート後は `reconcileCollections()` が「存在しないコレクションを指すプロジェクトには仮のコレクションを作る」「メンバーのいないコレクションを削除する」ことで整合性を保ちます。
+操作後は `refreshAfterCollectionChange()` がメモ・各設定モーダル・サイドバー・diff を再描画します。インポート時、`collectionId` を持たないインポートデータのプロジェクト（`schemaVersion: 7` 以前のエクスポートや古い設定ファイル）は、ローカルでの所属を引き継ぎます（所属が外れてコレクションの共有状態が消えるのを防ぐため）。インポートの最後に `reconcileCollections()` が「存在しないコレクションを指すプロジェクトには仮のコレクションを作る」「メンバーのプロジェクトID側に入った状態をコレクションへ統合する」「メンバーのいないコレクションを、その状態ごと削除する」ことで整合性を保ちます。
 
 ---
 
@@ -681,7 +681,7 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 `autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます（`lineComments` が置き換えられたのに適用済みログを含まないプロジェクトは、ローカルのログを削除してコメントとの整合を保ちます）。
 
-`collections`（`schemaVersion: 8`）はプロジェクトコレクションの一覧で、各プロジェクトには所属先の `collectionId` が付きます（`sanitizeImportedProjects()` が引き継ぎ）。コレクションの共有状態とコレクション範囲の設定は、`reviews` や `projectKeywordCategories` などの既存のマップにコレクションIDのキーで含まれるため、追加のキーはありません。インポート時は `collections` を同じ `id` で上書きマージした後、`reconcileCollections()` で整合性を保ちます。
+`collections`（`schemaVersion: 8`）はプロジェクトコレクションの一覧で、各プロジェクトには所属先の `collectionId` が付きます（`sanitizeImportedProjects()` が引き継ぎ）。コレクションの共有状態とコレクション範囲の設定は、`reviews` や `projectKeywordCategories` などの既存のマップにコレクションIDのキーで含まれるため、追加のキーはありません。インポート時は `collections` を同じ `id` で上書きマージし、`collectionId` を持たないプロジェクトはローカルでの所属を引き継ぎ、最後に `reconcileCollections()` で整合性を保ちます（[Collections](#collectionsプロジェクトコレクション) 参照）。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 

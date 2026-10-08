@@ -4096,12 +4096,14 @@ function saveFileContent(projectId, text) {
     delete files[projectId];
   }
   saveAllFiles(files);
+  invalidateProjectProgressCache(projectId);
 }
 
 function deleteFileContent(projectId) {
   const files = loadAllFiles();
   delete files[projectId];
   saveAllFiles(files);
+  invalidateProjectProgressCache(projectId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4932,16 +4934,16 @@ function parseHunkHeader(header) {
 // and hashed in memory), which is cheap and always exact. Any other project
 // has to be parsed and hashed from its saved diff text, which is async
 // (Web Crypto) — so each project's parsed hunk keys (file path + hash, not
-// the counts themselves) are cached, keyed by a cheap djb2 signature of that
-// project's raw diff text, and only recomputed when that text actually
-// changes. The counts are always derived from the current reviews, so a
+// the counts themselves) are cached, and only recomputed when that project's
+// saved diff text changes (saveFileContent()/deleteFileContent() drop the
+// entry). The counts are always derived from the current reviews, so a
 // review change elsewhere (reset, import, or another member of the same
 // collection sharing the hunk) never leaves a badge stale.
 // Each collection's group header in the sidebar likewise shows the remaining
 // count across its members' *distinct* hunks (a hunk shared by two members
 // counts once), once every member's hunk keys are known.
 // ─────────────────────────────────────────────────────────────────────────────
-const projectProgressCache = new Map(); // projectId -> { sig, files: [{ filePath, hunks: [{ hash }] }] }
+const projectProgressCache = new Map(); // projectId -> { files: [{ filePath, hunks: [{ hash }] }] }
 /** Sidebar collection-header badge elements keyed by collectionId, populated during renderProjectList. */
 const collectionBadgeEls = new Map();
 
@@ -4995,10 +4997,12 @@ function renderProjectProgressBadge(el, progress) {
  */
 function getKnownProjectHunkFiles(projectId) {
   if (projectId === app.currentProjectId && app.parsedDiff) return app.parsedDiff;
-  const rawText = loadFileContent(projectId);
-  if (rawText == null) return undefined;
+  // saveFileContent()/deleteFileContent() drop the entry whenever the saved
+  // text changes, so a cached entry can be trusted without re-reading (and
+  // re-hashing) the whole saved diff text on every review click.
   const cached = projectProgressCache.get(projectId);
-  return cached && cached.sig === djb2hex(rawText) ? cached.files : null;
+  if (cached) return cached.files;
+  return loadFileContent(projectId) == null ? undefined : null;
 }
 
 /**
@@ -5023,7 +5027,6 @@ function updateProjectProgressBadge(projectId, el) {
   }
 
   const rawText = loadFileContent(projectId);
-  const sig = djb2hex(rawText);
 
   // Hide rather than show a stale count while the (async) parse+hash for
   // the new content is in flight.
@@ -5038,8 +5041,10 @@ function updateProjectProgressBadge(projectId, el) {
       console.error('Failed to compute review progress for project', projectId, e);
       return;
     }
+    // The saved text may have been replaced while hashing was in flight;
+    // don't cache keys computed from the old text.
+    if (loadFileContent(projectId) !== rawText) return;
     projectProgressCache.set(projectId, {
-      sig,
       files: parsed.map(f => ({ filePath: f.filePath, hunks: f.hunks.map(h => ({ hash: h.hash })) })),
     });
     // Reviews (or the project's collection) may have changed while hashing
@@ -5119,7 +5124,8 @@ function renderProjectList() {
   const sorted = sortProjects(projects, loadProjectSort());
 
   // A collection is shown as one group at the position of its first member
-  // in the sorted list, with all its members (in sorted order) inside it.
+  // in the sorted list, with all its members (in sorted order) inside it
+  // (the same order getSidebarProjectOrder() returns).
   const renderedCollectionIds = new Set();
   for (const proj of sorted) {
     const collection = proj.collectionId && collections.find(c => c.id === proj.collectionId);
@@ -5385,9 +5391,26 @@ function toggleProjectSelected(projectId) {
   renderProjectList();
 }
 
+/** Project IDs in sidebar display order: sorted, with each collection's members pulled up to its first member's position. */
+function getSidebarProjectOrder() {
+  const collectionIds = new Set(loadCollections().map(c => c.id));
+  const sorted = sortProjects(loadProjects(), loadProjectSort());
+  const order = [];
+  const seenCollections = new Set();
+  for (const proj of sorted) {
+    if (!proj.collectionId || !collectionIds.has(proj.collectionId)) {
+      order.push(proj.id);
+    } else if (!seenCollections.has(proj.collectionId)) {
+      seenCollections.add(proj.collectionId);
+      order.push(...sorted.filter(p => p.collectionId === proj.collectionId).map(p => p.id));
+    }
+  }
+  return order;
+}
+
 /** Selected project IDs in the order they appear in the sidebar. */
 function getSelectedProjectIdsInOrder() {
-  return sortProjects(loadProjects(), loadProjectSort()).map(p => p.id).filter(id => selectedProjectIds.has(id));
+  return getSidebarProjectOrder().filter(id => selectedProjectIds.has(id));
 }
 
 function renderProjectSelectBar(collections = loadCollections()) {
@@ -7039,8 +7062,15 @@ function renderLineCommentList() {
   if (orphans.length > 0) {
     const divider = document.createElement('li');
     divider.className = 'memo-list-divider';
-    divider.textContent = `現在の diff に見つからないコメント（${orphans.length}）`;
-    divider.title = 'diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    if (getCurrentCollectionId()) {
+      // Shared comments include those on hunks that only exist in another
+      // member's diff (e.g. per-commit hunks merged into one by git diff).
+      divider.textContent = `このプロジェクトの diff にないコメント（${orphans.length}）`;
+      divider.title = 'コレクション内の他のプロジェクトの diff にあるハンクへのコメントや、diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    } else {
+      divider.textContent = `現在の diff に見つからないコメント（${orphans.length}）`;
+      divider.title = 'diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    }
     listEl.appendChild(divider);
     for (const { loc, comment } of orphans) listEl.appendChild(buildLineCommentListItem(loc, comment, false));
   }
@@ -7716,9 +7746,15 @@ function resetProject(projectId) {
 /** Permanently delete a project */
 function deleteProject(projectId) {
   const proj = loadProjects().find(p => p.id === projectId);
-  if (!confirm(getProjectCollectionId(projectId)
-    ? `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nコレクションで共有しているチェック状態は、コレクションに残ります。`
-    : `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nチェック状態も合わせて削除されます。`)) return;
+  const collectionId = getProjectCollectionId(projectId);
+  const isLastMember = collectionId && getCollectionMemberIds(collectionId).length === 1;
+  let message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nチェック状態も合わせて削除されます。`;
+  if (isLastMember) {
+    message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nコレクションの最後のプロジェクトのため、コレクションと共有しているチェック状態・行コメント・メモ・コレクション範囲の設定も合わせて削除されます。`;
+  } else if (collectionId) {
+    message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nコレクションで共有しているチェック状態は、コレクションに残ります。`;
+  }
+  if (!confirm(message)) return;
 
   // Leave its collection without copying the shared state (it's about to be
   // deleted anyway); the shared state stays with the remaining members.
@@ -7882,8 +7918,13 @@ function mergeStateIntoOwner(fromId, toId) {
       for (const h of Object.keys(comments[fromId][fp])) {
         for (const idx of Object.keys(comments[fromId][fp][h])) {
           const list = ensureChild(ensureChild(ensureChild(target, fp), h), idx, true);
-          const ids = new Set(list.map(c => c.id));
-          for (const c of comments[fromId][fp][h][idx]) if (!ids.has(c.id)) list.push(c);
+          // Skip the same comment, and an auto comment the same rule already
+          // added to this line on the collection's side (each member ran
+          // the rule on its own before joining).
+          for (const c of comments[fromId][fp][h][idx]) {
+            if (list.some(t => t.id === c.id || (c.autoRuleId && t.autoRuleId === c.autoRuleId))) continue;
+            list.push(c);
+          }
         }
       }
     }
@@ -8152,7 +8193,10 @@ function sanitizeImportedProjects(rawProjects) {
 /**
  * Restores the collection invariants after an import: a project pointing at
  * a collection that doesn't exist gets a placeholder one (so the state stored
- * under that ID stays reachable), and a collection with no members is deleted.
+ * under that ID stays reachable), state imported under a member's own ID
+ * (e.g. from a pre-v8 export) is folded into its collection's (the
+ * collection's review statuses win), and a collection with no members is
+ * deleted together with its stored state.
  */
 function reconcileCollections() {
   const projects = loadProjects();
@@ -8160,6 +8204,9 @@ function reconcileCollections() {
   const missing = [...new Set(projects.map(p => p.collectionId).filter(id => id && !collections.some(c => c.id === id)))];
   if (missing.length > 0) {
     saveCollections([...collections, ...missing.map(id => ({ id, name: 'コレクション', createdAt: Date.now() }))]);
+  }
+  for (const p of projects) {
+    if (p.collectionId) mergeStateIntoOwner(p.id, p.collectionId);
   }
   for (const c of loadCollections()) {
     if (getCollectionMemberIds(c.id, projects).length === 0) deleteCollectionData(c.id);
@@ -8308,18 +8355,25 @@ function mergeImportedData(data) {
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
-  for (const p of importedProjects) byId.set(p.id, p);
+  for (const p of importedProjects) {
+    // An imported project without a collectionId (a pre-v8 export, or a stale
+    // settings file) keeps its local membership: dropping it would empty the
+    // collection and reconcileCollections() would delete its shared state.
+    const local = byId.get(p.id);
+    if (!p.collectionId && local && local.collectionId) p.collectionId = local.collectionId;
+    byId.set(p.id, p);
+  }
   saveProjects([...byId.values()]);
 
   const collectionsById = new Map(loadCollections().map(c => [c.id, c]));
   for (const c of sanitizeCollections(data.collections)) collectionsById.set(c.id, c);
   saveCollections([...collectionsById.values()]);
-  reconcileCollections();
 
+  // The progress-badge cache holds hunk keys, not counts, so replacing
+  // reviews needs no cache invalidation.
   const reviews = loadAllReviews();
   for (const pid of Object.keys(importedReviews)) {
     reviews[pid] = importedReviews[pid];
-    invalidateProjectProgressCache(pid);
   }
   saveAllReviews(reviews);
 
@@ -8346,6 +8400,9 @@ function mergeImportedData(data) {
     else delete applied[pid];
   }
   saveAllAutoCommentApplied(applied);
+
+  // Last, so it also cleans up / folds in the state written just above.
+  reconcileCollections();
 
   return importedProjects.length;
 }
