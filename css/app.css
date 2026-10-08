@@ -1,0 +1,2325 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5;
+  color: #24292e;
+  /* Definite height (not just min-height) so .layout's "flex: 1" resolves
+     against a bounded free space instead of growing to fit its tallest
+     child's content (e.g. a long memo list). Without this, the page
+     itself becomes scrollable and the docked memo panel — whose z-index
+     sits above the sticky topbar — slides up over the header on scroll,
+     blocking the settings button (issue #72). */
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Top bar ===== */
+.topbar {
+  background: #24292e;
+  color: #fff;
+  padding: 0 20px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  flex-shrink: 0;
+}
+
+.topbar h1 {
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.topbar .spacer { flex: 1; }
+
+#overall-progress {
+  font-size: 13px;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+#overall-progress.has-progress { color: #58a6ff; }
+
+/* ===== Auto-save failure warning (issue #60) ===== */
+.autosave-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 20px;
+  background: #7d4e00;
+  color: #fff;
+  font-size: 13px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 50px;
+  z-index: 190;
+}
+
+#autosave-warning-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.view-mode-toggle {
+  display: flex;
+  border: 1px solid #444c56;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-right: 16px;
+  flex-shrink: 0;
+}
+
+.view-mode-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: #2d333b;
+  color: #adbac7;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.view-mode-btn + .view-mode-btn { border-left: 1px solid #444c56; }
+.view-mode-btn:hover:not(.active) { background: #373e47; }
+.view-mode-btn.active { background: #58a6ff; color: #0b1116; }
+
+.filter-checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #c9d1d9;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.word-diff-toggle { margin-right: 16px; }
+
+/* "非表示" (hide all line comments) toggle in the top bar (issue #124). */
+.line-comment-hide-all-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #444c56;
+  border-radius: 6px;
+  background: #2d333b;
+  color: #adbac7;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.line-comment-hide-all-btn:hover:not([aria-pressed="true"]) { background: #373e47; }
+.line-comment-hide-all-btn[aria-pressed="true"] { background: #58a6ff; color: #0b1116; }
+
+.filter-checkbox-group-label {
+  white-space: nowrap;
+}
+
+.filter-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.memo-toggle-btn, .settings-toggle-btn, .keyword-toggle-btn, .extract-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: #2d333b;
+  color: #adbac7;
+  border: 1px solid #444c56;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.memo-toggle-btn:hover, .settings-toggle-btn:hover, .keyword-toggle-btn:hover, .extract-toggle-btn:hover { background: #373e47; }
+.memo-toggle-btn[aria-expanded="true"], .settings-toggle-btn[aria-expanded="true"], .keyword-toggle-btn[aria-expanded="true"], .extract-toggle-btn[aria-expanded="true"] { background: #58a6ff; color: #0b1116; }
+
+/* Icon-only top bar controls: the emoji is the label, the description
+   lives in data-tooltip (shown by #topbar-tooltip). */
+.topbar .topbar-icon { font-size: 16px; line-height: 1; }
+.topbar button.topbar-icon { padding: 4px 8px; }
+.topbar .filter-checkbox-group-label.topbar-icon { cursor: help; }
+
+.topbar-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 6px 10px;
+  background: #1c2128;
+  color: #e6edf3;
+  border: 1px solid #444c56;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.memo-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: #da3633;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.memo-badge[hidden] { display: none; }
+
+/* ===== Layout ===== */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  height: calc(100vh - 50px - var(--autosave-warning-height, 0px));
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  position: relative;
+  width: 280px;
+  min-width: 220px;
+  max-width: 600px;
+  background: #fff;
+  border-right: 1px solid #d0d7de;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Drag handle on the sidebar's right edge (issue #94), mirroring
+   .memo-panel-resizer's handle on the memo panel's left edge — kept
+   fully inside the panel's box (not straddling the border) since the
+   parent's overflow: hidden would otherwise clip it and swallow pointer
+   events on the clipped portion. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.load-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.load-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  background: #0969da;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.load-btn:hover { background: #0550ae; }
+
+#file-input { display: none; }
+
+.io-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.io-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f6f8fa;
+  color: #24292e;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.io-btn:hover { background: #e7eaef; }
+
+#import-input { display: none; }
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #57606a;
+}
+
+.folder-label { flex-shrink: 0; }
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #24292e;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+}
+
+.folder-btn {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  background: #f6f8fa;
+  color: #24292e;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.folder-btn:hover { background: #e7eaef; }
+
+.settings-save-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e4e8;
+}
+
+.settings-save-btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-save-btn { flex: 1; }
+
+.io-section { margin-bottom: 10px; }
+.io-section .io-btn-row { margin-top: 0; }
+
+.io-section-label {
+  font-size: 11px;
+  color: #57606a;
+  margin-bottom: 6px;
+}
+
+.folder-status-msg {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #57606a;
+  min-height: 14px;
+}
+
+.folder-external-update-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #9a6700;
+}
+
+.encoding-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.encoding-row label { flex-shrink: 0; }
+
+.settings-checkbox-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.encoding-row select,
+.proj-encoding select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 11px;
+}
+
+.sort-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: #57606a;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.sort-row label { flex-shrink: 0; }
+
+.sort-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 11px;
+}
+
+.keyword-row {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.keyword-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.keyword-category-add-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: none;
+  border: 1px solid #0969da;
+  border-radius: 5px;
+  color: #0969da;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.keyword-category-add-btn:hover { background: #ddf4ff; }
+
+.keyword-row-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Groups a scope label ("全て" / "全体設定" / "プロジェクト設定") with its
+   "有効"/"無効" buttons; flex-basis: 100% forces each group onto its own
+   line within the wrapping header-actions row above (issue #113). Shared
+   between the keyword-highlight and keyword-line-extraction modals. */
+.keyword-toggle-group {
+  display: flex;
+  align-items: center;
+  flex-basis: 100%;
+  gap: 6px;
+}
+
+.keyword-toggle-group[hidden] { display: none; }
+
+.keyword-toggle-group-label {
+  display: inline-block;
+  width: 8em;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: #57606a;
+  margin-right: 2px;
+}
+
+.keyword-category-bulk-toggle-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #57606a;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.keyword-category-bulk-toggle-btn:hover { background: #eaeef2; }
+.keyword-category-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.keyword-bulk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+/* Author-stylesheet display rules beat the UA stylesheet's [hidden]
+   default at equal specificity, so re-assert it explicitly here —
+   otherwise the form above would stay visible while hidden. */
+.keyword-bulk-form[hidden] { display: none; }
+
+.keyword-bulk-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 70px;
+  padding: 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.keyword-bulk-textarea:focus {
+  outline: none;
+  border-color: #0969da;
+}
+
+.keyword-bulk-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.keyword-bulk-form-actions .keyword-category-scope-select { margin-right: auto; }
+
+.keyword-bulk-cancel-btn {
+  padding: 3px 10px;
+  background: none;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  color: #57606a;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.keyword-bulk-cancel-btn:hover { background: #eaeef2; }
+
+.keyword-bulk-submit-btn {
+  padding: 3px 10px;
+  background: #0969da;
+  border: 1px solid #0969da;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.keyword-bulk-submit-btn:hover { background: #0757ba; }
+
+.keyword-categories {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.keyword-categories-empty {
+  font-size: 11px;
+  color: #8b949e;
+  padding: 4px 0;
+}
+
+/* Each category is a single horizontally-laid-out row (space-saving:
+   previously three stacked rows) that wraps onto extra lines only if the
+   sidebar/modal is too narrow to fit everything. */
+.keyword-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.keyword-category-scope-select {
+  padding: 2px 4px;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: #fff;
+  color: #57606a;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.keyword-category-count-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #57606a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.keyword-category-count-toggle { cursor: pointer; }
+
+.keyword-category-count-badge {
+  font-weight: 600;
+  color: #24292e;
+}
+
+.keyword-category-case-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #57606a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.keyword-category-case-toggle { cursor: pointer; }
+
+.keyword-category-enabled-toggle {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.keyword-category-color {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.keyword-category-row.keyword-category-disabled .keyword-category-color,
+.keyword-category-row.keyword-category-disabled .keyword-category-keywords {
+  opacity: 0.5;
+}
+
+.keyword-category-keywords {
+  flex: 1 1 70px;
+  min-width: 70px;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 12px;
+}
+
+.keyword-category-keywords:focus {
+  outline: none;
+  border-color: #0969da;
+}
+
+.keyword-category-remove-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.keyword-category-remove-btn:hover { background: #ffeef0; color: #cf222e; }
+
+.sidebar-section-title {
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #57606a;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid #e1e4e8;
+  background: #f6f8fa;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.project-select-mode-btn {
+  padding: 2px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+.project-select-mode-btn:hover { background: #eaeef2; }
+.project-select-mode-btn[aria-pressed="true"] { background: #ddf4ff; border-color: #54aeff; color: #0969da; }
+
+/* Action bar shown in project selection mode (collection create/add/remove). */
+.project-select-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e1e4e8;
+  background: #f6f8fa;
+  font-size: 11px;
+}
+.project-select-bar[hidden] { display: none; }
+.project-select-count { flex-basis: 100%; color: #57606a; font-weight: 600; }
+.project-select-action-btn,
+.project-select-action-select {
+  padding: 3px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 100%;
+}
+.project-select-action-btn:hover:not(:disabled) { background: #eaeef2; }
+.project-select-action-btn:disabled,
+.project-select-action-select:disabled { opacity: 0.5; cursor: default; }
+
+.proj-select-checkbox { flex-shrink: 0; margin: 2px 0 0; cursor: pointer; }
+.project-item.selected { background: #fff8c5; }
+
+/* Collection group: a collapsible header followed by its (indented) members. */
+.collection-group { border-bottom: 1px solid #d0d7de; }
+.collection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: #f3f0ff;
+  border-left: 3px solid #8250df;
+  cursor: pointer;
+  font-size: 12px;
+}
+.collection-header:hover { background: #ebe5ff; }
+.collection-toggle {
+  flex-shrink: 0;
+  padding: 0 2px;
+  background: none;
+  border: none;
+  color: #57606a;
+  font-size: 10px;
+  cursor: pointer;
+}
+.collection-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  color: #24292e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collection-count { flex-shrink: 0; color: #8b949e; font-size: 11px; }
+.collection-action-btn {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #57606a;
+  font-size: 11px;
+  cursor: pointer;
+}
+.collection-action-btn:hover { background: #fff; border-color: #d0d7de; }
+.collection-members .project-item { padding-left: 24px; }
+.collection-group.collapsed .collection-members { display: none; }
+.collection-group.collapsed.has-active .collection-header { border-left-color: #0969da; }
+
+.project-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.project-empty {
+  padding: 20px 16px;
+  color: #8b949e;
+  font-size: 13px;
+  text-align: center;
+}
+
+.project-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f2f5;
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+
+.project-item:hover { background: #f6f8fa; }
+
+.project-item.active {
+  background: #ddf4ff;
+  border-left-color: #0969da;
+}
+
+/* Compact project list (issue #83): only the filename, updated time and
+   reload button show by default; id/encoding/reset/delete live inside
+   .proj-details, shown only for an expanded item. */
+.proj-top-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Project name on its own row, reload button + updated time together on
+   the row below, expand toggle pushed to the far right (issue #85). */
+.proj-bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.proj-bottom-row .proj-meta {
+  margin-bottom: 0;
+}
+
+.proj-bottom-row .proj-expand-toggle {
+  margin-left: auto;
+}
+
+.proj-expand-toggle {
+  flex-shrink: 0;
+  padding: 2px 5px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #57606a;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.proj-expand-toggle:hover { background: #eaeef2; border-color: #d0d7de; }
+
+.proj-details { display: none; }
+
+.project-item.expanded .proj-details { display: block; }
+
+.proj-update-badge {
+  margin-right: 4px;
+  font-size: 12px;
+}
+
+/* Review-progress badge (remaining unreviewed hunk count, or a checkmark
+   once every hunk in the project has a review status), shown to the
+   left of the project name. Hidden entirely while no count is known yet
+   (diff not loaded / still being parsed+hashed). */
+.proj-progress-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.proj-progress-badge[hidden] { display: none; }
+.proj-progress-badge.badge-remaining { background: #ffd7d5; color: #cf222e; }
+.proj-progress-badge.badge-complete  { background: #ccffd8; color: #1a7f37; }
+
+.btn-reload-update {
+  color: #b42318;
+  border-color: #fda29b;
+  background: #fef3f2;
+}
+.btn-reload-update:hover { background: #ffe0dd; }
+
+.proj-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #24292e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.proj-id {
+  font-size: 10px;
+  color: #8b949e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  margin-bottom: 4px;
+}
+
+.proj-meta {
+  font-size: 11px;
+  color: #8b949e;
+  margin-bottom: 6px;
+}
+
+.proj-encoding {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #8b949e;
+  margin-bottom: 6px;
+}
+
+.proj-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  background: none;
+}
+
+.btn-reset {
+  color: #953800;
+  border-color: #f0a76c;
+  background: #fff8f0;
+}
+.btn-reset:hover { background: #ffe8cc; }
+
+.btn-delete {
+  color: #57606a;
+  border-color: #d0d7de;
+  background: #fff;
+}
+.btn-delete:hover { background: #f6f8fa; }
+
+.btn-reload {
+  color: #0a5c36;
+  border-color: #7ee2a8;
+  background: #eafff2;
+}
+.btn-reload:hover { background: #ccffdf; }
+
+/* ===== Main content ===== */
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.empty-state {
+  text-align: center;
+  color: #8b949e;
+  margin-top: 80px;
+  font-size: 15px;
+  line-height: 2;
+}
+
+.empty-state .icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* ===== Stat summary panel ===== */
+.stat-summary {
+  margin-bottom: 20px;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.stat-summary-header {
+  padding: 8px 16px;
+  background: #f6f8fa;
+  border-bottom: 1px solid #d0d7de;
+  font-size: 12px;
+  font-weight: 700;
+  color: #57606a;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 16px;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 12px;
+}
+
+.stat-row:last-child { border-bottom: none; }
+
+.stat-row.stat-total {
+  background: #f6f8fa;
+  border-top: 1px solid #d0d7de;
+  font-weight: 600;
+  font-size: 12px;
+  color: #24292e;
+}
+
+.stat-filename {
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  color: #0969da;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+  text-decoration: none;
+}
+
+.stat-filename:hover { text-decoration: underline; }
+
+.stat-counts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+}
+
+.stat-add { color: #1a7f37; }
+.stat-del { color: #cf222e; }
+
+.stat-bar {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.stat-bar-add {
+  display: inline-block;
+  width: 8px;
+  height: 10px;
+  background: #2da44e;
+  border-radius: 1px;
+}
+
+.stat-bar-del {
+  display: inline-block;
+  width: 8px;
+  height: 10px;
+  background: #cf222e;
+  border-radius: 1px;
+}
+
+/* ===== Commit sections (git log -p input) ===== */
+.commit-section-header {
+  margin: 32px 0 12px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+  background: #eaeef2;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.commit-section-header:first-child { margin-top: 0; }
+
+.commit-hash {
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: #57606a;
+  background: #d0d7de;
+  padding: 2px 8px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.commit-subject {
+  font-size: 14px;
+  font-weight: 600;
+  color: #24292e;
+}
+
+.commit-meta {
+  font-size: 12px;
+  color: #57606a;
+}
+
+/* ===== File sections ===== */
+.file-section {
+  margin-bottom: 28px;
+  border-radius: 8px;
+  border: 1px solid #d0d7de;
+  background: #fff;
+  overflow: hidden;
+}
+
+.file-header {
+  background: #f6f8fa;
+  border-bottom: 1px solid #d0d7de;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.file-path {
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #24292e;
+  word-break: break-all;
+}
+
+.file-progress {
+  font-size: 12px;
+  color: #57606a;
+  background: #e1e4e8;
+  padding: 2px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.file-progress.complete {
+  background: #d4edda;
+  color: #155724;
+}
+
+/* ===== Hunk cards ===== */
+.hunk-card {
+  border-top: 1px solid #e1e4e8;
+  transition: background 0.15s;
+}
+
+.hunk-card:first-of-type { border-top: none; }
+
+/* Review status (issue #51): each status gets its own card tint so the
+   three outcomes stay visually distinct from each other and from the
+   neutral (unreviewed) state. */
+.hunk-card.status-approved      { background: #f0fff4; }
+.hunk-card.status-needs_changes { background: #fff5f5; }
+.hunk-card.status-on_hold       { background: #fffdf0; }
+
+.hunk-card.focused {
+  outline: 2px solid #4c9aff;
+  outline-offset: -2px;
+}
+
+.hunk-card.focused .hunk-header-bar {
+  background: #dceaff;
+}
+
+.hunk-card.focused.status-approved .hunk-header-bar      { background: #d3f5df; }
+.hunk-card.focused.status-needs_changes .hunk-header-bar { background: #ffd9d9; }
+.hunk-card.focused.status-on_hold .hunk-header-bar       { background: #fdf3c4; }
+
+.hunk-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: #f1f8ff;
+  border-bottom: 1px solid #dbe9fd;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.hunk-card.status-approved .hunk-header-bar {
+  background: #e6ffed;
+  border-bottom-color: #c3e6cb;
+}
+
+.hunk-card.status-needs_changes .hunk-header-bar {
+  background: #ffeef0;
+  border-bottom-color: #f5c6cb;
+}
+
+.hunk-card.status-on_hold .hunk-header-bar {
+  background: #fff8e1;
+  border-bottom-color: #f0e2a6;
+}
+
+.hunk-card.collapsed .hunk-header-bar {
+  border-bottom: none;
+}
+
+.hunk-body {
+  overflow: hidden;
+}
+
+.hunk-card.collapsed .hunk-body {
+  display: none;
+}
+
+.hunk-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  color: #57606a;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.hunk-toggle-btn:hover { color: #24292e; }
+
+.hunk-header-text {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  color: #0550ae;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review-status-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.review-status-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 12px;
+  background: #fff;
+  color: #57606a;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.review-status-btn:hover { background: #f6f8fa; }
+
+.review-status-btn.status-approved.active {
+  background: #1a7f37;
+  border-color: #1a7f37;
+  color: #fff;
+}
+
+.review-status-btn.status-needs_changes.active {
+  background: #cf222e;
+  border-color: #cf222e;
+  color: #fff;
+}
+
+.review-status-btn.status-on_hold.active {
+  background: #9a6700;
+  border-color: #9a6700;
+  color: #fff;
+}
+
+/* ===== Diff table ===== */
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.diff-table tbody tr { line-height: 20px; }
+
+.line-num {
+  width: 50px;
+  text-align: right;
+  padding: 0 8px;
+  color: #8b949e;
+  border-right: 1px solid #e1e4e8;
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.line-content {
+  padding: 0 8px;
+  white-space: pre;
+  overflow-x: hidden;
+  vertical-align: top;
+}
+
+/* Prevent highlight.js from overriding diff row background colors */
+.diff-table td .hljs,
+.diff-table .hljs-code,
+.diff-table .hljs-addition,
+.diff-table .hljs-deletion { background: transparent; padding: 0; }
+
+/* Keyword highlight (issue #10): applied on top of syntax highlighting,
+   so it must win over the transparent background rules above. Background
+   and text color are set inline per match (see applyKeywordHighlight),
+   reflecting that match's category color; the values below are only a
+   fallback. */
+.keyword-hit {
+  background: #fff000;
+  color: #24292e;
+  border-radius: 2px;
+}
+
+.line-prefix {
+  display: inline-block;
+  width: 14px;
+}
+
+.line-add { background: #e6ffec; }
+.line-add .line-num { background: #ccffd8; }
+.line-add .line-prefix { color: #1a7f37; font-weight: bold; }
+
+.line-del { background: #ffebe9; }
+.line-del .line-num { background: #ffd7d5; }
+.line-del .line-prefix { color: #cf222e; font-weight: bold; }
+
+/* Split (side-by-side) view applies .line-add/.line-del directly to the
+   .line-num cell itself rather than to an ancestor <tr>, so the above
+   descendant rules don't match there — add same-element equivalents. */
+td.line-num.line-add { background: #ccffd8; }
+td.line-num.line-del { background: #ffd7d5; }
+
+.line-context { background: #fff; }
+.line-context .line-prefix { color: #8b949e; }
+
+/* Word-level diff highlighting (git --word-diff-style, opt-in via the
+   単語単位で差分表示 checkbox): a stronger overlay on top of the line's
+   own .line-add/.line-del background, marking only the changed tokens
+   within a paired removed/added line. */
+.worddiff-del { background: #ffb9b0; text-decoration: line-through; text-decoration-color: rgba(207, 34, 46, 0.6); border-radius: 2px; }
+.worddiff-add { background: #6fdd8b; border-radius: 2px; }
+
+.line-no-newline {
+  background: #fffce0;
+  font-style: italic;
+  color: #8b949e;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+/* ===== Diff table: side-by-side (split) mode ===== */
+.diff-table-split .col-divider { border-left: 2px solid #d0d7de; }
+
+.diff-table-split thead th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57606a;
+  background: #f6f8fa;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e1e4e8;
+}
+
+.diff-table-split thead th.col-divider { border-left: 2px solid #d0d7de; }
+
+.line-empty { background: #f6f8fa; }
+.line-empty.line-num { color: transparent; }
+
+/* ===== Line comments: in-diff controls and rows ===== */
+.diff-table td.line-num { position: relative; }
+
+/* "+" button in a line's line-number cell, revealed on row hover (or
+   keyboard focus) like GitHub's add-comment affordance. */
+.line-comment-add-btn {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: #0969da;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.diff-table tr:hover .line-comment-add-btn,
+.line-comment-add-btn:focus-visible { opacity: 1; }
+.line-comment-add-btn:hover { background: #0550ae; }
+
+.hunk-comment-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: #57606a;
+  white-space: nowrap;
+}
+
+.hunk-comment-badge[hidden] { display: none; }
+
+.line-comment-cell {
+  padding: 6px 12px 6px 60px;
+  background: #f6f8fa;
+  border-top: 1px solid #e1e4e8;
+  border-bottom: 1px solid #e1e4e8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  white-space: normal;
+}
+
+.line-comment-box {
+  max-width: 820px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.line-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.line-comment-label {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0550ae;
+}
+
+div.line-comment-label { margin-bottom: 6px; }
+
+.line-comment-auto-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ddf4ff;
+  color: #0969da;
+  font-weight: 600;
+}
+
+.line-comment-time { font-size: 11px; color: #8b949e; margin-right: auto; }
+
+/* Checked-state checkbox on a line comment (issue #120), styled like the memo checkbox. */
+.line-comment-done-cb {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #1a7f37;
+}
+
+.line-comment-item .line-comment-done-cb { margin-top: 2px; }
+
+.line-comment-row.done .line-comment-text,
+.line-comment-item.done .line-comment-item-text {
+  text-decoration: line-through;
+  color: #8b949e;
+}
+
+.line-comment-edit-btn,
+.line-comment-delete-btn {
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.line-comment-edit-btn:hover { background: #eef6ff; color: #0969da; }
+.line-comment-delete-btn:hover { background: #ffeef0; color: #cf222e; }
+
+.line-comment-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #24292e;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line-comment-form { display: flex; flex-direction: column; gap: 6px; }
+
+.line-comment-form textarea {
+  width: 100%;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.line-comment-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Brief highlight after jumping to a comment from the memo panel list. */
+@keyframes line-comment-flash {
+  from { background: #fff8c5; }
+  to   { background: #f6f8fa; }
+}
+
+.line-comment-row.flash .line-comment-cell { animation: line-comment-flash 1.5s ease-out; }
+
+/* Line comment visibility (issue #124): classes set on #diff-container by
+   applyLineCommentVisibility(). Rows being edited stay visible so an
+   in-progress edit isn't hidden mid-typing. */
+.hide-done-line-comments .line-comment-row.done:not(:has(.line-comment-form)),
+.hide-all-line-comments .line-comment-row:not(:has(.line-comment-form)) { display: none; }
+
+/* ===== Drag & drop overlay ===== */
+.drop-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 105, 218, 0.10);
+  border: 4px dashed #0969da;
+  z-index: 400;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay.active { display: flex; }
+
+.drop-overlay-msg {
+  padding: 16px 28px;
+  background: #fff;
+  border: 1px solid #0969da;
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  font-size: 16px;
+  font-weight: 600;
+  color: #0969da;
+}
+
+/* ===== Modal ===== */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.active { display: flex; }
+
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px;
+  max-width: 500px;
+  width: 92%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.modal h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: #24292e;
+}
+
+.modal-desc {
+  font-size: 14px;
+  color: #57606a;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.modal-proj-list {
+  margin-bottom: 20px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.proj-option {
+  padding: 9px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #e1e4e8;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.proj-option:last-child { border-bottom: none; }
+.proj-option:hover { background: #f6f8fa; }
+.proj-option.selected { background: #ddf4ff; }
+
+.proj-option .opt-id {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  color: #24292e;
+  font-weight: 600;
+}
+
+.proj-option .opt-meta {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 2px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.modal-btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.modal-btn-primary {
+  background: #0969da;
+  color: #fff;
+  border-color: #0969da;
+}
+.modal-btn-primary:hover { background: #0550ae; }
+
+.modal-btn-secondary {
+  background: #f6f8fa;
+  color: #24292e;
+  border-color: #d0d7de;
+}
+.modal-btn-secondary:hover { background: #e7eaef; }
+
+/* ===== Settings modal (issue #61) ===== */
+.settings-modal {
+  max-width: 480px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 12px;
+  flex-shrink: 0;
+}
+
+.settings-modal-header h2 { margin-bottom: 0; }
+
+.settings-modal-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #57606a;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.settings-modal-close:hover { background: #f0f2f5; color: #24292e; }
+
+.settings-modal-body {
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+/* ===== Keyword highlight modal (issue #93) ===== */
+.keyword-modal {
+  max-width: 560px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+/* ===== Keyword line extraction modal (issue #79) ===== */
+.extract-modal {
+  width: 90vw;
+  max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.extract-modal-body {
+  overflow-y: auto;
+  padding: 0 24px 24px;
+}
+
+.extract-keywords-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.extract-keywords-row-header label { font-weight: 600; font-size: 13px; }
+
+.extract-keywords-row-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.extract-keyword-bulk-toggle-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #57606a;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.extract-keyword-bulk-toggle-btn:hover { background: #eaeef2; }
+.extract-keyword-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.extract-keyword-add-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0969da;
+  background: #f1f8ff;
+  border: 1px solid #c8e1ff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.extract-keyword-add-btn:hover { background: #ddf4ff; }
+
+.extract-keywords {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.extract-keywords-empty {
+  font-size: 13px;
+  color: #8b949e;
+  padding: 8px 0;
+}
+
+.extract-keyword-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extract-keyword-row-disabled { opacity: 0.5; }
+
+.extract-keyword-enable-toggle {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.extract-keyword-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.extract-keyword-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+.extract-keyword-case-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #57606a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.extract-keyword-case-toggle { cursor: pointer; }
+
+.extract-keyword-added-only-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #57606a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.extract-keyword-added-only-toggle { cursor: pointer; }
+
+.extract-keyword-file-input {
+  flex: 0 0 160px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.extract-keyword-file-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+.extract-keyword-scope-select {
+  padding: 5px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+}
+
+.extract-keyword-remove-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  font-size: 15px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.extract-keyword-remove-btn:hover { background: #ffeef0; color: #cf222e; }
+
+/* ===== Auto line comment modal ===== */
+.auto-comment-help {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #57606a;
+  line-height: 1.6;
+}
+
+.auto-comment-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+
+.auto-comment-text-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+.auto-comment-text-input:focus { outline: 2px solid #54aeff; outline-offset: -1px; }
+
+.auto-comment-apply-status { font-size: 12px; color: #1a7f37; }
+
+.extract-results-heading {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.extract-results-empty {
+  font-size: 13px;
+  color: #8b949e;
+  padding: 8px 0;
+}
+
+.extract-result-section {
+  margin-bottom: 16px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.extract-result-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f6f8fa;
+  font-size: 12px;
+  font-weight: 700;
+  color: #24292e;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.extract-result-heading-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.extract-result-copy-btn {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #24292e;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.extract-result-copy-btn:hover:not(:disabled) { background: #f3f4f6; }
+.extract-result-copy-btn:disabled { color: #8b949e; cursor: default; }
+
+.extract-result-none {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.extract-result-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.extract-result-line {
+  display: flex;
+  gap: 10px;
+  padding: 3px 10px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-bottom: 1px solid #eaeef2;
+}
+.extract-result-line:last-child { border-bottom: none; }
+
+.extract-result-line-added { background: #e6ffec; color: #116329; }
+.extract-result-line-removed { background: #ffebe9; color: #82071e; }
+
+.extract-result-file {
+  flex-shrink: 0;
+  color: #57606a;
+  font-weight: 600;
+}
+
+.extract-result-text { flex: 1; min-width: 0; }
+
+/* ===== Review memo panel =====
+   z-index stays below .drop-overlay (400) so the drag & drop guide is
+   never hidden behind the panel while it's open. */
+.memo-panel-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 380;
+}
+
+.memo-panel-overlay.active { display: block; }
+
+.memo-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  min-width: 280px;
+  max-width: 90vw;
+  background: #fff;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2);
+  z-index: 390;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateX(100%);
+  /* visibility is a discrete property: transitioning to 'visible' flips
+     immediately, transitioning to 'hidden' flips only once the slide-out
+     finishes — so closed-but-offscreen content can't be Tab-focused
+     (aria-hidden alone doesn't block keyboard focus). */
+  visibility: hidden;
+  transition: transform 0.2s ease, visibility 0.2s ease;
+}
+
+.memo-panel.open { transform: translateX(0); visibility: visible; }
+
+.memo-panel-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 100%;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.memo-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e1e4e8;
+  flex-shrink: 0;
+}
+
+.memo-panel-header h2 { font-size: 15px; font-weight: 700; color: #24292e; }
+
+.memo-panel-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: #57606a;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.memo-panel-close:hover { background: #f0f2f5; color: #24292e; }
+
+.memo-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e1e4e8;
+  flex-shrink: 0;
+}
+
+.memo-add-form textarea {
+  width: 100%;
+  min-height: 88px;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.memo-add-btn {
+  align-self: flex-end;
+  padding: 6px 14px;
+  background: #0969da;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.memo-add-btn:hover { background: #0550ae; }
+.memo-add-form textarea:disabled,
+.memo-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.memo-add-form-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.memo-bulk-toggle-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: none;
+  border: 1px solid #0969da;
+  border-radius: 5px;
+  color: #0969da;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.memo-bulk-toggle-btn:hover { background: #ddf4ff; }
+.memo-bulk-toggle-btn[aria-pressed="true"] { background: #0969da; color: #fff; }
+.memo-bulk-toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.memo-bulk-options {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.memo-bulk-options[hidden] { display: none; }
+
+.memo-bulk-delimiter-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.memo-bulk-delimiter-input:focus {
+  outline: none;
+  border-color: #0969da;
+}
+
+.memo-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #8b949e;
+}
+
+/* Scrolls the memo list and the line-comment list together below the add form. */
+.memo-panel-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.memo-list {
+  list-style: none;
+}
+
+/* ===== Line comments: list section inside the memo panel ===== */
+.line-comment-section { border-top: 1px solid #e1e4e8; }
+.line-comment-section[hidden] { display: none; }
+
+.line-comment-section-title {
+  padding: 10px 16px 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #24292e;
+}
+
+.line-comment-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.line-comment-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+}
+
+button.line-comment-item-main { cursor: pointer; }
+button.line-comment-item-main:hover { background: #f6f8fa; }
+
+.line-comment-item-loc,
+.line-comment-item-snippet {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.line-comment-item-loc { color: #0550ae; }
+.line-comment-item-snippet { color: #8b949e; white-space: pre; }
+.line-comment-item.orphan .line-comment-item-loc { color: #8b949e; }
+
+.line-comment-item-text {
+  font-size: 13px;
+  color: #24292e;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.memo-item label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #24292e;
+  cursor: pointer;
+}
+
+.memo-item input[type="checkbox"] {
+  margin-top: 2px;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #1a7f37;
+}
+
+.memo-item .memo-text {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.memo-item.done .memo-text {
+  text-decoration: line-through;
+  color: #8b949e;
+}
+
+.memo-item-edit,
+.memo-item-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.memo-item-edit:hover { background: #eef6ff; color: #0969da; }
+.memo-item-delete:hover { background: #ffeef0; color: #cf222e; }
+
+.memo-item.editing { align-items: stretch; }
+
+.memo-edit-form {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.memo-edit-form textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.memo-edit-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.memo-edit-save,
+.memo-edit-cancel {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.memo-edit-save { background: #0969da; color: #fff; }
+.memo-edit-save:hover { background: #0550ae; }
+.memo-edit-cancel { background: #eaeef2; color: #24292e; }
+.memo-edit-cancel:hover { background: #dde3ea; }
+
+.memo-list-divider {
+  padding: 6px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b949e;
+  background: #f6f8fa;
+}
+
+/* ===== Wide-viewport memo panel docking (issue #57) =====
+   On viewports at least 1200px wide there's enough room to keep the memo
+   panel permanently visible as a third flex column inside .layout instead
+   of a slide-in overlay. Keep this breakpoint in sync with
+   WIDE_LAYOUT_MEDIA_QUERY in the script below. */
+@media (min-width: 1200px) {
+  .memo-panel-overlay { display: none !important; }
+
+  .memo-toggle-btn { display: none; }
+
+  .memo-panel {
+    /* relative (not static) so it stays the containing block for the
+       absolutely-positioned .memo-panel-resizer handle. */
+    position: relative;
+    transform: none !important;
+    visibility: visible !important;
+    box-shadow: none;
+    border-left: 1px solid #d0d7de;
+    flex-shrink: 0;
+  }
+
+  .memo-panel-close { display: none; }
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d0d7de; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #8b949e; }

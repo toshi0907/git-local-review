@@ -1,12 +1,12 @@
 # git-local-review
 
-ブラウザで動作するローカル diff レビューツールです。サーバー不要・ビルド不要のシングル HTML ファイルで提供されます。
+ブラウザで動作するローカル diff レビューツールです。サーバー不要・ビルド不要の静的ファイル（HTML / CSS / JavaScript）で提供されます。
 
 🌐 GitHub Pages: https://toshi0907.github.io/git-local-review/
 
 ## 特徴
 
-- **シングルファイル / オフライン動作** — `index.html` を開くだけで動作し、外部通信は一切なし
+- **ビルド不要 / オフライン動作** — `index.html` を開くだけで動作し、外部通信は一切なし
 - **diff の表示とレビュー** — ユニファイド diff をハンク単位で「承認 / 要修正 / 保留」の3段階でレビュー
 - **Unified / 左右表示の切り替え**、**キーボードショートカット**（`j`/`k` でハンク移動、`Space`/`1`〜`3` でレビュー状態を切り替え、`c` で行コメント）
 - **進捗管理** — 表示フィルタや、ファイルごと・全体の進捗カウンター
@@ -26,8 +26,8 @@
 
 ## 使い方
 
-1. このリポジトリをクローンするか `index.html` をダウンロードする
-2. `index.html` をブラウザで開く
+1. このリポジトリをクローン（または ZIP でダウンロードして展開）する。`index.html` は同じフォルダ内の `css/` / `js/` / `vendor/` を読み込むため、フォルダ構成ごと配置する
+2. `index.html` をブラウザで開く（`file://` で直接開いて動作します）
 3. `git diff` や `git show` の出力を `.diff` ファイルとして保存する
 4. 「diff ファイルを読み込む」ボタンから選択、またはウィンドウにドラッグ&ドロップして読み込む
 5. 各ハンクのヘッダーにある「✓ 承認」「✎ 要修正」「⏸ 保留」ボタンで状態を記録しながらレビューを進める
@@ -45,7 +45,7 @@ git log -p main..feature-branch > feature.diff  # コミットごとにレビュ
 ## ドキュメント
 
 - [docs/FEATURES.md](docs/FEATURES.md) — シンタックスハイライト対応言語、キーボードショートカット一覧、File System Access API 連携、保存される localStorage / IndexedDB のキー一覧など、機能の詳細
-- [docs/index.html.md](docs/index.html.md) — `index.html` のコード構成を解説する開発者向けドキュメント
+- [docs/index.html.md](docs/index.html.md) — アプリ（`index.html` / `css/` / `js/`）のコード構成を解説する開発者向けドキュメント
 - [CLAUDE.md](CLAUDE.md) — AI エージェント向けの開発ガイドライン
 
 ## 動作環境

@@ -13,11 +13,12 @@ reviews:
     drafts: false
   path_filters:
     - "!node_modules/**"
+    - "!vendor/**"
   path_instructions:
-    - path: "index.html"
+    - path: "{index.html,css/**,js/**}"
       instructions: >
-        このリポジトリは CLAUDE.md のルールに従うシングルファイルの静的Webアプリです。
-        index.html の変更をレビューする際は、以下を必ず確認してください。
+        このリポジトリは CLAUDE.md のルールに従うビルド不要の静的Webアプリです
+        （index.html + css/ + js/ + vendor/）。これらの変更をレビューする際は、以下を必ず確認してください。
 
         1. fetch / XMLHttpRequest / WebSocket / sendBeacon / EventSource、または
            http(s) を指す <script src> / <link href> / <img src> など、外部通信や外部リソース
@@ -34,10 +35,13 @@ reviews:
            docs/index.html.md の更新が同じ変更セットに含まれているか確認すること。
         4. 新しい localStorage キーは必ず SK_ プレフィックスの定数として追加されていること。
         5. ビルドプロセス・外部モジュール・バンドラー・トランスパイラを新たに導入する
-           変更が含まれていないこと。
+           変更が含まれていないこと（ES Modules の import/export も file:// で動作しないため不可）。
+        6. js/ のファイルはトップレベル宣言をグローバルで共有し index.html の <script> 順に
+           読み込まれるため、トップレベル（読み込み時に即実行されるコード）から後続ファイルの
+           関数・定数を呼び出していないこと。
     - path: "docs/index.html.md"
       instructions: >
-        index.html の実装内容と齟齬がないかを確認してください。特にセクション構成・
+        アプリ（index.html / css/ / js/）の実装内容と齟齬がないかを確認してください。特にセクション構成・
         データ構造・Storage keys の説明が実装と一致しているかを重視します。
 
 chat:
