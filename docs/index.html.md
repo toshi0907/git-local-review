@@ -1,4 +1,4 @@
-# index.html 開発者ガイド
+# 開発者ガイド（index.html / css / js）
 
 > **対象読者**: コードを修正・拡張する開発者向け。ユーザー向けの説明は [README.md](../README.md) を参照。
 
@@ -43,14 +43,20 @@
 ## ファイル構成の概要
 
 ```
-index.html           ← アプリ本体（CSS・JS・HTML がすべて inline）
+index.html           ← エントリポイント（HTML マークアップ。CSS / JS を読み込む）
+css/
+  app.css            ← アプリ全体の CSS
+js/                  ← アプリロジック（機能単位に分割。詳細は「JavaScript モジュール構成」）
+vendor/
+  highlight.min.js   ← highlight.js v11.9.0（minified、オフライン用に同梱）
+  highlight-github.css ← highlight.js の GitHub テーマ
 docs/
   index.html.md      ← 本ドキュメント（開発者向け解説）
 README.md            ← ユーザー向けドキュメント
 test/                ← テスト用 .diff サンプルファイル
 ```
 
-`index.html` は **4,000 行超のシングルファイルアプリ**です。ビルドプロセスは存在せず、ブラウザで直接開くだけで動作します。highlight.js (v11.9.0) の minified ソースも inline 同梱されており、外部リソースへの通信は一切ありません。
+ビルドプロセスは存在せず、`index.html` をブラウザで直接開く（`file://` でも可）だけで動作します。CSS / JS / highlight.js はすべてリポジトリ内のファイルを相対パスで読み込み、外部リソースへの通信は一切ありません（CSP の `script-src 'self'` / `style-src 'self'` で同一オリジンのファイルのみ許可）。
 
 ---
 
@@ -59,8 +65,9 @@ test/                ← テスト用 .diff サンプルファイル
 ```
 <html>
   <head>
-    <style>                     ← highlight.js テーマ CSS (インライン)
-    <style>                     ← アプリ全体の CSS
+    <link rel="stylesheet" href="vendor/highlight-github.css">  ← highlight.js テーマ CSS
+    <script src="vendor/highlight.min.js">                ← highlight.js (minified)
+    <link rel="stylesheet" href="css/app.css">              ← アプリ全体の CSS
   <body>
     <div id="app">
       <aside id="sidebar">      ← 左サイドバー（ファイル読み込み・「設定保存」/「設定読込」ボタン（保存状態表示・
@@ -86,66 +93,70 @@ test/                ← テスト用 .diff サンプルファイル
     <div class="modal-overlay" id="keyword-modal-overlay"> ← キーワードハイライトモーダル（issue #93。
                                    設定モーダルから分離。トップバーの「🎨 ハイライト」ボタンで開閉。
                                    中身（#keyword-categories 等のID）は移動前と同一）
-    <script>                    ← highlight.js (minified, インライン)
-    <script>                    ← アプリロジック本体
+    <script src="js/*.js">       ← アプリロジック本体（「JavaScript モジュール構成」の表の順に複数読み込む）
 ```
 
 ---
 
 ## JavaScript モジュール構成
 
-`<script>` タグ内は `// ──…──` のセクション区切りで論理的に分割されています。
+アプリロジックは `js/` 配下に機能単位で分割され、`index.html` 末尾の `<script src>` で下表の順（ファイル順）に読み込まれます。各ファイル内はさらに `// ──…──` のセクション区切りで論理的に分割されています。
 
-| セクション名 | 役割 |
-|---|---|
-| **Storage keys** | `localStorage` キー定数 |
-| **Application state** | `app` オブジェクト（ランタイム状態） |
-| **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定。`git log -p`/`git show` 出力はコミットメッセージとソースを別々に判定する（`decodeGitLog()`） |
-| **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
-| **Diff view mode** | Unified / Side-by-side モード保存（`loadViewMode()`/`saveViewMode()`）。単語単位差分表示（word-diff）のON/OFF永続化（`loadWordDiff()`/`saveWordDiff()`）も同じセクションにある |
-| **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で大文字小文字を区別するかどうかも選択可能（issue #95）、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
-| **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したエントリごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。1エントリの `keyword` はキーワードハイライトと同様 `,` 区切りで複数指定でき（issue #91）、`parseKeywords()` でパースした上でいずれか1つでも一致すれば（OR）その行を抽出する。各エントリは `fileFilter`（issue #92）も持ち、ファイルパスに対する部分一致（常に大文字小文字を区別しない）で対象ファイルを絞り込める。空文字列（未指定・旧データの既定値）なら全ファイルが対象。`caseSensitive`（issue #95）はキーワード一致の大文字小文字区別をエントリ単位で切り替える（デフォルトは区別しない）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
-| **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
-| **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
-| **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
-| **Collections — data layer** | プロジェクトコレクションの保存（`loadCollections()` 等）と、状態の保存先ID解決（`getStateOwnerId()` / `currentStateOwnerId()`）、設定の適用範囲 → 保存先ID の解決（`scopeOwnerId()`）、適用範囲セレクトの選択肢生成（`appendSettingScopeOptions()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
-| **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ。`git log -p` 出力も認識し、各ファイルに由来コミット情報（`commit`）を付与する |
-| **Large-hunk splitting** | 大きなハンクを分割して表示 |
-| **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
-| **Hashing** | Web Crypto API / djb2 フォールバック |
-| **HTML escaping** | `esc()` ユーティリティ |
-| **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
-| **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
-| **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示）。プロジェクト1件の描画は `buildProjectItem()`、コレクションのグループ表示は `buildCollectionGroup()` |
-| **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、コレクション操作バー `#project-select-bar` の描画（`renderProjectSelectBar()`） |
-| **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
-| **Render: full diff view** | `renderDiff()`。`buildCommitSectionHeader()` によるコミット見出しの挿入もこの近辺にある |
-| **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
-| **Build a single hunk card** | `buildHunkCard()` |
-| **Set collapsed state** | ハンクの折りたたみ |
-| **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
-| **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
-| **Line comments** | 行コメントの追加・編集・削除（`addLineComment()` 等）、diff 内のコメント行・入力欄の描画、ハンクヘッダーの件数バッジ、`c` キー処理（`openLineCommentComposerForFocusedHunk()`）、メモパネル内の一覧描画（`renderLineCommentList()`）とジャンプ（`jumpToLineComment()`）。詳細は [Line comments](#line-comments) を参照 |
-| **Review memos** | レビューメモ（スライドパネル、リサイズハンドル）。パネル下部には行コメント一覧（`#line-comment-section`）も同居するが、その描画は「Line comments」セクション側にある |
-| **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` / `c` ショートカット（キー処理自体は Event listeners セクションの `keydown` リスナー） |
-| **View mode toggle** | Unified ↔ Split ボタン処理 |
-| **Empty state helpers** | 空状態メッセージ表示 |
-| **Project actions** | プロジェクトの選択・削除・並び替え |
-| **Collection actions** | コレクションの作成・追加・除外・名前変更・解散（`createCollectionFromProjects()` / `addProjectsToCollection()` / `removeProjectsFromCollections()` / `renameCollection()` / `dissolveCollection()`）と、参加時の状態マージ（`mergeStateIntoOwner()`）・除外時の状態／設定コピー（`copyStateToOwner()` / `copyCollectionSettingsToProject()`） |
-| **Export / Import** | JSON エクスポート / インポート。UI（ボタン・ファイル入力）は #83 で設定モーダルへ移動したが、データ層のこのセクション自体は移動していない |
-| **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
-| **Conflict modal** | ファイル名衝突ダイアログ |
-| **File loading** | ファイル選択・ドロップ時の読み込み処理 |
-| **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
-| **Drag & drop** | ドラッグ&ドロップ対応 |
-| **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う。UI自体はトップバーの「🎨 ハイライト」ボタンで開く専用モーダル `#keyword-modal-overlay`（issue #93。以前は設定モーダル内にあった）にある |
-| **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・対象ファイル名（issue #92）・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
-| **Auto line comments** | 自動行コメントのデータ層。ルール（キーワード＋コメント本文）の保存（全体/プロジェクト）、適用済みログ、ルールを現在の diff に適用する `applyAutoLineComments()`。詳細は [Auto line comments](#auto-line-comments) を参照 |
-| **Auto line comments UI** | トップバーの「🤖 自動コメント」ボタンで開くモーダル `#auto-comment-modal-overlay` のルール編集UI（有効/無効・キーワード・Aa・+のみ・対象ファイル名・適用範囲・削除・コメント本文）、「▶ 今すぐ適用」ボタン（`runAutoLineCommentsManually()`）、モーダルの開閉処理。行編集UIの見た目はキーワード行抽出のクラス（`.extract-keyword-*`）を流用する |
-| **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
-| **Initialise** | `init()` — 起動時初期化 |
+- ES Modules は使っていません（`file://` 直接オープンでは CORS 制約によりモジュールを読み込めないため）。通常の classic script なので、各ファイルのトップレベル宣言（関数・`const`・`let`）はすべてのファイルから参照できるグローバルとして共有されます。
+- そのため読み込み順に意味があります。**トップレベル（読み込み時に即実行されるコード）から、後続ファイルで宣言される関数・定数を呼び出してはいけません**（`ReferenceError` になります）。イベントハンドラや関数本体の中から参照する分には、実行時点で全ファイルが読み込み済みなので問題ありません。
+- 起動処理 `init()` は最後に読み込まれる `js/init.js` にあります。
 
-> セクションはファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名でファイル内検索してください。
+| ファイル | セクション名 | 役割 |
+|---|---|---|
+| `js/state.js` | **Storage keys** | `localStorage` キー定数 |
+| `js/state.js` | **Application state** | `app` オブジェクト（ランタイム状態） |
+| `js/state.js` | **localStorage helpers** | プロジェクト・レビュー・メモ等の読み書き |
+| `js/state.js` | **Diff view mode** | Unified / Side-by-side モード保存（`loadViewMode()`/`saveViewMode()`）。単語単位差分表示（word-diff）のON/OFF永続化（`loadWordDiff()`/`saveWordDiff()`）も同じセクションにある |
+| `js/encoding.js` | **Character encoding detection / decoding** | UTF-8 / Shift_JIS / EUC-JP 自動判定。`git log -p`/`git show` 出力はコミットメッセージとソースを別々に判定する（`decodeGitLog()`） |
+| `js/keywords.js` | **Keyword highlight** | キーワードのカテゴリ別ハイライト機能（カテゴリごとに色を設定、カテゴリ単位で一致回数カウントのON/OFFも可能、カテゴリ単位でハイライト自体のON/OFFも可能、カテゴリ単位で大文字小文字を区別するかどうかも選択可能（issue #95）、カテゴリ単位で全体設定／プロジェクト毎の設定を選択可能）。新規カテゴリの色は `pickUnusedKeywordColor()` が既存カテゴリと重複しない色（固定パレット→ゴールデンアングルで生成する追加色）を自動選定する |
+| `js/keywords.js` | **Keyword line extraction** | キーワード行抽出機能（issue #79。キーワードハイライトとは別機能）のデータ層。登録したエントリごとに、差分中の追加/削除行（`+`/`-` で始まる行。コンテキスト行は対象外）から一致する行を抽出する（`extractKeywordMatches()`）。1エントリの `keyword` はキーワードハイライトと同様 `,` 区切りで複数指定でき（issue #91）、`parseKeywords()` でパースした上でいずれか1つでも一致すれば（OR）その行を抽出する。各エントリは `fileFilter`（issue #92）も持ち、ファイルパスに対する部分一致（常に大文字小文字を区別しない）で対象ファイルを絞り込める。空文字列（未指定・旧データの既定値）なら全ファイルが対象。`caseSensitive`（issue #95）はキーワード一致の大文字小文字区別をエントリ単位で切り替える（デフォルトは区別しない）。キーワードは全体設定／プロジェクト毎の設定を選択可能。UI部分は後述の「Keyword line extraction UI」セクションを参照 |
+| `js/file-handles.js` | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
+| `js/file-handles.js` | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
+| `js/collections.js` | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
+| `js/collections.js` | **Collections — data layer** | プロジェクトコレクションの保存（`loadCollections()` 等）と、状態の保存先ID解決（`getStateOwnerId()` / `currentStateOwnerId()`）、設定の適用範囲 → 保存先ID の解決（`scopeOwnerId()`）、適用範囲セレクトの選択肢生成（`appendSettingScopeOptions()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
+| `js/diff-parser.js` | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ。`git log -p` 出力も認識し、各ファイルに由来コミット情報（`commit`）を付与する |
+| `js/diff-parser.js` | **Large-hunk splitting** | 大きなハンクを分割して表示 |
+| `js/utils.js` | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
+| `js/utils.js` | **Hashing** | Web Crypto API / djb2 フォールバック |
+| `js/utils.js` | **HTML escaping** | `esc()` ユーティリティ |
+| `js/utils.js` | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
+| `js/utils.js` | **Top bar tooltip refresh hook** | `refreshTopbarTooltip()` — トップバーの共有ツールチップを再描画するフック。描画処理本体は「Top bar tooltips」（`js/init.js`）の `initTopbarTooltips()` が `refreshTopbarTooltip.render` として後から登録する。`refreshMemoBadge()`（`js/comments.js`）から呼ばれるため、`js/init.js` より先に読み込まれるこのファイルに置いている（登録前は何もしない） |
+| `js/sidebar.js` | **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
+| `js/sidebar.js` | **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示）。プロジェクト1件の描画は `buildProjectItem()`、コレクションのグループ表示は `buildCollectionGroup()` |
+| `js/sidebar.js` | **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、コレクション操作バー `#project-select-bar` の描画（`renderProjectSelectBar()`） |
+| `js/diff-view.js` | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
+| `js/diff-view.js` | **Render: full diff view** | `renderDiff()`。`buildCommitSectionHeader()` によるコミット見出しの挿入もこの近辺にある |
+| `js/diff-view.js` | **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
+| `js/diff-view.js` | **Build a single hunk card** | `buildHunkCard()` |
+| `js/diff-view.js` | **Set collapsed state** | ハンクの折りたたみ |
+| `js/diff-view.js` | **Review status change** | `setHunkReviewStatus()` — 承認/要修正/保留の切り替え処理 |
+| `js/diff-view.js` | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
+| `js/diff-view.js` | **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` / `c` ショートカット（キー処理自体は Event listeners セクションの `keydown` リスナー） |
+| `js/diff-view.js` | **View mode toggle** | Unified ↔ Split ボタン処理 |
+| `js/diff-view.js` | **Empty state helpers** | 空状態メッセージ表示 |
+| `js/comments.js` | **Line comments** | 行コメントの追加・編集・削除（`addLineComment()` 等）、diff 内のコメント行・入力欄の描画、ハンクヘッダーの件数バッジ、`c` キー処理（`openLineCommentComposerForFocusedHunk()`）、メモパネル内の一覧描画（`renderLineCommentList()`）とジャンプ（`jumpToLineComment()`）。詳細は [Line comments](#line-comments) を参照 |
+| `js/comments.js` | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル）。パネル下部には行コメント一覧（`#line-comment-section`）も同居するが、その描画は「Line comments」セクション側にある |
+| `js/projects.js` | **Project actions** | プロジェクトの選択・削除・並び替え |
+| `js/projects.js` | **Collection actions** | コレクションの作成・追加・除外・名前変更・解散（`createCollectionFromProjects()` / `addProjectsToCollection()` / `removeProjectsFromCollections()` / `renameCollection()` / `dissolveCollection()`）と、参加時の状態マージ（`mergeStateIntoOwner()`）・除外時の状態／設定コピー（`copyStateToOwner()` / `copyCollectionSettingsToProject()`） |
+| `js/projects.js` | **Conflict modal** | ファイル名衝突ダイアログ |
+| `js/projects.js` | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| `js/persistence.js` | **Export / Import** | JSON エクスポート / インポート。UI（ボタン・ファイル入力）は #83 で設定モーダルへ移動したが、データ層のこのセクション自体は移動していない |
+| `js/persistence.js` | **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
+| `js/events.js` | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
+| `js/events.js` | **Drag & drop** | ドラッグ&ドロップ対応 |
+| `js/keywords-ui.js` | **Keyword categories** | キーワードカテゴリの追加・編集・削除UI（各カテゴリは有効/無効チェック・色・キーワード・全体/プロジェクトの適用範囲・一致回数カウントのON/OFFとバッジ・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・削除ボタンを1行に横並び表示する省スペースなレイアウト）。「一括登録」ボタンから複数行のテキストボックスでキーワードをまとめて登録でき（1行＝1カテゴリとして分割登録、登録先を全体設定／このプロジェクトのみから選択可能）、その処理は `bulkAddKeywordCategories()` が担う。UI自体はトップバーの「🎨 ハイライト」ボタンで開く専用モーダル `#keyword-modal-overlay`（issue #93。以前は設定モーダル内にあった）にある |
+| `js/keywords-ui.js` | **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・対象ファイル名（issue #92）・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
+| `js/auto-comments.js` | **Auto line comments** | 自動行コメントのデータ層。ルール（キーワード＋コメント本文）の保存（全体/プロジェクト）、適用済みログ、ルールを現在の diff に適用する `applyAutoLineComments()`。詳細は [Auto line comments](#auto-line-comments) を参照 |
+| `js/auto-comments.js` | **Auto line comments UI** | トップバーの「🤖 自動コメント」ボタンで開くモーダル `#auto-comment-modal-overlay` のルール編集UI（有効/無効・キーワード・Aa・+のみ・対象ファイル名・適用範囲・削除・コメント本文）、「▶ 今すぐ適用」ボタン（`runAutoLineCommentsManually()`）、モーダルの開閉処理。行編集UIの見た目はキーワード行抽出のクラス（`.extract-keyword-*`）を流用する |
+| `js/init.js` | **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
+| `js/init.js` | **Initialise** | `init()` — 起動時初期化 |
+
+> セクションは各ファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名で `js/` 配下を検索してください。
 
 ---
 
@@ -996,7 +1007,7 @@ diff 行                旧ファイル列       新ファイル列
 ### 新しい言語のシンタックスハイライトを追加する
 
 1. `detectLanguage()` の `extMap` オブジェクトに拡張子と highlight.js 言語 ID を追加
-2. highlight.js 本体がその言語に対応しているか確認（inline 同梱のため、非対応の場合はバンドルを差し替える必要あり）
+2. highlight.js 本体がその言語に対応しているか確認（`vendor/highlight.min.js` に同梱のバンドルのため、非対応の場合はバンドルを差し替える必要あり）
 
 ### diff パーサーを変更する
 
@@ -1020,4 +1031,4 @@ diff 行                旧ファイル列       新ファイル列
 
 ---
 
-> このドキュメントは `index.html` を修正した際に合わせて更新してください（詳細は [CLAUDE.md](../CLAUDE.md) 参照）。
+> このドキュメントはアプリのコード（`index.html` / `css/` / `js/`）を修正した際に合わせて更新してください（詳細は [CLAUDE.md](../CLAUDE.md) 参照）。

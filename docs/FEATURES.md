@@ -25,7 +25,7 @@
 
 ## シンタックスハイライト
 
-ファイル拡張子から言語を自動検出し、diff の各行をハンク単位でハイライト表示します（highlight.js v11.9.0、インライン同梱で外部 CDN 通信なし）。拡張子が不明な場合はプレーンテキスト表示になります。
+ファイル拡張子から言語を自動検出し、diff の各行をハンク単位でハイライト表示します（highlight.js v11.9.0、`vendor/` に同梱で外部 CDN 通信なし）。拡張子が不明な場合はプレーンテキスト表示になります。
 
 **対応言語:** C++, C, JavaScript, TypeScript, Python, Ruby, Go, Rust, Java, C#, HTML, CSS, Bash, JSON, XML, YAML, Markdown, SQL, Kotlin, Swift, PHP, Scala
 
