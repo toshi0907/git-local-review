@@ -20,6 +20,7 @@
    - [Syntax highlighting helpers](#syntax-highlighting-helpers)
    - [Hashing](#hashing)
    - [Render: sidebar project list](#render-sidebar-project-list)
+   - [Collections（プロジェクトコレクション）](#collectionsプロジェクトコレクション)
    - [Render: full diff view](#render-full-diff-view)
    - [Build a single hunk card](#build-a-single-hunk-card)
    - [Keyboard navigation](#keyboard-navigation)
@@ -107,6 +108,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **File System Access API — file handles** | IndexedDB へのファイルハンドル保存。プロジェクトごとの外部更新チェック（`checkProjectFileUpdates()`、issue #83）もこのセクションにある |
 | **File System Access API — directory handles** | IndexedDB へのフォルダハンドル保存 |
 | **Project ID generation** | `filename__proj_YYYYMMDD_NNN` 形式の ID 生成 |
+| **Collections — data layer** | プロジェクトコレクションの保存（`loadCollections()` 等）と、状態の保存先ID解決（`getStateOwnerId()` / `currentStateOwnerId()`）、設定の適用範囲 → 保存先ID の解決（`scopeOwnerId()`）、適用範囲セレクトの選択肢生成（`appendSettingScopeOptions()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
 | **Unified diff parser** | `parseDiff()` — diff テキスト → 構造化データ。`git log -p` 出力も認識し、各ファイルに由来コミット情報（`commit`）を付与する |
 | **Large-hunk splitting** | 大きなハンクを分割して表示 |
 | **Syntax highlighting helpers** | highlight.js ラッパー・言語検出 |
@@ -114,7 +116,8 @@ test/                ← テスト用 .diff サンプルファイル
 | **HTML escaping** | `esc()` ユーティリティ |
 | **Parse @@ header** | `parseHunkHeader()` — ハンクヘッダのパース |
 | **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
-| **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示） |
+| **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示）。プロジェクト1件の描画は `buildProjectItem()`、コレクションのグループ表示は `buildCollectionGroup()` |
+| **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、コレクション操作バー `#project-select-bar` の描画（`renderProjectSelectBar()`） |
 | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
 | **Render: full diff view** | `renderDiff()`。`buildCommitSectionHeader()` によるコミット見出しの挿入もこの近辺にある |
 | **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
@@ -128,6 +131,7 @@ test/                ← テスト用 .diff サンプルファイル
 | **View mode toggle** | Unified ↔ Split ボタン処理 |
 | **Empty state helpers** | 空状態メッセージ表示 |
 | **Project actions** | プロジェクトの選択・削除・並び替え |
+| **Collection actions** | コレクションの作成・追加・除外・名前変更・解散（`createCollectionFromProjects()` / `addProjectsToCollection()` / `removeProjectsFromCollections()` / `renameCollection()` / `dissolveCollection()`）と、参加時の状態マージ（`mergeStateIntoOwner()`）・除外時の状態／設定コピー（`copyStateToOwner()` / `copyCollectionSettingsToProject()`） |
 | **Export / Import** | JSON エクスポート / インポート。UI（ボタン・ファイル入力）は #83 で設定モーダルへ移動したが、データ層のこのセクション自体は移動していない |
 | **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
 | **Conflict modal** | ファイル名衝突ダイアログ |
@@ -184,7 +188,8 @@ test/                ← テスト用 .diff サンプルファイル
 レビュー状態ボタン クリック / Space / 数字キー (setHunkReviewStatus)
           │
           ├─ loadAllReviews()          既存レビュー状態を読み込み
-          ├─ reviews[projectId][filePath][hunkHash] = 'approved' | 'needs_changes' | 'on_hold'
+          ├─ reviews[ownerId][filePath][hunkHash] = 'approved' | 'needs_changes' | 'on_hold'
+          │  （ownerId = currentStateOwnerId()：コレクション所属中はコレクションID、それ以外はプロジェクトID）
           │  （クリック済みの状態をもう一度選ぶとキーを削除 = 未レビューに戻す）
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
@@ -222,7 +227,10 @@ const SK_HIDE_DONE_LINE_COMMENTS = 'gitLocalReview_hideDoneLineComments';
 const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
 const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
+const SK_COLLECTIONS     = 'gitLocalReview_collections';
 ```
+
+> **プロジェクトID / コレクションID:** `SK_REVIEWS` / `SK_MEMOS` / `SK_LINE_COMMENTS` / `SK_AUTO_COMMENT_APPLIED` と、`SK_PROJECT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS` / `SK_PROJECT_AUTO_COMMENT_RULES` の各マップのキー（以下 `projectId` と表記）には、プロジェクトIDだけでなくコレクションID（`coll_…`）も入ります。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
 
 `SK_KEYWORDS` は全体設定（どのプロジェクトでも適用される）キーワードカテゴリの JSON エンコードされた配列 `{ id, keywords, color, countEnabled, enabled, caseSensitive }[]` を保持します（`loadGlobalKeywordCategories()` / `saveGlobalKeywordCategories()`）。#50 以前の値（単一のカンマ区切り文字列）は読み込み時に自動的に単一カテゴリへ移行されます。`countEnabled`（#59 で追加、真偽値）はこのカテゴリのキーワード一致回数をカウント・表示するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトはカウント無効）。`enabled`（#71 で追加、真偽値）はこのカテゴリのキーワードを実際にハイライトするかどうかで、`sanitizeKeywordCategories()` は未設定値を `true` として扱います（既存カテゴリ・新規カテゴリともデフォルトはハイライト有効）。`getActiveKeywordGroups()` は `enabled: false` のカテゴリをハイライト対象から除外しますが、`countEnabled` による一致回数カウントには影響しません（無効化中のカテゴリも件数は表示され続けます）。設定UIではカテゴリ行の先頭チェックボックスでこの値を切り替えます（`buildKeywordCategoryRow()`）。モーダル上部の「全て有効」「全て無効」ボタン（`setAllKeywordCategoriesEnabled(enabled, scope)`、issue #111）では、現在表示中の全カテゴリ（全体設定 + アクティブプロジェクト自身のカテゴリ）の `enabled` を一括変更できます（キーワード行抽出の `setAllExtractKeywordsEnabled()` と同じパターン）。`scope` 引数（省略時 `'all'`、issue #113）に `'global'` / `'project'` を渡すと、対象を全体設定または現在のプロジェクト自身のカテゴリだけに絞れます。これに対応する「全体設定を全て有効」「全体設定を全て無効」「プロジェクトの設定を全て有効」「プロジェクトの設定を全て無効」の4ボタンがモーダル上部に並び、プロジェクト側の2ボタンはアクティブなプロジェクトが無いとき無効化されます（`renderKeywordCategoryList()` が毎回 `disabled` を更新）。`caseSensitive`（issue #95、真偽値）はこのカテゴリのキーワード一致で大文字小文字を区別するかどうかで、`sanitizeKeywordCategories()` は未設定値を `false` として扱います（既存カテゴリ・新規カテゴリともデフォルトは区別しない＝従来通りの挙動）。`findRawKeywordRanges(text, keywords, caseSensitive)` がこのフラグに応じて比較前の `toLowerCase()` をスキップし、`getActiveKeywordGroups()` の返す各グループにも `caseSensitive` が含まれて `findKeywordRanges()`／`applyKeywordHighlight()` に伝播します。件数バッジ（`countKeywordMatches(keywords, caseSensitive)`）にも同じフラグが渡されるため、大文字小文字の区別有無でカウント結果も変わります。設定UIではカテゴリ行の「Aa」チェックボックスで切り替えます。
 
@@ -239,6 +247,8 @@ const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 `SK_LINE_COMMENTS` は行コメントを `{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } }` の形で保持します（`loadAllLineComments()` / `saveAllLineComments()`、不正値は `sanitizeLineCommentsData()` が除去）。`SK_COMMENT_FILTER` は「💬コメントあり」表示フィルタの ON/OFF を `'true' | 'false'` の文字列で保持し、`SK_REVIEW_FILTER` とは独立しています（`loadCommentFilter()` / `saveCommentFilter()`）。`SK_HIDE_DONE_LINE_COMMENTS`（issue #124）は設定モーダルの「チェック済みの行コメントを差分内で非表示にする」の ON/OFF を `'true' | 'false'` の文字列で保持します（`loadHideDoneLineComments()` / `saveHideDoneLineComments()`）。詳細は [Line comments](#line-comments) を参照してください。
 
 `SK_AUTO_COMMENT_RULES` / `SK_PROJECT_AUTO_COMMENT_RULES` は自動行コメントのルール（全体設定の配列 / `{ [projectId]: rule[] }`）、`SK_AUTO_COMMENT_APPLIED` は「どのルールをどの行に適用済みか」のログ（`{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }`）です。詳細は [Auto line comments](#auto-line-comments) を参照してください。
+
+`SK_COLLECTIONS` はプロジェクトコレクションの一覧 `{ id, name, createdAt }[]` です（`loadCollections()` / `saveCollections()`、不正値は `sanitizeCollections()` が除去）。所属はプロジェクト側の `collectionId` に保持します。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
 
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
@@ -263,6 +273,8 @@ const app = {
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
 };
 ```
+
+`app` とは別に、サイドバーの UI 状態としてモジュール変数 `expandedProjectIds`・`projectsWithExternalFileUpdate`（[Render: sidebar project list](#render-sidebar-project-list) 参照）、`collapsedCollectionIds`（折りたたみ中のコレクション）、`projectSelectMode` / `selectedProjectIds`（複数選択モードとその選択中ID）があります。いずれも保存されません。
 
 ---
 
@@ -413,7 +425,37 @@ renderProjectList()
 
 **レビュー進捗バッジ:** 各プロジェクトのファイル名の左に `.proj-progress-badge`（`<span>`）を1つ配置し、`updateProjectProgressBadge(projectId, el)` が中身を描画します。未レビューのハンクが残っていれば残数（`.badge-remaining`、赤系）、diff の全ハンクにレビューステータスが付いていれば ✓（`.badge-complete`、緑系。ハンクが0件の diff も「残りが無い」として ✓ 扱いになります）を表示し、そのプロジェクトの diff テキストが保存されていない、または計算がまだ完了していない（進捗が不明）場合のみバッジ自体を非表示（`hidden`）にします。
 
-現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは診断のために diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化してから同様に数える必要があるため、結果を `projectProgressCache`（`Map<projectId, {sig, total, reviewed}>`）にキャッシュし、そのプロジェクトの diff テキストの `djb2hex()` 署名 `sig` が変わらない限り再計算しません。レビュー内容だけが変わって diff テキストは変わらないケース（`resetProject()`・`deleteProject()`・インポート/設定フォルダ読込によるマージ）は署名だけでは検出できないため、該当箇所で明示的に `invalidateProjectProgressCache(projectId)` を呼んでキャッシュを破棄しています。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。アクティブなプロジェクトのバッジは、ハンクのレビューステータスが変わるたびに `refreshProgress()` からも更新されます。
+現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化する必要があるため、その結果のハンクキー（ファイルパス＋ハッシュ）を `projectProgressCache`（`Map<projectId, {files}>`）にキャッシュします（`getKnownProjectHunkFiles()`）。キャッシュは `saveFileContent()` / `deleteFileContent()` で diff テキストが変わったときに破棄されるため、レビューのたびに diff テキスト全体を読み直すことはありません。件数自体はキャッシュせず、描画のたびにその時点のレビュー状態（`loadAllReviews()[getStateOwnerId(projectId)]`）から数えるため、リセット・インポートや、同じコレクションの別プロジェクトでのレビュー変更でバッジが古くなることはありません。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。ハンクのレビューステータスが変わるたびに `refreshProgress()` → `refreshActiveProjectProgressBadges()` が、アクティブなプロジェクト（コレクション所属中はコレクションの全メンバーとコレクション見出し）のバッジを更新します。
+
+**コレクションのグループ表示:** コレクションに所属するプロジェクトは `buildCollectionGroup()` が1つのグループ（`.collection-group`）にまとめて描画します。グループはソート順で最初に現れるメンバーの位置に表示し、中に全メンバーをソート順で並べます。見出し（`.collection-header`）には折りたたみトグル・残レビュー数バッジ・コレクション名・件数・名前変更（✏️）・解散（✕）ボタンがあり、見出しクリックで折りたたみます（`collapsedCollectionIds`）。見出しのバッジ（`updateCollectionProgressBadge()`）は、メンバー間で重複を除いた（同じファイルパス＋ハッシュは1件と数える）ハンク数から残数を表示します。保存済み diff テキストがないメンバーは集計から除き、ハンクキーを計算中のメンバーがいる間はバッジを非表示にします。
+
+**複数選択モード:** 「プロジェクト一覧」見出しの「☑ 選択」ボタン（`#project-select-mode-btn`）で選択モードに入ると、各項目にチェックボックスが付き、項目クリックが選択の切り替えになります（コレクション見出しのチェックボックスはメンバーを一括選択）。一覧上部の操作バー `#project-select-bar` から、選択中のプロジェクトで「📁 新規コレクション」「➕ 既存に追加」「➖ コレクションから外す」を実行できます（[Collections](#collectionsプロジェクトコレクション) 参照）。
+
+---
+
+### Collections（プロジェクトコレクション）
+
+複数のプロジェクト（例: 同じ変更の `git log -p` 出力と `git diff` 出力）をまとめ、レビュー状態などを共有する機能です。
+
+**データモデル:**
+
+- `SK_COLLECTIONS` に `{ id, name, createdAt }[]` を保存します。ID は `coll_YYYYMMDD_xxxxxxxx`（`generateCollectionId()`、`COLLECTION_ID_RE`）で、`__proj_` を含まないためプロジェクトIDと衝突しません。
+- 所属はプロジェクトの `collectionId` で表し、1プロジェクトが入れるのは最大1コレクションです。
+- 所属中のプロジェクトのレビュー状態・行コメント・メモ・自動行コメントの適用済みログは、既存の各ストア（`SK_REVIEWS` など）の**コレクションID**のキーの下に読み書きします。保存先IDは `getStateOwnerId(projectId)`（アクティブなプロジェクトについては `currentStateOwnerId()`）が返します。そのため、ファイルパスとハンクハッシュが同じハンクは、メンバー間で自動的に同じ状態になります。
+- キーワードハイライト・キーワード行抽出・自動行コメントの適用範囲は `全体 / コレクション / プロジェクト` の3段階です。コレクション範囲の設定は `SK_PROJECT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS` / `SK_PROJECT_AUTO_COMMENT_RULES` のコレクションIDのキーに保存します。`scopeOwnerId(scope)` が `'collection'` → 現在のプロジェクトのコレクションID、`'project'` → 現在のプロジェクトIDを返し、各機能のマージ済みビュー（`loadKeywordCategories()` など）は「全体 → コレクション → プロジェクト」の順に連結します（`OWNED_SETTING_SCOPES`）。「コレクション」の選択肢やモーダルの「コレクション設定」一括ボタンは、現在のプロジェクトがコレクションに入っていないときは非表示になります。
+
+**操作（Collection actions）:**
+
+| 操作 | 処理 |
+|---|---|
+| 作成（`createCollectionFromProjects()`） | 名前を入力（初期値は先頭のプロジェクトのファイル名から拡張子を除いたもの）し、選択したプロジェクトを順に参加させる。1件から作成可能 |
+| 参加（`attachProjectToCollection()`） | 別のコレクションに所属していれば先に除外し、`mergeStateIntoOwner(projectId, collectionId)` でプロジェクト自身の状態をコレクションへ統合（同じハンクのレビュー状態はコレクション側を優先、行コメント・メモは ID で重複排除して追加、適用済みログは和集合）してからプロジェクト側を削除。プロジェクト範囲の設定はそのまま残す |
+| 除外（`detachProjectFromCollection()`） | `copyStateToOwner()` でコレクションの状態をプロジェクトIDの下へコピーし、`copyCollectionSettingsToProject()` でコレクション範囲の設定をプロジェクト範囲へコピー（新しい ID を採番し、自動行コメントの適用済みログもその ID に書き換える）。メンバーが0件になったコレクションは `deleteCollectionData()` で自動削除 |
+| 名前変更・解散 | `renameCollection()` / `dissolveCollection()`（全メンバーを除外 → 自動削除） |
+| プロジェクトの削除 | 状態をコピーせずに除外（共有状態は残りのメンバーのために残す）。最後の1件なら自動削除 |
+| リセット | 所属中はコレクションで共有しているレビュー状態をリセット |
+
+操作後は `refreshAfterCollectionChange()` がメモ・各設定モーダル・サイドバー・diff を再描画します。インポート時、`collectionId` を持たないインポートデータのプロジェクト（`schemaVersion: 7` 以前のエクスポートや古い設定ファイル）は、ローカルでの所属を引き継ぎます（所属が外れてコレクションの共有状態が消えるのを防ぐため）。インポートの最後に `reconcileCollections()` が「存在しないコレクションを指すプロジェクトには仮のコレクションを作る」「メンバーのプロジェクトID側に入った状態をコレクションへ統合する」「メンバーのいないコレクションを、その状態ごと削除する」ことで整合性を保ちます。
 
 ---
 
@@ -586,9 +628,12 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
+  "collections": [
+    { "id": "coll_20261008_ab12cd34", "name": "feature-x", "createdAt": 1791417600000 }
+  ],
   "reviews": {
     "projectId": { "filePath": { "hunkHash": "needs_changes" } }
   },
@@ -635,6 +680,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 `lineComments`（`schemaVersion: 6`）は行コメント（`SK_LINE_COMMENTS`）です。`mergeImportedData()` は `memos` と同様にプロジェクトID単位で上書きします（インポートデータに含まれるプロジェクトのコメントは丸ごと置き換え、それ以外のプロジェクトのコメントは保持）。`schemaVersion: 5` 以前のエクスポートにはこのキーがありませんが、`sanitizeLineCommentsData()` が空マップとして扱うため安全にスキップされます。手動インポート（`importAppData()`）の後は、表示中の diff があれば `renderDiff()` で再描画します。
 
 `autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます（`lineComments` が置き換えられたのに適用済みログを含まないプロジェクトは、ローカルのログを削除してコメントとの整合を保ちます）。
+
+`collections`（`schemaVersion: 8`）はプロジェクトコレクションの一覧で、各プロジェクトには所属先の `collectionId` が付きます（`sanitizeImportedProjects()` が引き継ぎ）。コレクションの共有状態とコレクション範囲の設定は、`reviews` や `projectKeywordCategories` などの既存のマップにコレクションIDのキーで含まれるため、追加のキーはありません。有効なプロジェクトが1件以上あるインポートでは、`collections` を同じ `id` で上書きマージし、`collectionId` を持たないプロジェクトはローカルでの所属を引き継ぎ、最後に `reconcileCollections()` で整合性を保ちます（[Collections](#collectionsプロジェクトコレクション) 参照）。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
@@ -816,6 +863,9 @@ init()
 │                        （プロジェクトID → 配列）      │
 │  gitLocalReview_autoCommentApplied 自動行コメントの   │
 │                                適用済みログ             │
+│  gitLocalReview_collections   プロジェクトコレクション │
+│  ※ reviews / memos / lineComments / autoCommentApplied │
+│    と project* 系のキーにはコレクションIDも入る        │
 └─────────────────────────────────────────────────────┘
           ↕ read/write（File System Access API 対応のみ）
 ┌─────────────────────────────────────────────────────┐
@@ -852,6 +902,8 @@ hunk.lines（例: ["-old line", "+new line", " context"]）
 ```
 
 この設計により、`git rebase` や `git merge` で行番号が変化しても、変更内容が同じハンクは正しく元のレビュー状態と紐付きます。
+
+プロジェクトがコレクションに所属している間は、上記の `projectId` の位置にコレクションIDが入ります（[Collections](#collectionsプロジェクトコレクション) 参照）。そのため、同じコレクション内の別プロジェクトに、ファイルパスと本文（コンテキスト行を含む）が同じハンクがあれば、レビュー状態・行コメントが共有されます。たとえば `git log -p` と `git diff` では、1つのコミットだけが変更した箇所のハンクは一致しますが、複数のコミットが近い行を変更した箇所（`git diff` 側では1つのハンクにまとまる）、コンテキスト行数（`-U`）が異なる場合、リネームでファイルパスが異なる場合は一致しません。
 
 ---
 

@@ -477,6 +477,8 @@
       gap: 6px;
     }
 
+    .keyword-toggle-group[hidden] { display: none; }
+
     .keyword-toggle-group-label {
       display: inline-block;
       width: 8em;
@@ -689,7 +691,104 @@
       letter-spacing: 0.8px;
       border-bottom: 1px solid #e1e4e8;
       background: #f6f8fa;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
     }
+
+    .project-select-mode-btn {
+      padding: 2px 8px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: normal;
+      text-transform: none;
+      cursor: pointer;
+    }
+    .project-select-mode-btn:hover { background: #eaeef2; }
+    .project-select-mode-btn[aria-pressed="true"] { background: #ddf4ff; border-color: #54aeff; color: #0969da; }
+
+    /* Action bar shown in project selection mode (collection create/add/remove). */
+    .project-select-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e1e4e8;
+      background: #f6f8fa;
+      font-size: 11px;
+    }
+    .project-select-bar[hidden] { display: none; }
+    .project-select-count { flex-basis: 100%; color: #57606a; font-weight: 600; }
+    .project-select-action-btn,
+    .project-select-action-select {
+      padding: 3px 6px;
+      border: 1px solid #d0d7de;
+      border-radius: 5px;
+      background: #fff;
+      color: #24292e;
+      font-size: 11px;
+      cursor: pointer;
+      max-width: 100%;
+    }
+    .project-select-action-btn:hover:not(:disabled) { background: #eaeef2; }
+    .project-select-action-btn:disabled,
+    .project-select-action-select:disabled { opacity: 0.5; cursor: default; }
+
+    .proj-select-checkbox { flex-shrink: 0; margin: 2px 0 0; cursor: pointer; }
+    .project-item.selected { background: #fff8c5; }
+
+    /* Collection group: a collapsible header followed by its (indented) members. */
+    .collection-group { border-bottom: 1px solid #d0d7de; }
+    .collection-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      background: #f3f0ff;
+      border-left: 3px solid #8250df;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .collection-header:hover { background: #ebe5ff; }
+    .collection-toggle {
+      flex-shrink: 0;
+      padding: 0 2px;
+      background: none;
+      border: none;
+      color: #57606a;
+      font-size: 10px;
+      cursor: pointer;
+    }
+    .collection-name {
+      flex: 1;
+      min-width: 0;
+      font-weight: 700;
+      color: #24292e;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .collection-count { flex-shrink: 0; color: #8b949e; font-size: 11px; }
+    .collection-action-btn {
+      flex-shrink: 0;
+      padding: 1px 4px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: #57606a;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .collection-action-btn:hover { background: #fff; border-color: #d0d7de; }
+    .collection-members .project-item { padding-left: 24px; }
+    .collection-group.collapsed .collection-members { display: none; }
+    .collection-group.collapsed.has-active .collection-header { border-left-color: #0969da; }
 
     .project-list {
       flex: 1;
@@ -2336,7 +2435,10 @@
         </div>
       </div>
     </div>
-    <div class="sidebar-section-title">プロジェクト一覧</div>
+    <div class="sidebar-section-title">
+      <span>プロジェクト一覧</span>
+      <button type="button" class="project-select-mode-btn" id="project-select-mode-btn" aria-pressed="false" title="複数のプロジェクトを選んでコレクションにまとめます">☑ 選択</button>
+    </div>
     <div class="sort-row">
       <label for="project-sort-select">並び順</label>
       <select id="project-sort-select" title="プロジェクト一覧の並び順">
@@ -2345,6 +2447,12 @@
         <option value="name-asc">ファイル名（A→Z）</option>
         <option value="name-desc">ファイル名（Z→A）</option>
       </select>
+    </div>
+    <div class="project-select-bar" id="project-select-bar" hidden>
+      <span class="project-select-count" id="project-select-count">0件選択中</span>
+      <button type="button" class="project-select-action-btn" id="collection-create-btn" title="選択したプロジェクトで新しいコレクションを作成">📁 新規コレクション</button>
+      <select class="project-select-action-select" id="collection-add-select" aria-label="選択したプロジェクトを既存のコレクションに追加"></select>
+      <button type="button" class="project-select-action-btn" id="collection-remove-btn" title="選択したプロジェクトをコレクションから外す（共有中の状態は各プロジェクトにコピー）">➖ コレクションから外す</button>
     </div>
     <div class="project-list" id="project-list"></div>
   </div>
@@ -2492,6 +2600,11 @@
               <button type="button" id="keyword-category-enable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて有効にする" aria-label="全体設定のカテゴリをすべて有効にする">有効</button>
               <button type="button" id="keyword-category-disable-all-global-btn" class="keyword-category-bulk-toggle-btn" title="全体設定のカテゴリをすべて無効にする" aria-label="全体設定のカテゴリをすべて無効にする">無効</button>
             </div>
+            <div class="keyword-toggle-group" id="keyword-category-collection-toggle-group" hidden>
+              <span class="keyword-toggle-group-label">コレクション設定</span>
+              <button type="button" id="keyword-category-enable-all-collection-btn" class="keyword-category-bulk-toggle-btn" title="このコレクションのカテゴリをすべて有効にする" aria-label="このコレクションのカテゴリをすべて有効にする">有効</button>
+              <button type="button" id="keyword-category-disable-all-collection-btn" class="keyword-category-bulk-toggle-btn" title="このコレクションのカテゴリをすべて無効にする" aria-label="このコレクションのカテゴリをすべて無効にする">無効</button>
+            </div>
             <div class="keyword-toggle-group">
               <span class="keyword-toggle-group-label">プロジェクト設定</span>
               <button type="button" id="keyword-category-enable-all-project-btn" class="keyword-category-bulk-toggle-btn" title="このプロジェクトのカテゴリをすべて有効にする" aria-label="このプロジェクトのカテゴリをすべて有効にする">有効</button>
@@ -2504,8 +2617,9 @@
         <div id="keyword-bulk-form" class="keyword-bulk-form" hidden>
           <textarea id="keyword-bulk-textarea" class="keyword-bulk-textarea" placeholder="1行1カテゴリ（カンマ区切りで複数キーワードも指定できます）&#10;例:&#10;TODO&#10;FIXME, XXX" aria-label="一括登録するカテゴリ（1行につき1カテゴリ）"></textarea>
           <div class="keyword-bulk-form-actions">
-            <select id="keyword-bulk-scope-select" class="keyword-category-scope-select" title="全体設定にするか、現在のプロジェクトだけの設定にするかを選べます" aria-label="一括登録の適用範囲">
+            <select id="keyword-bulk-scope-select" class="keyword-category-scope-select" title="全体設定にするか、現在のコレクション・プロジェクトだけの設定にするかを選べます" aria-label="一括登録の適用範囲">
               <option value="global">全体設定</option>
+              <option value="collection">このコレクションのみ</option>
               <option value="project">このプロジェクトのみ</option>
             </select>
             <button type="button" id="keyword-bulk-cancel-btn" class="keyword-bulk-cancel-btn">キャンセル</button>
@@ -2540,6 +2654,11 @@
             <span class="keyword-toggle-group-label">全体設定</span>
             <button type="button" id="extract-keyword-enable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて有効にする" aria-label="全体設定のキーワードをすべて有効にする">有効</button>
             <button type="button" id="extract-keyword-disable-all-global-btn" class="extract-keyword-bulk-toggle-btn" title="全体設定のキーワードをすべて無効にする" aria-label="全体設定のキーワードをすべて無効にする">無効</button>
+          </div>
+          <div class="keyword-toggle-group" id="extract-keyword-collection-toggle-group" hidden>
+            <span class="keyword-toggle-group-label">コレクション設定</span>
+            <button type="button" id="extract-keyword-enable-all-collection-btn" class="extract-keyword-bulk-toggle-btn" title="このコレクションのキーワードをすべて有効にする" aria-label="このコレクションのキーワードをすべて有効にする">有効</button>
+            <button type="button" id="extract-keyword-disable-all-collection-btn" class="extract-keyword-bulk-toggle-btn" title="このコレクションのキーワードをすべて無効にする" aria-label="このコレクションのキーワードをすべて無効にする">無効</button>
           </div>
           <div class="keyword-toggle-group">
             <span class="keyword-toggle-group-label">プロジェクト設定</span>
@@ -2618,6 +2737,8 @@ const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
 const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 /** Which auto rules already ran on which line: { [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }. */
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
+/** Project collections: [{ id, name, createdAt }]. Membership lives on each project's `collectionId`. */
+const SK_COLLECTIONS      = 'gitLocalReview_collections';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -3525,15 +3646,18 @@ function deleteProjectKeywordCategories(projectId) {
 
 /**
  * Merged, scope-tagged view used by highlighting and the settings list:
- * every global category, plus (when a project is active) that project's own
- * categories. `scope` on each entry ('global'|'project') tells the settings
- * UI which store an edit/delete/move should go through.
+ * every global category, plus (when a project is active) its collection's
+ * categories (if it's in one) and that project's own categories. `scope` on
+ * each entry ('global'|'collection'|'project') tells the settings UI which
+ * store an edit/delete/move should go through (see scopeOwnerId()).
  */
 function loadKeywordCategories() {
-  const global = loadGlobalKeywordCategories().map(c => ({ ...c, scope: 'global' }));
-  if (!app.currentProjectId) return global;
-  const project = loadProjectKeywordCategories(app.currentProjectId).map(c => ({ ...c, scope: 'project' }));
-  return [...global, ...project];
+  const result = loadGlobalKeywordCategories().map(c => ({ ...c, scope: 'global' }));
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId) result.push(...loadProjectKeywordCategories(ownerId).map(c => ({ ...c, scope })));
+  }
+  return result;
 }
 
 // Parses a category's raw comma-separated input into a de-duplicated list of
@@ -3873,15 +3997,18 @@ function deleteProjectExtractKeywords(projectId) {
 
 /**
  * Merged, scope-tagged view used by the extraction modal: every global
- * keyword, plus (when a project is active) that project's own keywords.
- * `scope` on each entry ('global'|'project') tells the modal which store an
+ * keyword, plus (when a project is active) its collection's keywords (if
+ * it's in one) and that project's own keywords. `scope` on each entry
+ * ('global'|'collection'|'project') tells the modal which store an
  * edit/delete/move should go through.
  */
 function loadExtractKeywords() {
-  const global = loadGlobalExtractKeywords().map(k => ({ ...k, scope: 'global' }));
-  if (!app.currentProjectId) return global;
-  const project = loadProjectExtractKeywords(app.currentProjectId).map(k => ({ ...k, scope: 'project' }));
-  return [...global, ...project];
+  const result = loadGlobalExtractKeywords().map(k => ({ ...k, scope: 'global' }));
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId) result.push(...loadProjectExtractKeywords(ownerId).map(k => ({ ...k, scope })));
+  }
+  return result;
 }
 
 /**
@@ -3969,12 +4096,14 @@ function saveFileContent(projectId, text) {
     delete files[projectId];
   }
   saveAllFiles(files);
+  invalidateProjectProgressCache(projectId);
 }
 
 function deleteFileContent(projectId) {
   const files = loadAllFiles();
   delete files[projectId];
   saveAllFiles(files);
+  invalidateProjectProgressCache(projectId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4002,6 +4131,11 @@ let projectIdsWithHandles = new Set();
  */
 let expandedProjectIds = new Set();
 let projectsWithExternalFileUpdate = new Set();
+/** Collection groups collapsed in the sidebar (UI-only, not persisted). */
+let collapsedCollectionIds = new Set();
+/** Sidebar multi-select mode for building collections, and the IDs selected in it (UI-only, not persisted). */
+let projectSelectMode = false;
+let selectedProjectIds = new Set();
 
 function openHandleDB() {
   return new Promise((resolve, reject) => {
@@ -4277,6 +4411,116 @@ function generateProjectId(fileName) {
 
 function projectsByFileName(fileName) {
   return loadProjects().filter(p => p.fileName === fileName);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Collections — data layer
+// ─────────────────────────────────────────────────────────────────────────────
+// A collection groups projects (e.g. the `git log -p` and `git diff` output
+// of the same change) so they share review state. Each project belongs to at
+// most one collection (its `collectionId`). While it does, its reviews, line
+// comments, memos and auto-comment log are read/written under the
+// collection's ID instead of its own — the "state owner" ID, see
+// getStateOwnerId() — in the very same stores (SK_REVIEWS etc.), so a hunk
+// with the same file path + hash is shared by every member. Collection-scoped
+// highlight/extraction/auto-comment settings likewise live in the per-project
+// stores (SK_PROJECT_KEYWORDS etc.) keyed by the collection ID. Collection
+// IDs ("coll_…") never contain "__proj_", so they can't collide with a
+// project ID. A collection left with no members is deleted automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+const COLLECTION_ID_RE = /^coll_[0-9a-z_]+$/;
+
+function sanitizeCollections(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const c of raw) {
+    if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !COLLECTION_ID_RE.test(c.id) || seen.has(c.id)) continue;
+    seen.add(c.id);
+    const name = typeof c.name === 'string' && c.name.trim() ? c.name.trim() : 'コレクション';
+    const createdAt = typeof c.createdAt === 'number' ? c.createdAt : Date.now();
+    result.push({ id: c.id, name, createdAt });
+  }
+  return result;
+}
+
+function loadCollections() {
+  try {
+    return sanitizeCollections(JSON.parse(localStorage.getItem(SK_COLLECTIONS) || '[]'));
+  } catch (e) {
+    console.error('Failed to parse collections from localStorage:', e);
+    return [];
+  }
+}
+
+function saveCollections(collections) {
+  try {
+    localStorage.setItem(SK_COLLECTIONS, JSON.stringify(collections));
+  } catch (e) {
+    console.error('Failed to save collections to localStorage:', e);
+    alert('コレクションの保存に失敗しました。ストレージの容量が不足している可能性があります。');
+  }
+}
+
+function generateCollectionId() {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `coll_${date}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** The collection a project belongs to, or null (also null when its collectionId points at a missing collection). */
+function getProjectCollectionId(projectId, projects = loadProjects(), collections = loadCollections()) {
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj || !proj.collectionId) return null;
+  return collections.some(c => c.id === proj.collectionId) ? proj.collectionId : null;
+}
+
+/** ID that a project's reviews/line comments/memos/auto-comment log are stored under: its collection's, else its own. */
+function getStateOwnerId(projectId) {
+  if (!projectId) return null;
+  return getProjectCollectionId(projectId) || projectId;
+}
+
+/** getStateOwnerId() for the active project (null when none is active). */
+function currentStateOwnerId() {
+  return getStateOwnerId(app.currentProjectId);
+}
+
+/** The active project's collection ID, or null. */
+function getCurrentCollectionId() {
+  return app.currentProjectId ? getProjectCollectionId(app.currentProjectId) : null;
+}
+
+/** IDs of every project in a collection. */
+function getCollectionMemberIds(collectionId, projects = loadProjects()) {
+  return projects.filter(p => p.collectionId === collectionId).map(p => p.id);
+}
+
+/**
+ * Owner ID of a non-global settings scope: the active project ('project') or
+ * its collection ('collection'). null when that scope isn't available now
+ * (no active project / the project isn't in a collection).
+ */
+function scopeOwnerId(scope) {
+  if (scope === 'project') return app.currentProjectId;
+  if (scope === 'collection') return getCurrentCollectionId();
+  return null;
+}
+
+/** Non-global settings scopes, in the order their entries follow the global ones. */
+const OWNED_SETTING_SCOPES = ['collection', 'project'];
+
+/** Appends the 全体/コレクション/プロジェクト options to a settings scope <select>; unavailable scopes are disabled (コレクション is also hidden). */
+function appendSettingScopeOptions(select, labels = { global: '全体', collection: 'コレクション', project: 'プロジェクト' }) {
+  for (const scope of ['global', ...OWNED_SETTING_SCOPES]) {
+    const option = document.createElement('option');
+    option.value = scope;
+    option.textContent = labels[scope];
+    if (scope !== 'global' && !scopeOwnerId(scope)) {
+      option.disabled = true;
+      if (scope === 'collection') option.hidden = true;
+    }
+    select.appendChild(option);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4689,13 +4933,19 @@ function parseHunkHeader(header) {
 // project's count is derived directly from app.parsedDiff (already parsed
 // and hashed in memory), which is cheap and always exact. Any other project
 // has to be parsed and hashed from its saved diff text, which is async
-// (Web Crypto) — so results are cached per project, keyed by a cheap djb2
-// signature of that project's raw diff text, and only recomputed when that
-// text actually changes. Reviews changing for an *inactive* project (reset,
-// delete, import) can't be detected via that signature, so those call sites
-// explicitly drop the cache entry — see invalidateProjectProgressCache().
+// (Web Crypto) — so each project's parsed hunk keys (file path + hash, not
+// the counts themselves) are cached, and only recomputed when that project's
+// saved diff text changes (saveFileContent()/deleteFileContent() drop the
+// entry). The counts are always derived from the current reviews, so a
+// review change elsewhere (reset, import, or another member of the same
+// collection sharing the hunk) never leaves a badge stale.
+// Each collection's group header in the sidebar likewise shows the remaining
+// count across its members' *distinct* hunks (a hunk shared by two members
+// counts once), once every member's hunk keys are known.
 // ─────────────────────────────────────────────────────────────────────────────
-const projectProgressCache = new Map(); // projectId -> { sig, total, reviewed }
+const projectProgressCache = new Map(); // projectId -> { files: [{ filePath, hunks: [{ hash }] }] }
+/** Sidebar collection-header badge elements keyed by collectionId, populated during renderProjectList. */
+const collectionBadgeEls = new Map();
 
 function invalidateProjectProgressCache(projectId) {
   projectProgressCache.delete(projectId);
@@ -4741,6 +4991,21 @@ function renderProjectProgressBadge(el, progress) {
 }
 
 /**
+ * A project's parsed hunk keys if known synchronously (the active project's
+ * in-memory diff, or a cache entry matching its saved diff text), else null.
+ * `undefined` instead means there's no saved diff text at all.
+ */
+function getKnownProjectHunkFiles(projectId) {
+  if (projectId === app.currentProjectId && app.parsedDiff) return app.parsedDiff;
+  // saveFileContent()/deleteFileContent() drop the entry whenever the saved
+  // text changes, so a cached entry can be trusted without re-reading (and
+  // re-hashing) the whole saved diff text on every review click.
+  const cached = projectProgressCache.get(projectId);
+  if (cached) return cached.files;
+  return loadFileContent(projectId) == null ? undefined : null;
+}
+
+/**
  * Resolve (synchronously when possible) and paint one project's sidebar
  * review-progress badge. `el` must still be the badge element currently
  * rendered for `projectId` (i.e. from app.projectBadgeEls) — for the async
@@ -4751,24 +5016,17 @@ function renderProjectProgressBadge(el, progress) {
 function updateProjectProgressBadge(projectId, el) {
   if (!el) return;
 
-  if (projectId === app.currentProjectId && app.parsedDiff) {
-    const progress = countHunkProgress(app.parsedDiff, loadAllReviews()[projectId] || Object.create(null));
-    renderProjectProgressBadge(el, progress);
+  const known = getKnownProjectHunkFiles(projectId);
+  if (known === undefined) {
+    renderProjectProgressBadge(el, null);
+    return;
+  }
+  if (known) {
+    renderProjectProgressBadge(el, countHunkProgress(known, loadAllReviews()[getStateOwnerId(projectId)] || Object.create(null)));
     return;
   }
 
   const rawText = loadFileContent(projectId);
-  if (rawText == null) {
-    renderProjectProgressBadge(el, null);
-    return;
-  }
-
-  const sig = djb2hex(rawText);
-  const cached = projectProgressCache.get(projectId);
-  if (cached && cached.sig === sig) {
-    renderProjectProgressBadge(el, cached);
-    return;
-  }
 
   // Hide rather than show a stale count while the (async) parse+hash for
   // the new content is in flight.
@@ -4783,15 +5041,62 @@ function updateProjectProgressBadge(projectId, el) {
       console.error('Failed to compute review progress for project', projectId, e);
       return;
     }
-    // Reviews may have changed (e.g. resetProject()) while hashing was in
-    // flight, so re-read rather than reuse anything captured earlier.
-    const progress = countHunkProgress(parsed, loadAllReviews()[projectId] || Object.create(null));
-    projectProgressCache.set(projectId, { sig, ...progress });
-    // Only paint whichever badge element is currently live for this
+    // The saved text may have been replaced while hashing was in flight;
+    // don't cache keys computed from the old text.
+    if (loadFileContent(projectId) !== rawText) return;
+    projectProgressCache.set(projectId, {
+      files: parsed.map(f => ({ filePath: f.filePath, hunks: f.hunks.map(h => ({ hash: h.hash })) })),
+    });
+    // Reviews (or the project's collection) may have changed while hashing
+    // was in flight, so re-read rather than reuse anything captured earlier;
+    // and only paint whichever badge element is currently live for this
     // project — renderProjectList() may have rebuilt the list since this
     // computation started.
-    renderProjectProgressBadge(app.projectBadgeEls.get(projectId), progress);
+    updateProjectProgressBadge(projectId, app.projectBadgeEls.get(projectId));
+    const collectionId = getProjectCollectionId(projectId);
+    if (collectionId) updateCollectionProgressBadge(collectionId);
   })();
+}
+
+/**
+ * Paint a collection header's badge: remaining unreviewed hunks across its
+ * members' distinct hunks (file path + hash). Hidden until every member's
+ * hunk keys are known (their own badges' async computation fills the cache
+ * and calls back here). Members with no saved diff text are skipped.
+ */
+function updateCollectionProgressBadge(collectionId) {
+  const el = collectionBadgeEls.get(collectionId);
+  if (!el) return;
+  const reviews = loadAllReviews()[collectionId] || Object.create(null);
+  const seen = new Set();
+  let total = 0, reviewed = 0;
+  for (const pid of getCollectionMemberIds(collectionId)) {
+    const files = getKnownProjectHunkFiles(pid);
+    if (files === undefined) continue;
+    if (files === null) {
+      renderProjectProgressBadge(el, null);
+      return;
+    }
+    for (const file of files) {
+      const fileReviews = reviews[file.filePath] || Object.create(null);
+      for (const h of file.hunks) {
+        const key = file.filePath + '\0' + h.hash;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        total++;
+        if (fileReviews[h.hash]) reviewed++;
+      }
+    }
+  }
+  renderProjectProgressBadge(el, { total, reviewed });
+}
+
+/** Repaint every sidebar badge affected by a review change in the active project (all members of its collection, if any). */
+function refreshActiveProjectProgressBadges() {
+  const collectionId = getCurrentCollectionId();
+  const ids = collectionId ? getCollectionMemberIds(collectionId) : [app.currentProjectId];
+  for (const pid of ids) updateProjectProgressBadge(pid, app.projectBadgeEls.get(pid));
+  if (collectionId) updateCollectionProgressBadge(collectionId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4800,8 +5105,15 @@ function updateProjectProgressBadge(projectId, el) {
 function renderProjectList() {
   const listEl = document.getElementById('project-list');
   const projects = loadProjects();
+  const collections = loadCollections();
 
   app.projectBadgeEls.clear();
+  collectionBadgeEls.clear();
+  // Drop selections of projects that no longer exist.
+  for (const id of [...selectedProjectIds]) {
+    if (!projects.some(p => p.id === id)) selectedProjectIds.delete(id);
+  }
+  renderProjectSelectBar(collections);
 
   if (projects.length === 0) {
     listEl.innerHTML = '<div class="project-empty">プロジェクトなし</div>';
@@ -4811,131 +5123,319 @@ function renderProjectList() {
   listEl.innerHTML = '';
   const sorted = sortProjects(projects, loadProjectSort());
 
+  // A collection is shown as one group at the position of its first member
+  // in the sorted list, with all its members (in sorted order) inside it
+  // (the same order getSidebarProjectOrder() returns).
+  const renderedCollectionIds = new Set();
   for (const proj of sorted) {
-    const isActive = proj.id === app.currentProjectId;
-    const isExpanded = expandedProjectIds.has(proj.id);
-    const hasExternalUpdate = projectsWithExternalFileUpdate.has(proj.id);
-    const item = document.createElement('div');
-    item.className = 'project-item' + (isActive ? ' active' : '') + (isExpanded ? ' expanded' : '');
-
-    const updated = new Date(proj.lastUpdated || proj.createdAt).toLocaleString('ja-JP', {
-      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-    });
-
-    const topRowEl = document.createElement('div'); topRowEl.className = 'proj-top-row';
-    const progressBadgeEl = document.createElement('span');
-    progressBadgeEl.className = 'proj-progress-badge';
-    progressBadgeEl.hidden = true;
-    app.projectBadgeEls.set(proj.id, progressBadgeEl);
-    const nameEl   = document.createElement('div'); nameEl.className = 'proj-name'; nameEl.title = proj.id; nameEl.textContent = proj.fileName;
-    if (hasExternalUpdate) {
-      const updateBadge = document.createElement('span');
-      updateBadge.className = 'proj-update-badge';
-      updateBadge.textContent = '🆕';
-      updateBadge.title = 'ファイルがディスク上で更新されています。再読み込みしてください。';
-      nameEl.prepend(updateBadge);
+    const collection = proj.collectionId && collections.find(c => c.id === proj.collectionId);
+    if (!collection) {
+      listEl.appendChild(buildProjectItem(proj));
+      updateProjectProgressBadge(proj.id, app.projectBadgeEls.get(proj.id));
+      continue;
     }
-    const idEl     = document.createElement('div'); idEl.className = 'proj-id'; idEl.textContent = proj.id;
-    const metaEl   = document.createElement('div'); metaEl.className = 'proj-meta'; metaEl.textContent = `更新: ${updated}`;
-    const detailsEl = document.createElement('div'); detailsEl.className = 'proj-details';
-    const actEl    = document.createElement('div'); actEl.className = 'proj-actions';
+    if (renderedCollectionIds.has(collection.id)) continue;
+    renderedCollectionIds.add(collection.id);
+    const members = sorted.filter(p => p.collectionId === collection.id);
+    listEl.appendChild(buildCollectionGroup(collection, members));
+    for (const member of members) updateProjectProgressBadge(member.id, app.projectBadgeEls.get(member.id));
+    updateCollectionProgressBadge(collection.id);
+  }
+}
 
-    const toggleBtn = document.createElement('button');
-    toggleBtn.type = 'button';
-    toggleBtn.className = 'proj-expand-toggle';
-    toggleBtn.textContent = isExpanded ? '▾' : '▸';
-    toggleBtn.title = isExpanded ? '詳細を閉じる' : '詳細を表示（ID・文字コード・リセット・削除）';
-    toggleBtn.setAttribute('aria-expanded', String(isExpanded));
-    toggleBtn.addEventListener('click', e => {
+/** One project's sidebar entry (also used inside a collection group). */
+function buildProjectItem(proj) {
+  const isActive = proj.id === app.currentProjectId;
+  const isExpanded = expandedProjectIds.has(proj.id);
+  const hasExternalUpdate = projectsWithExternalFileUpdate.has(proj.id);
+  const isSelected = selectedProjectIds.has(proj.id);
+  const item = document.createElement('div');
+  item.className = 'project-item' + (isActive ? ' active' : '') + (isExpanded ? ' expanded' : '') + (isSelected ? ' selected' : '');
+
+  const updated = new Date(proj.lastUpdated || proj.createdAt).toLocaleString('ja-JP', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+
+  const topRowEl = document.createElement('div'); topRowEl.className = 'proj-top-row';
+  const progressBadgeEl = document.createElement('span');
+  progressBadgeEl.className = 'proj-progress-badge';
+  progressBadgeEl.hidden = true;
+  app.projectBadgeEls.set(proj.id, progressBadgeEl);
+  const nameEl   = document.createElement('div'); nameEl.className = 'proj-name'; nameEl.title = proj.id; nameEl.textContent = proj.fileName;
+  if (hasExternalUpdate) {
+    const updateBadge = document.createElement('span');
+    updateBadge.className = 'proj-update-badge';
+    updateBadge.textContent = '🆕';
+    updateBadge.title = 'ファイルがディスク上で更新されています。再読み込みしてください。';
+    nameEl.prepend(updateBadge);
+  }
+  const idEl     = document.createElement('div'); idEl.className = 'proj-id'; idEl.textContent = proj.id;
+  const metaEl   = document.createElement('div'); metaEl.className = 'proj-meta'; metaEl.textContent = `更新: ${updated}`;
+  const detailsEl = document.createElement('div'); detailsEl.className = 'proj-details';
+  const actEl    = document.createElement('div'); actEl.className = 'proj-actions';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'proj-expand-toggle';
+  toggleBtn.textContent = isExpanded ? '▾' : '▸';
+  toggleBtn.title = isExpanded ? '詳細を閉じる' : '詳細を表示（ID・文字コード・リセット・削除）';
+  toggleBtn.setAttribute('aria-expanded', String(isExpanded));
+  toggleBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (isExpanded) expandedProjectIds.delete(proj.id);
+    else expandedProjectIds.add(proj.id);
+    renderProjectList();
+  });
+
+  const encEl = document.createElement('div');
+  encEl.className = 'proj-encoding';
+  const encLabel = document.createElement('span');
+  encLabel.textContent = '文字コード:';
+  const encSelect = document.createElement('select');
+  encSelect.title = 'このプロジェクトのdiffファイルの文字コードを指定（自動判定を誤った場合の上書き用）';
+  encSelect.setAttribute('aria-label', `${proj.fileName} の文字コード`);
+  for (const val of VALID_ENCODINGS) {
+    const opt = document.createElement('option');
+    opt.value = val;
+    if (val === 'auto' && proj.resolvedEncoding) {
+      const sourceLabel = ENCODING_LABELS[proj.resolvedEncoding] || proj.resolvedEncoding;
+      // git log -p / git show input can carry a commit message encoded
+      // differently from the diffed source (see decodeGitLog()); when
+      // that was detected, show both instead of just the source's.
+      opt.textContent = (proj.resolvedMessageEncoding && proj.resolvedMessageEncoding !== proj.resolvedEncoding)
+        ? `${ENCODING_LABELS.auto}（ソース: ${sourceLabel} / コミットメッセージ: ${ENCODING_LABELS[proj.resolvedMessageEncoding] || proj.resolvedMessageEncoding}）`
+        : `${ENCODING_LABELS.auto}（${sourceLabel}）`;
+    } else {
+      opt.textContent = ENCODING_LABELS[val];
+    }
+    encSelect.appendChild(opt);
+  }
+  // Normalize against the allow-list: a corrupted/legacy/manually-edited
+  // localStorage value must not leave the <select> on an option that
+  // doesn't exist, nor get handed to decodeBytes() as a bogus encoding.
+  encSelect.value = normalizeEncoding(proj.encoding);
+  encSelect.addEventListener('click', e => e.stopPropagation());
+  encSelect.addEventListener('change', e => {
+    e.stopPropagation();
+    changeProjectEncoding(proj.id, e.target.value);
+  });
+  encEl.appendChild(encLabel);
+  encEl.appendChild(encSelect);
+
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn btn-reset';
+  resetBtn.textContent = '🔄 リセット';
+  resetBtn.title = 'チェック状態をリセット';
+  resetBtn.addEventListener('click', e => { e.stopPropagation(); resetProject(proj.id); });
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn btn-delete';
+  delBtn.textContent = '🗑 削除';
+  delBtn.title = 'プロジェクトを削除';
+  delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
+
+  // The reload button stays in the always-visible bottom row (not
+  // .proj-details) since it's the one action the compact list (#83) is
+  // meant to keep reachable without expanding — the badge above signals
+  // when it's actually worth pressing. The project name gets its own row
+  // and the reload button sits next to the updated time below it (#85).
+  const bottomRowEl = document.createElement('div'); bottomRowEl.className = 'proj-bottom-row';
+  if (projectIdsWithHandles.has(proj.id)) {
+    const reloadBtn = document.createElement('button');
+    reloadBtn.className = 'btn btn-reload' + (hasExternalUpdate ? ' btn-reload-update' : '');
+    reloadBtn.textContent = '🔃 再読み込み';
+    reloadBtn.title = hasExternalUpdate
+      ? 'ディスク上のファイルが更新されています。クリックして再読み込み'
+      : '同じファイルをディスクから再読み込み';
+    reloadBtn.addEventListener('click', e => { e.stopPropagation(); reloadProjectFile(proj.id); });
+    bottomRowEl.appendChild(reloadBtn);
+  }
+  bottomRowEl.appendChild(metaEl);
+  bottomRowEl.appendChild(toggleBtn);
+
+  actEl.appendChild(resetBtn);
+  actEl.appendChild(delBtn);
+  detailsEl.appendChild(idEl);
+  detailsEl.appendChild(encEl);
+  detailsEl.appendChild(actEl);
+
+  if (projectSelectMode) {
+    const selectBox = document.createElement('input');
+    selectBox.type = 'checkbox';
+    selectBox.className = 'proj-select-checkbox';
+    selectBox.checked = isSelected;
+    selectBox.setAttribute('aria-label', `${proj.fileName} を選択`);
+    // The whole item toggles selection in select mode (see below), so the
+    // checkbox itself just mirrors it.
+    selectBox.tabIndex = -1;
+    selectBox.addEventListener('click', e => e.preventDefault());
+    topRowEl.appendChild(selectBox);
+  }
+  topRowEl.appendChild(progressBadgeEl);
+  topRowEl.appendChild(nameEl);
+  item.appendChild(topRowEl);
+  item.appendChild(bottomRowEl);
+  item.appendChild(detailsEl);
+
+  item.addEventListener('click', () => {
+    if (projectSelectMode) toggleProjectSelected(proj.id);
+    else activateProject(proj.id);
+  });
+  return item;
+}
+
+/** A collection's sidebar group: a collapsible header (badge, name, member count, rename/dissolve) followed by its members. */
+function buildCollectionGroup(collection, members) {
+  const isCollapsed = collapsedCollectionIds.has(collection.id);
+  const hasActive = members.some(p => p.id === app.currentProjectId);
+  const group = document.createElement('div');
+  group.className = 'collection-group' + (isCollapsed ? ' collapsed' : '') + (hasActive ? ' has-active' : '');
+
+  const header = document.createElement('div');
+  header.className = 'collection-header';
+  header.title = 'コレクション（レビュー状態・行コメント・メモを共有）';
+
+  if (projectSelectMode) {
+    const selectBox = document.createElement('input');
+    selectBox.type = 'checkbox';
+    selectBox.className = 'proj-select-checkbox';
+    const selectedCount = members.filter(p => selectedProjectIds.has(p.id)).length;
+    selectBox.checked = selectedCount === members.length;
+    selectBox.indeterminate = selectedCount > 0 && selectedCount < members.length;
+    selectBox.setAttribute('aria-label', `コレクション「${collection.name}」のプロジェクトをすべて選択`);
+    selectBox.addEventListener('click', e => {
       e.stopPropagation();
-      if (isExpanded) expandedProjectIds.delete(proj.id);
-      else expandedProjectIds.add(proj.id);
+      for (const p of members) {
+        if (selectBox.checked) selectedProjectIds.add(p.id);
+        else selectedProjectIds.delete(p.id);
+      }
       renderProjectList();
     });
-
-    const encEl = document.createElement('div');
-    encEl.className = 'proj-encoding';
-    const encLabel = document.createElement('span');
-    encLabel.textContent = '文字コード:';
-    const encSelect = document.createElement('select');
-    encSelect.title = 'このプロジェクトのdiffファイルの文字コードを指定（自動判定を誤った場合の上書き用）';
-    encSelect.setAttribute('aria-label', `${proj.fileName} の文字コード`);
-    for (const val of VALID_ENCODINGS) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      if (val === 'auto' && proj.resolvedEncoding) {
-        const sourceLabel = ENCODING_LABELS[proj.resolvedEncoding] || proj.resolvedEncoding;
-        // git log -p / git show input can carry a commit message encoded
-        // differently from the diffed source (see decodeGitLog()); when
-        // that was detected, show both instead of just the source's.
-        opt.textContent = (proj.resolvedMessageEncoding && proj.resolvedMessageEncoding !== proj.resolvedEncoding)
-          ? `${ENCODING_LABELS.auto}（ソース: ${sourceLabel} / コミットメッセージ: ${ENCODING_LABELS[proj.resolvedMessageEncoding] || proj.resolvedMessageEncoding}）`
-          : `${ENCODING_LABELS.auto}（${sourceLabel}）`;
-      } else {
-        opt.textContent = ENCODING_LABELS[val];
-      }
-      encSelect.appendChild(opt);
-    }
-    // Normalize against the allow-list: a corrupted/legacy/manually-edited
-    // localStorage value must not leave the <select> on an option that
-    // doesn't exist, nor get handed to decodeBytes() as a bogus encoding.
-    encSelect.value = normalizeEncoding(proj.encoding);
-    encSelect.addEventListener('click', e => e.stopPropagation());
-    encSelect.addEventListener('change', e => {
-      e.stopPropagation();
-      changeProjectEncoding(proj.id, e.target.value);
-    });
-    encEl.appendChild(encLabel);
-    encEl.appendChild(encSelect);
-
-    const resetBtn = document.createElement('button');
-    resetBtn.className = 'btn btn-reset';
-    resetBtn.textContent = '🔄 リセット';
-    resetBtn.title = 'チェック状態をリセット';
-    resetBtn.addEventListener('click', e => { e.stopPropagation(); resetProject(proj.id); });
-
-    const delBtn = document.createElement('button');
-    delBtn.className = 'btn btn-delete';
-    delBtn.textContent = '🗑 削除';
-    delBtn.title = 'プロジェクトを削除';
-    delBtn.addEventListener('click', e => { e.stopPropagation(); deleteProject(proj.id); });
-
-    // The reload button stays in the always-visible bottom row (not
-    // .proj-details) since it's the one action the compact list (#83) is
-    // meant to keep reachable without expanding — the badge above signals
-    // when it's actually worth pressing. The project name gets its own row
-    // and the reload button sits next to the updated time below it (#85).
-    const bottomRowEl = document.createElement('div'); bottomRowEl.className = 'proj-bottom-row';
-    if (projectIdsWithHandles.has(proj.id)) {
-      const reloadBtn = document.createElement('button');
-      reloadBtn.className = 'btn btn-reload' + (hasExternalUpdate ? ' btn-reload-update' : '');
-      reloadBtn.textContent = '🔃 再読み込み';
-      reloadBtn.title = hasExternalUpdate
-        ? 'ディスク上のファイルが更新されています。クリックして再読み込み'
-        : '同じファイルをディスクから再読み込み';
-      reloadBtn.addEventListener('click', e => { e.stopPropagation(); reloadProjectFile(proj.id); });
-      bottomRowEl.appendChild(reloadBtn);
-    }
-    bottomRowEl.appendChild(metaEl);
-    bottomRowEl.appendChild(toggleBtn);
-
-    actEl.appendChild(resetBtn);
-    actEl.appendChild(delBtn);
-    detailsEl.appendChild(idEl);
-    detailsEl.appendChild(encEl);
-    detailsEl.appendChild(actEl);
-
-    topRowEl.appendChild(progressBadgeEl);
-    topRowEl.appendChild(nameEl);
-    item.appendChild(topRowEl);
-    item.appendChild(bottomRowEl);
-    item.appendChild(detailsEl);
-
-    item.addEventListener('click', () => activateProject(proj.id));
-    listEl.appendChild(item);
-
-    updateProjectProgressBadge(proj.id, progressBadgeEl);
+    header.appendChild(selectBox);
   }
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'collection-toggle';
+  toggleBtn.textContent = isCollapsed ? '▸' : '▾';
+  toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
+  toggleBtn.setAttribute('aria-label', isCollapsed ? 'コレクションを開く' : 'コレクションを折りたたむ');
+  header.appendChild(toggleBtn);
+
+  const badgeEl = document.createElement('span');
+  badgeEl.className = 'proj-progress-badge';
+  badgeEl.hidden = true;
+  collectionBadgeEls.set(collection.id, badgeEl);
+  header.appendChild(badgeEl);
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'collection-name';
+  nameEl.textContent = `📁 ${collection.name}`;
+  header.appendChild(nameEl);
+
+  const countEl = document.createElement('span');
+  countEl.className = 'collection-count';
+  countEl.textContent = `${members.length}件`;
+  header.appendChild(countEl);
+
+  const renameBtn = document.createElement('button');
+  renameBtn.type = 'button';
+  renameBtn.className = 'collection-action-btn';
+  renameBtn.textContent = '✏️';
+  renameBtn.title = 'コレクション名を変更';
+  renameBtn.setAttribute('aria-label', `コレクション「${collection.name}」の名前を変更`);
+  renameBtn.addEventListener('click', e => { e.stopPropagation(); renameCollection(collection.id); });
+  header.appendChild(renameBtn);
+
+  const dissolveBtn = document.createElement('button');
+  dissolveBtn.type = 'button';
+  dissolveBtn.className = 'collection-action-btn';
+  dissolveBtn.textContent = '✕';
+  dissolveBtn.title = 'コレクションを解散（状態は各プロジェクトにコピー）';
+  dissolveBtn.setAttribute('aria-label', `コレクション「${collection.name}」を解散`);
+  dissolveBtn.addEventListener('click', e => { e.stopPropagation(); dissolveCollection(collection.id); });
+  header.appendChild(dissolveBtn);
+
+  header.addEventListener('click', () => {
+    if (isCollapsed) collapsedCollectionIds.delete(collection.id);
+    else collapsedCollectionIds.add(collection.id);
+    renderProjectList();
+  });
+  group.appendChild(header);
+
+  const membersEl = document.createElement('div');
+  membersEl.className = 'collection-members';
+  for (const member of members) membersEl.appendChild(buildProjectItem(member));
+  group.appendChild(membersEl);
+  return group;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sidebar project selection mode — the "☑ 選択" button turns the project
+// list into a multi-select list; the action bar then creates a collection
+// from the selected projects, adds them to an existing one, or takes them
+// out of theirs (see "Collection actions").
+// ─────────────────────────────────────────────────────────────────────────────
+function setProjectSelectMode(on) {
+  projectSelectMode = on;
+  selectedProjectIds.clear();
+  const btn = document.getElementById('project-select-mode-btn');
+  btn.setAttribute('aria-pressed', String(on));
+  btn.textContent = on ? '選択を終了' : '☑ 選択';
+  renderProjectList();
+}
+
+function toggleProjectSelected(projectId) {
+  if (selectedProjectIds.has(projectId)) selectedProjectIds.delete(projectId);
+  else selectedProjectIds.add(projectId);
+  renderProjectList();
+}
+
+/** Project IDs in sidebar display order: sorted, with each collection's members pulled up to its first member's position. */
+function getSidebarProjectOrder() {
+  const collectionIds = new Set(loadCollections().map(c => c.id));
+  const sorted = sortProjects(loadProjects(), loadProjectSort());
+  const order = [];
+  const seenCollections = new Set();
+  for (const proj of sorted) {
+    if (!proj.collectionId || !collectionIds.has(proj.collectionId)) {
+      order.push(proj.id);
+    } else if (!seenCollections.has(proj.collectionId)) {
+      seenCollections.add(proj.collectionId);
+      order.push(...sorted.filter(p => p.collectionId === proj.collectionId).map(p => p.id));
+    }
+  }
+  return order;
+}
+
+/** Selected project IDs in the order they appear in the sidebar. */
+function getSelectedProjectIdsInOrder() {
+  return getSidebarProjectOrder().filter(id => selectedProjectIds.has(id));
+}
+
+function renderProjectSelectBar(collections = loadCollections()) {
+  const bar = document.getElementById('project-select-bar');
+  bar.hidden = !projectSelectMode;
+  if (!projectSelectMode) return;
+  const count = selectedProjectIds.size;
+  document.getElementById('project-select-count').textContent = `${count}件選択中`;
+  document.getElementById('collection-create-btn').disabled = count === 0;
+  document.getElementById('collection-remove-btn').disabled = count === 0;
+
+  const addSelect = document.getElementById('collection-add-select');
+  addSelect.innerHTML = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = collections.length > 0 ? '➕ 既存に追加…' : '➕ 既存に追加（コレクションなし）';
+  addSelect.appendChild(placeholder);
+  for (const c of collections) {
+    const option = document.createElement('option');
+    option.value = c.id;
+    option.textContent = c.name;
+    addSelect.appendChild(option);
+  }
+  addSelect.value = '';
+  addSelect.disabled = count === 0 || collections.length === 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5091,7 +5591,8 @@ function renderDiff() {
   emptyState.style.display = 'none';
 
   const allReviews     = loadAllReviews();
-  const projectReviews = app.currentProjectId ? (allReviews[app.currentProjectId] || Object.create(null)) : Object.create(null);
+  const ownerId        = currentStateOwnerId();
+  const projectReviews = ownerId ? (allReviews[ownerId] || Object.create(null)) : Object.create(null);
   const projectLineComments = getProjectLineComments();
 
   const filter = app.reviewFilter;
@@ -5736,14 +6237,16 @@ function setHunkCollapsedState(card, collapsed) {
  * @param {string|null} newStatus - one of REVIEW_STATUSES' values, or null for "unreviewed"
  */
 function setHunkReviewStatus(card, filePath, hash, newStatus) {
+  const ownerId = currentStateOwnerId();
+  if (!ownerId) return;
   const allReviews = loadAllReviews();
-  if (!allReviews[app.currentProjectId])           allReviews[app.currentProjectId] = Object.create(null);
-  if (!allReviews[app.currentProjectId][filePath]) allReviews[app.currentProjectId][filePath] = Object.create(null);
+  if (!allReviews[ownerId])           allReviews[ownerId] = Object.create(null);
+  if (!allReviews[ownerId][filePath]) allReviews[ownerId][filePath] = Object.create(null);
 
   if (newStatus) {
-    allReviews[app.currentProjectId][filePath][hash] = newStatus;
+    allReviews[ownerId][filePath][hash] = newStatus;
   } else {
-    delete allReviews[app.currentProjectId][filePath][hash];
+    delete allReviews[ownerId][filePath][hash];
   }
   saveAllReviews(allReviews);
   scheduleSettingsAutoSave();
@@ -5773,7 +6276,7 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
 function refreshProgress() {
   if (!app.parsedDiff || !app.currentProjectId) return;
 
-  const projectReviews = (loadAllReviews()[app.currentProjectId]) || Object.create(null);
+  const projectReviews = (loadAllReviews()[currentStateOwnerId()]) || Object.create(null);
   let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
 
   for (const file of app.parsedDiff) {
@@ -5799,7 +6302,7 @@ function refreshProgress() {
   }
 
   setOverallProgress(totalReviewed, totalHunks, totalNeedsChanges, totalOnHold);
-  updateProjectProgressBadge(app.currentProjectId, app.projectBadgeEls.get(app.currentProjectId));
+  refreshActiveProjectProgressBadges();
 }
 
 function setOverallProgress(reviewed, total, needsChanges = 0, onHold = 0) {
@@ -5827,7 +6330,7 @@ function generateLineCommentId() {
 /** The current project's { [filePath]: { [hunkHash]: { [lineIdx]: LineComment[] } } } map. */
 function getProjectLineComments() {
   if (!app.currentProjectId) return Object.create(null);
-  return loadAllLineComments()[app.currentProjectId] || Object.create(null);
+  return loadAllLineComments()[currentStateOwnerId()] || Object.create(null);
 }
 
 function lineCommentsForHunk(projectLineComments, filePath, hash) {
@@ -5866,7 +6369,7 @@ function addLineComment(filePath, hash, record, text) {
   const trimmed = text.trim();
   if (!app.currentProjectId || !trimmed) return null;
   const all = loadAllLineComments();
-  const list = ensureChild(ensureChild(ensureChild(ensureChild(all, app.currentProjectId), filePath), hash), record.idx, true);
+  const list = ensureChild(ensureChild(ensureChild(ensureChild(all, currentStateOwnerId()), filePath), hash), record.idx, true);
   const comment = createLineCommentObject(record, trimmed);
   list.push(comment);
   saveAllLineComments(all);
@@ -5891,7 +6394,7 @@ function createLineCommentObject(record, text, autoRuleId = '') {
 }
 
 function findStoredLineComment(all, filePath, hash, idx, commentId) {
-  const pidMap = all[app.currentProjectId];
+  const pidMap = all[currentStateOwnerId()];
   const list = pidMap && pidMap[filePath] && pidMap[filePath][hash] && pidMap[filePath][hash][idx];
   return list ? list.find(c => c.id === commentId) || null : null;
 }
@@ -5924,7 +6427,7 @@ function setLineCommentDone(filePath, hash, idx, commentId, done) {
 function deleteLineComment(filePath, hash, idx, commentId) {
   if (!app.currentProjectId) return false;
   const all = loadAllLineComments();
-  const pidMap = all[app.currentProjectId];
+  const pidMap = all[currentStateOwnerId()];
   const hashMap = pidMap && pidMap[filePath];
   const lineMap = hashMap && hashMap[hash];
   const list = lineMap && lineMap[idx];
@@ -5935,7 +6438,7 @@ function deleteLineComment(filePath, hash, idx, commentId) {
   if (list.length === 0) delete lineMap[idx];
   if (Object.keys(lineMap).length === 0) delete hashMap[hash];
   if (Object.keys(hashMap).length === 0) delete pidMap[filePath];
-  if (Object.keys(pidMap).length === 0) delete all[app.currentProjectId];
+  if (Object.keys(pidMap).length === 0) delete all[currentStateOwnerId()];
   saveAllLineComments(all);
   return true;
 }
@@ -6559,8 +7062,15 @@ function renderLineCommentList() {
   if (orphans.length > 0) {
     const divider = document.createElement('li');
     divider.className = 'memo-list-divider';
-    divider.textContent = `現在の diff に見つからないコメント（${orphans.length}）`;
-    divider.title = 'diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    if (getCurrentCollectionId()) {
+      // Shared comments include those on hunks that only exist in another
+      // member's diff (e.g. per-commit hunks merged into one by git diff).
+      divider.textContent = `このプロジェクトの diff にないコメント（${orphans.length}）`;
+      divider.title = 'コレクション内の他のプロジェクトの diff にあるハンクへのコメントや、diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    } else {
+      divider.textContent = `現在の diff に見つからないコメント（${orphans.length}）`;
+      divider.title = 'diff の再読み込み等でハンクの内容が変わり、元の行が見つからなくなったコメントです';
+    }
     listEl.appendChild(divider);
     for (const { loc, comment } of orphans) listEl.appendChild(buildLineCommentListItem(loc, comment, false));
   }
@@ -6576,7 +7086,7 @@ function generateMemoId() {
 
 function getCurrentProjectMemos() {
   if (!app.currentProjectId) return [];
-  return loadAllMemos()[app.currentProjectId] || [];
+  return loadAllMemos()[currentStateOwnerId()] || [];
 }
 
 /** Number of the current project's line comments that aren't checked yet. */
@@ -6780,11 +7290,12 @@ function addMemos(texts) {
   const trimmedTexts = texts.map(t => t.trim()).filter(Boolean);
   if (trimmedTexts.length === 0) return 0;
 
+  const ownerId = currentStateOwnerId();
   const all = loadAllMemos();
-  if (!all[app.currentProjectId]) all[app.currentProjectId] = [];
+  if (!all[ownerId]) all[ownerId] = [];
   const now = Date.now();
   for (const text of trimmedTexts) {
-    all[app.currentProjectId].push({ id: generateMemoId(), text, done: false, createdAt: now, updatedAt: now });
+    all[ownerId].push({ id: generateMemoId(), text, done: false, createdAt: now, updatedAt: now });
   }
   saveAllMemos(all);
   scheduleSettingsAutoSave();
@@ -6823,7 +7334,7 @@ function splitBulkMemoText(text, delimiter) {
 function toggleMemoDone(memoId, done) {
   if (!app.currentProjectId) return;
   const all  = loadAllMemos();
-  const list = all[app.currentProjectId] || [];
+  const list = all[currentStateOwnerId()] || [];
   const memo = list.find(m => m.id === memoId);
   if (!memo) return;
   memo.done = done;
@@ -6840,7 +7351,7 @@ function editMemo(memoId, text) {
   const trimmed = text.trim();
   if (!trimmed) return;
   const all  = loadAllMemos();
-  const list = all[app.currentProjectId] || [];
+  const list = all[currentStateOwnerId()] || [];
   const memo = list.find(m => m.id === memoId);
   if (!memo) return;
   memo.text = trimmed;
@@ -6856,7 +7367,7 @@ function editMemo(memoId, text) {
 function deleteMemo(memoId) {
   if (!app.currentProjectId) return;
   const all  = loadAllMemos();
-  const list = all[app.currentProjectId] || [];
+  const list = all[currentStateOwnerId()] || [];
   const idx  = list.findIndex(m => m.id === memoId);
   if (idx === -1) return;
   list.splice(idx, 1);
@@ -7212,26 +7723,42 @@ async function restoreProjectDiff(proj) {
   `);
 }
 
-/** Reset all review checkboxes for a project */
+/** Reset all review checkboxes for a project (for a collection member: the whole collection's shared review state) */
 function resetProject(projectId) {
   const proj = loadProjects().find(p => p.id === projectId);
-  if (!confirm(`プロジェクト「${proj ? proj.id : projectId}」のチェック状態をリセットしますか？`)) return;
+  const collectionId = getProjectCollectionId(projectId);
+  const collection = collectionId && loadCollections().find(c => c.id === collectionId);
+  if (!confirm(collection
+    ? `プロジェクト「${proj ? proj.id : projectId}」はコレクション「${collection.name}」に入っています。
+コレクション内で共有しているチェック状態（すべてのプロジェクト分）をリセットしますか？`
+    : `プロジェクト「${proj ? proj.id : projectId}」のチェック状態をリセットしますか？`)) return;
 
+  const ownerId = getStateOwnerId(projectId);
   const allReviews = loadAllReviews();
-  delete allReviews[projectId];
+  delete allReviews[ownerId];
   saveAllReviews(allReviews);
   scheduleSettingsAutoSave();
-  invalidateProjectProgressCache(projectId);
 
-  if (app.currentProjectId === projectId && app.parsedDiff) renderDiff();
+  if (app.parsedDiff && getStateOwnerId(app.currentProjectId) === ownerId) renderDiff();
   renderProjectList();
 }
 
 /** Permanently delete a project */
 function deleteProject(projectId) {
   const proj = loadProjects().find(p => p.id === projectId);
-  if (!confirm(`プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nチェック状態も合わせて削除されます。`)) return;
+  const collectionId = getProjectCollectionId(projectId);
+  const isLastMember = collectionId && getCollectionMemberIds(collectionId).length === 1;
+  let message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nチェック状態も合わせて削除されます。`;
+  if (isLastMember) {
+    message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nコレクションの最後のプロジェクトのため、コレクションと共有しているチェック状態・行コメント・メモ・コレクション範囲の設定も合わせて削除されます。`;
+  } else if (collectionId) {
+    message = `プロジェクト「${proj ? proj.id : projectId}」を削除しますか？\nコレクションで共有しているチェック状態は、コレクションに残ります。`;
+  }
+  if (!confirm(message)) return;
 
+  // Leave its collection without copying the shared state (it's about to be
+  // deleted anyway); the shared state stays with the remaining members.
+  detachProjectFromCollection(projectId, false);
   const allReviews = loadAllReviews();
   delete allReviews[projectId];
   saveAllReviews(allReviews);
@@ -7352,6 +7879,291 @@ async function changeProjectEncoding(projectId, newEncoding) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Collection actions — create/add/remove/rename/dissolve, and moving a
+// project's review state into/out of its collection (see "Collections —
+// data layer" for the storage model).
+//  - Joining merges the project's own reviews/line comments/memos/auto-comment
+//    log into the collection's (the collection's existing review status wins
+//    on a conflict) and drops the project's own copy. Its project-scoped
+//    settings stay where they are.
+//  - Leaving copies the collection's state back under the project's own ID,
+//    and copies the collection-scoped settings into the project's own
+//    settings (with fresh IDs). A collection left with no members is deleted.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** JSON round-trip copy (every store here is plain JSON data). */
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/** Merges `fromId`'s reviews/line comments/memos/auto-comment log into `toId`'s, then removes `fromId`'s. Existing `toId` review statuses win. */
+function mergeStateIntoOwner(fromId, toId) {
+  const reviews = loadAllReviews();
+  if (reviews[fromId]) {
+    const target = ensureChild(reviews, toId);
+    for (const fp of Object.keys(reviews[fromId])) {
+      const targetFile = ensureChild(target, fp);
+      for (const h of Object.keys(reviews[fromId][fp])) {
+        if (!targetFile[h]) targetFile[h] = reviews[fromId][fp][h];
+      }
+    }
+    delete reviews[fromId];
+    saveAllReviews(reviews);
+  }
+
+  const comments = loadAllLineComments();
+  if (comments[fromId]) {
+    const target = ensureChild(comments, toId);
+    for (const fp of Object.keys(comments[fromId])) {
+      for (const h of Object.keys(comments[fromId][fp])) {
+        for (const idx of Object.keys(comments[fromId][fp][h])) {
+          const list = ensureChild(ensureChild(ensureChild(target, fp), h), idx, true);
+          // Skip the same comment, and an auto comment the same rule already
+          // added to this line on the collection's side (each member ran
+          // the rule on its own before joining).
+          for (const c of comments[fromId][fp][h][idx]) {
+            if (list.some(t => t.id === c.id || (c.autoRuleId && t.autoRuleId === c.autoRuleId))) continue;
+            list.push(c);
+          }
+        }
+      }
+    }
+    delete comments[fromId];
+    saveAllLineComments(comments);
+  }
+
+  const memos = loadAllMemos();
+  if (memos[fromId]) {
+    const list = ensureChild(memos, toId, true);
+    const ids = new Set(list.map(m => m.id));
+    for (const m of memos[fromId]) if (!ids.has(m.id)) list.push(m);
+    delete memos[fromId];
+    saveAllMemos(memos);
+  }
+
+  const applied = loadAllAutoCommentApplied();
+  if (applied[fromId]) {
+    const target = ensureChild(applied, toId);
+    for (const fp of Object.keys(applied[fromId])) {
+      for (const h of Object.keys(applied[fromId][fp])) {
+        for (const idx of Object.keys(applied[fromId][fp][h])) {
+          const list = ensureChild(ensureChild(ensureChild(target, fp), h), idx, true);
+          for (const ruleId of applied[fromId][fp][h][idx]) if (!list.includes(ruleId)) list.push(ruleId);
+        }
+      }
+    }
+    delete applied[fromId];
+    saveAllAutoCommentApplied(applied);
+  }
+}
+
+/** Replaces `toId`'s reviews/line comments/memos/auto-comment log with a copy of `fromId`'s (`fromId` is left untouched). */
+function copyStateToOwner(fromId, toId) {
+  const stores = [
+    [loadAllReviews, saveAllReviews],
+    [loadAllLineComments, saveAllLineComments],
+    [loadAllMemos, saveAllMemos],
+    [loadAllAutoCommentApplied, saveAllAutoCommentApplied],
+  ];
+  for (const [load, save] of stores) {
+    const all = load();
+    if (!all[fromId] && !all[toId]) continue;
+    if (all[fromId]) all[toId] = cloneJson(all[fromId]);
+    else delete all[toId];
+    save(all);
+  }
+}
+
+/**
+ * Appends copies of a collection's own highlight categories, extraction
+ * keywords and auto-comment rules to a project's own settings, each with a
+ * fresh ID (so they never clash with the originals if the project rejoins).
+ * The project's auto-comment log is rewritten to the new rule IDs, so lines
+ * the copied rules already handled stay handled.
+ */
+function copyCollectionSettingsToProject(collectionId, projectId) {
+  const categories = loadProjectKeywordCategories(collectionId);
+  if (categories.length > 0) {
+    saveProjectKeywordCategories(projectId, [
+      ...loadProjectKeywordCategories(projectId),
+      ...categories.map(c => ({ ...c, id: generateKeywordCategoryId() })),
+    ]);
+  }
+
+  const keywords = loadProjectExtractKeywords(collectionId);
+  if (keywords.length > 0) {
+    saveProjectExtractKeywords(projectId, [
+      ...loadProjectExtractKeywords(projectId),
+      ...keywords.map(k => ({ ...k, id: generateExtractKeywordId() })),
+    ]);
+  }
+
+  const rules = loadProjectAutoCommentRules(collectionId);
+  if (rules.length > 0) {
+    const newIds = new Map(rules.map(r => [r.id, generateAutoCommentRuleId()]));
+    saveProjectAutoCommentRules(projectId, [
+      ...loadProjectAutoCommentRules(projectId),
+      ...rules.map(r => ({ ...r, id: newIds.get(r.id) })),
+    ]);
+    const applied = loadAllAutoCommentApplied();
+    const log = applied[projectId];
+    if (log) {
+      for (const fp of Object.keys(log)) {
+        for (const h of Object.keys(log[fp])) {
+          for (const idx of Object.keys(log[fp][h])) {
+            log[fp][h][idx] = log[fp][h][idx].map(id => newIds.get(id) || id);
+          }
+        }
+      }
+      saveAllAutoCommentApplied(applied);
+    }
+  }
+}
+
+/** Removes a collection and everything stored under its ID (its members must already have left). */
+function deleteCollectionData(collectionId) {
+  const reviews = loadAllReviews();
+  if (collectionId in reviews) {
+    delete reviews[collectionId];
+    saveAllReviews(reviews);
+  }
+  deleteMemosForProject(collectionId);
+  deleteLineCommentsForProject(collectionId);
+  deleteProjectKeywordCategories(collectionId);
+  deleteProjectExtractKeywords(collectionId);
+  deleteAutoCommentDataForProject(collectionId);
+  saveCollections(loadCollections().filter(c => c.id !== collectionId));
+  collapsedCollectionIds.delete(collectionId);
+}
+
+/**
+ * Takes a project out of its collection (no-op if it isn't in one). With
+ * `copyState`, the collection's state and collection-scoped settings are
+ * copied to the project first (skipped when the project is being deleted).
+ * Deletes the collection once it has no members left.
+ */
+function detachProjectFromCollection(projectId, copyState = true) {
+  const projects = loadProjects();
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj || !proj.collectionId) return;
+  const collectionId = proj.collectionId;
+  const exists = loadCollections().some(c => c.id === collectionId);
+  if (copyState && exists) {
+    copyStateToOwner(collectionId, projectId);
+    copyCollectionSettingsToProject(collectionId, projectId);
+  }
+  delete proj.collectionId;
+  saveProjects(projects);
+  if (exists && getCollectionMemberIds(collectionId, projects).length === 0) deleteCollectionData(collectionId);
+}
+
+/** Puts a project into a collection, first leaving any other collection it's in, and merges its state into the collection's. */
+function attachProjectToCollection(projectId, collectionId) {
+  if (getProjectCollectionId(projectId) === collectionId) return;
+  detachProjectFromCollection(projectId);
+  mergeStateIntoOwner(projectId, collectionId);
+  const projects = loadProjects();
+  const proj = projects.find(p => p.id === projectId);
+  if (!proj) return;
+  proj.collectionId = collectionId;
+  saveProjects(projects);
+}
+
+/** File name without its last extension, as a default collection name. */
+function defaultCollectionName(fileName) {
+  return fileName.replace(/\.[^.]+$/, '') || fileName;
+}
+
+/** Re-render everything that depends on which collection (if any) the active project is in. */
+function refreshAfterCollectionChange() {
+  scheduleSettingsAutoSave();
+  refreshMemoUI();
+  renderKeywordCategoryList();
+  renderExtractKeywordList();
+  renderAutoCommentRuleList();
+  renderProjectList();
+  if (app.currentProjectId && app.parsedDiff) renderDiff();
+}
+
+/** Creates a collection named via a prompt and moves the given projects into it (merged in order, so the first one's review statuses win). */
+function createCollectionFromProjects(projectIds) {
+  const projects = loadProjects();
+  const ids = projectIds.filter(id => projects.some(p => p.id === id));
+  if (ids.length === 0) return false;
+  const first = projects.find(p => p.id === ids[0]);
+  const input = prompt(
+    `選択した ${ids.length} 件のプロジェクトで新しいコレクションを作成します。\n` +
+    'コレクション内ではレビュー状態・行コメント・メモが共有されます。\n\nコレクション名:',
+    defaultCollectionName(first.fileName)
+  );
+  if (input === null) return false;
+  const name = input.trim() || defaultCollectionName(first.fileName);
+
+  const collection = { id: generateCollectionId(), name, createdAt: Date.now() };
+  saveCollections([...loadCollections(), collection]);
+  for (const id of ids) attachProjectToCollection(id, collection.id);
+  refreshAfterCollectionChange();
+  return true;
+}
+
+/** Moves the given projects into an existing collection. */
+function addProjectsToCollection(projectIds, collectionId) {
+  const collection = loadCollections().find(c => c.id === collectionId);
+  if (!collection) return false;
+  const ids = projectIds.filter(id => getProjectCollectionId(id) !== collectionId);
+  if (ids.length === 0) return false;
+  if (!confirm(
+    `${ids.length} 件のプロジェクトをコレクション「${collection.name}」に追加します。\n` +
+    'レビュー状態・行コメント・メモはコレクションに統合されます（同じハンクのレビュー状態はコレクション側を優先）。\n' +
+    '別のコレクションに入っているプロジェクトは、そのコレクションから外したうえで移動します。よろしいですか？'
+  )) return false;
+  for (const id of ids) attachProjectToCollection(id, collectionId);
+  refreshAfterCollectionChange();
+  return true;
+}
+
+/** Takes the given projects out of their collections, copying the shared state back to each. */
+function removeProjectsFromCollections(projectIds) {
+  const ids = projectIds.filter(id => getProjectCollectionId(id));
+  if (ids.length === 0) {
+    alert('選択したプロジェクトはコレクションに入っていません。');
+    return false;
+  }
+  if (!confirm(
+    `${ids.length} 件のプロジェクトをコレクションから外します。\n` +
+    'コレクションのレビュー状態・行コメント・メモと、コレクション範囲の設定は各プロジェクトにコピーされます。\n' +
+    'プロジェクトがなくなったコレクションは自動で削除されます。よろしいですか？'
+  )) return false;
+  for (const id of ids) detachProjectFromCollection(id);
+  refreshAfterCollectionChange();
+  return true;
+}
+
+function renameCollection(collectionId) {
+  const collections = loadCollections();
+  const collection = collections.find(c => c.id === collectionId);
+  if (!collection) return;
+  const input = prompt('コレクション名:', collection.name);
+  if (input === null || !input.trim() || input.trim() === collection.name) return;
+  collection.name = input.trim();
+  saveCollections(collections);
+  scheduleSettingsAutoSave();
+  renderProjectList();
+}
+
+/** Takes every member out of a collection (copying its state to each), which deletes it. */
+function dissolveCollection(collectionId) {
+  const collection = loadCollections().find(c => c.id === collectionId);
+  if (!collection) return;
+  if (!confirm(
+    `コレクション「${collection.name}」を解散しますか？\n` +
+    'レビュー状態・行コメント・メモと、コレクション範囲の設定は各プロジェクトにコピーされます。'
+  )) return;
+  for (const id of getCollectionMemberIds(collectionId)) detachProjectFromCollection(id);
+  refreshAfterCollectionChange();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Export / Import
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -7372,9 +8184,33 @@ function sanitizeImportedProjects(rawProjects) {
     // through as-is so a same-machine settings-folder reload doesn't lose
     // the external-update-check baseline; harmless dead data otherwise.
     const fileLastModified = typeof p.fileLastModified === 'number' ? p.fileLastModified : undefined;
-    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding, resolvedMessageEncoding, fileLastModified });
+    const collectionId = typeof p.collectionId === 'string' && COLLECTION_ID_RE.test(p.collectionId) ? p.collectionId : undefined;
+    result.push({ id: p.id, fileName: p.fileName, createdAt, lastUpdated, encoding, resolvedEncoding, resolvedMessageEncoding, fileLastModified, collectionId });
   }
   return result;
+}
+
+/**
+ * Restores the collection invariants after an import: a project pointing at
+ * a collection that doesn't exist gets a placeholder one (so the state stored
+ * under that ID stays reachable), state imported under a member's own ID
+ * (e.g. from a pre-v8 export) is folded into its collection's (the
+ * collection's review statuses win), and a collection with no members is
+ * deleted together with its stored state.
+ */
+function reconcileCollections() {
+  const projects = loadProjects();
+  const collections = loadCollections();
+  const missing = [...new Set(projects.map(p => p.collectionId).filter(id => id && !collections.some(c => c.id === id)))];
+  if (missing.length > 0) {
+    saveCollections([...collections, ...missing.map(id => ({ id, name: 'コレクション', createdAt: Date.now() }))]);
+  }
+  for (const p of projects) {
+    if (p.collectionId) mergeStateIntoOwner(p.id, p.collectionId);
+  }
+  for (const c of loadCollections()) {
+    if (getCollectionMemberIds(c.id, projects).length === 0) deleteCollectionData(c.id);
+  }
 }
 
 /**
@@ -7399,12 +8235,17 @@ function sanitizeImportedProjects(rawProjects) {
  * line comment rules, merged by id like `extractKeywords`) and
  * `autoCommentApplied` (SK_AUTO_COMMENT_APPLIED, replaced per project on
  * import together with `lineComments`).
+ * schemaVersion 8: added `collections` (SK_COLLECTIONS) and each project's
+ * `collectionId`. A collection's shared reviews/memos/lineComments/
+ * autoCommentApplied and its collection-scoped settings are stored under the
+ * collection ID inside the existing per-ID maps, so they need no new fields.
  */
 function buildExportData() {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
+    collections: loadCollections(),
     reviews: loadAllReviews(),
     memos: loadAllMemos(),
     lineComments: loadAllLineComments(),
@@ -7514,13 +8355,25 @@ function mergeImportedData(data) {
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));
-  for (const p of importedProjects) byId.set(p.id, p);
+  for (const p of importedProjects) {
+    // An imported project without a collectionId (a pre-v8 export, or a stale
+    // settings file) keeps its local membership: dropping it would empty the
+    // collection and reconcileCollections() would delete its shared state.
+    const local = byId.get(p.id);
+    if (!p.collectionId && local && local.collectionId) p.collectionId = local.collectionId;
+    byId.set(p.id, p);
+  }
   saveProjects([...byId.values()]);
 
+  const collectionsById = new Map(loadCollections().map(c => [c.id, c]));
+  for (const c of sanitizeCollections(data.collections)) collectionsById.set(c.id, c);
+  saveCollections([...collectionsById.values()]);
+
+  // The progress-badge cache holds hunk keys, not counts, so replacing
+  // reviews needs no cache invalidation.
   const reviews = loadAllReviews();
   for (const pid of Object.keys(importedReviews)) {
     reviews[pid] = importedReviews[pid];
-    invalidateProjectProgressCache(pid);
   }
   saveAllReviews(reviews);
 
@@ -7547,6 +8400,9 @@ function mergeImportedData(data) {
     else delete applied[pid];
   }
   saveAllAutoCommentApplied(applied);
+
+  // Last, so it also cleans up / folds in the state written just above.
+  reconcileCollections();
 
   return importedProjects.length;
 }
@@ -8338,6 +9194,21 @@ document.getElementById('project-sort-select').addEventListener('change', (e) =>
   renderProjectList();
 });
 
+// Project selection mode / collection actions (see "Sidebar project selection mode").
+document.getElementById('project-select-mode-btn').addEventListener('click', () => setProjectSelectMode(!projectSelectMode));
+document.getElementById('collection-create-btn').addEventListener('click', () => {
+  if (createCollectionFromProjects(getSelectedProjectIdsInOrder())) setProjectSelectMode(false);
+});
+document.getElementById('collection-add-select').addEventListener('change', (e) => {
+  const collectionId = e.target.value;
+  if (!collectionId) return;
+  if (addProjectsToCollection(getSelectedProjectIdsInOrder(), collectionId)) setProjectSelectMode(false);
+  else e.target.value = '';
+});
+document.getElementById('collection-remove-btn').addEventListener('click', () => {
+  if (removeProjectsFromCollections(getSelectedProjectIdsInOrder())) setProjectSelectMode(false);
+});
+
 document.getElementById('modal-btn-new').addEventListener('click', () => {
   const fn      = modalFileName;
   const parsed  = modalParsedDiff;
@@ -8716,29 +9587,20 @@ function buildKeywordCategoryRow(category) {
   row.appendChild(keywordsInput);
 
   // Scope selector (issue #68): choose whether this category is shared by
-  // every project ('global', stored in SK_KEYWORDS) or private to the
-  // currently active project ('project', stored in SK_PROJECT_KEYWORDS).
-  // The "プロジェクト" option is disabled with no active project — a
-  // category can only move into a project's own store while that project
-  // is selected. Labels are kept short (vs. the bulk-registration form's
+  // every project ('global', stored in SK_KEYWORDS), by the active project's
+  // collection ('collection', stored in SK_PROJECT_KEYWORDS under the
+  // collection ID), or private to the currently active project ('project',
+  // stored in SK_PROJECT_KEYWORDS). Unavailable options are disabled (see
+  // appendSettingScopeOptions()) — a category can only move into a
+  // project's/collection's store while that project is selected. Labels are kept short (vs. the bulk-registration form's
   // spelled-out "全体設定"/"このプロジェクトのみ") since this row packs
   // every control onto a single line; the title attribute carries the
   // full explanation.
   const scopeSelect = document.createElement('select');
   scopeSelect.className = 'keyword-category-scope-select';
-  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
-  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
-
-  const globalOption = document.createElement('option');
-  globalOption.value = 'global';
-  globalOption.textContent = '全体';
-  scopeSelect.appendChild(globalOption);
-
-  const projectOption = document.createElement('option');
-  projectOption.value = 'project';
-  projectOption.textContent = 'プロジェクト';
-  projectOption.disabled = !app.currentProjectId;
-  scopeSelect.appendChild(projectOption);
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定・このコレクション・このプロジェクトのみ）');
+  scopeSelect.title = '全体設定にするか、現在のコレクション・プロジェクトだけの設定にするかを選べます';
+  appendSettingScopeOptions(scopeSelect);
 
   scopeSelect.value = category.scope;
   scopeSelect.addEventListener('change', () => {
@@ -8807,8 +9669,12 @@ function buildKeywordCategoryRow(category) {
 function renderKeywordCategoryList() {
   const container = document.getElementById('keyword-categories');
   container.innerHTML = '';
-  document.getElementById('keyword-category-enable-all-project-btn').disabled = !app.currentProjectId;
-  document.getElementById('keyword-category-disable-all-project-btn').disabled = !app.currentProjectId;
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const unavailable = !scopeOwnerId(scope);
+    document.getElementById(`keyword-category-enable-all-${scope}-btn`).disabled = unavailable;
+    document.getElementById(`keyword-category-disable-all-${scope}-btn`).disabled = unavailable;
+  }
+  document.getElementById('keyword-category-collection-toggle-group').hidden = !scopeOwnerId('collection');
   const categories = loadKeywordCategories();
   if (categories.length === 0) {
     const empty = document.createElement('div');
@@ -8874,30 +9740,33 @@ function addKeywordCategory() {
  * itself list several keywords sharing one color/settings). Every new
  * category gets a color that doesn't clash with any existing category's
  * color, nor with another category created earlier in the same batch.
- * `scope === 'project'` requires an active project (checked by the caller,
- * which disables that option otherwise) and puts every new category into
- * that project's own store — there, only global + that project's own colors
- * matter, since that's everything ever shown together (loadKeywordCategories()).
- * Anything else registers them as global, so it has to avoid every project's
- * colors (collectAllKeywordColors()), not only the active one's.
+ * `scope === 'project'` / `'collection'` puts every new category into the
+ * active project's own / its collection's store (the caller disables those
+ * options when unavailable) — for a project's own store, only the colors
+ * shown together with it matter (loadKeywordCategories()). Anything else
+ * registers them as global; global and collection categories reach several
+ * projects, so those avoid every stored color (collectAllKeywordColors()).
  * @returns {number} how many categories were created
  */
 function bulkAddKeywordCategories(text, scope) {
   const lines = text.split(/\r\n|\r|\n/).map(line => line.trim()).filter(line => line.length > 0);
   if (lines.length === 0) return 0;
 
-  const isProjectScope = scope === 'project' && app.currentProjectId;
-  const usedColors = isProjectScope ? loadKeywordCategories().map(c => c.color) : collectAllKeywordColors();
+  const ownerId = scope === 'project' || scope === 'collection' ? scopeOwnerId(scope) : null;
+  // A project's own categories are only ever shown with global + that
+  // project's (and its collection's) ones; collection- and global-scoped
+  // ones reach several projects, so avoid every stored color for those.
+  const usedColors = ownerId && scope === 'project' ? loadKeywordCategories().map(c => c.color) : collectAllKeywordColors();
   const newCategories = lines.map(line => {
     const color = pickUnusedKeywordColor(usedColors);
     usedColors.push(color);
     return { id: generateKeywordCategoryId(), keywords: line, color, countEnabled: false, enabled: true, caseSensitive: false };
   });
 
-  if (isProjectScope) {
-    const categories = loadProjectKeywordCategories(app.currentProjectId);
+  if (ownerId) {
+    const categories = loadProjectKeywordCategories(ownerId);
     categories.push(...newCategories);
-    saveProjectKeywordCategories(app.currentProjectId, categories);
+    saveProjectKeywordCategories(ownerId, categories);
   } else {
     const categories = loadGlobalKeywordCategories();
     categories.push(...newCategories);
@@ -8914,10 +9783,13 @@ function scheduleKeywordDiffRerender() {
   }, 200);
 }
 
-/** Which store (global or the active project's own) a category id currently lives in, or null if neither. */
+/** Which store (global, the active project's collection's, or its own) a category id currently lives in, or null if none. */
 function findKeywordCategoryScope(id) {
   if (loadGlobalKeywordCategories().some(c => c.id === id)) return 'global';
-  if (app.currentProjectId && loadProjectKeywordCategories(app.currentProjectId).some(c => c.id === id)) return 'project';
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId && loadProjectKeywordCategories(ownerId).some(c => c.id === id)) return scope;
+  }
   return null;
 }
 
@@ -8932,20 +9804,21 @@ function updateKeywordCategory(id, patch) {
     Object.assign(category, patch);
     saveGlobalKeywordCategories(categories);
   } else {
-    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    const ownerId = scopeOwnerId(scope);
+    const categories = loadProjectKeywordCategories(ownerId);
     const category = categories.find(c => c.id === id);
     if (!category) return;
     Object.assign(category, patch);
-    saveProjectKeywordCategories(app.currentProjectId, categories);
+    saveProjectKeywordCategories(ownerId, categories);
   }
   scheduleKeywordDiffRerender();
 }
 
-/** Moves a category between the global store and the active project's own store, keeping its id/keywords/color/countEnabled/enabled/caseSensitive. */
+/** Moves a category between the global, collection and project stores, keeping its id/keywords/color/countEnabled/enabled/caseSensitive. */
 function moveKeywordCategoryScope(id, newScope) {
   const fromScope = findKeywordCategoryScope(id);
   if (!fromScope || fromScope === newScope) return;
-  if (newScope === 'project' && !app.currentProjectId) return;
+  if (newScope !== 'global' && !scopeOwnerId(newScope)) return;
 
   let category;
   if (fromScope === 'global') {
@@ -8955,11 +9828,12 @@ function moveKeywordCategoryScope(id, newScope) {
     [category] = categories.splice(idx, 1);
     saveGlobalKeywordCategories(categories);
   } else {
-    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    const ownerId = scopeOwnerId(fromScope);
+    const categories = loadProjectKeywordCategories(ownerId);
     const idx = categories.findIndex(c => c.id === id);
     if (idx === -1) return;
     [category] = categories.splice(idx, 1);
-    saveProjectKeywordCategories(app.currentProjectId, categories);
+    saveProjectKeywordCategories(ownerId, categories);
   }
 
   if (newScope === 'global') {
@@ -8967,9 +9841,10 @@ function moveKeywordCategoryScope(id, newScope) {
     categories.push(category);
     saveGlobalKeywordCategories(categories);
   } else {
-    const categories = loadProjectKeywordCategories(app.currentProjectId);
+    const ownerId = scopeOwnerId(newScope);
+    const categories = loadProjectKeywordCategories(ownerId);
     categories.push(category);
-    saveProjectKeywordCategories(app.currentProjectId, categories);
+    saveProjectKeywordCategories(ownerId, categories);
   }
 
   renderKeywordCategoryList();
@@ -8980,8 +9855,9 @@ function deleteKeywordCategory(id) {
   const scope = findKeywordCategoryScope(id);
   if (scope === 'global') {
     saveGlobalKeywordCategories(loadGlobalKeywordCategories().filter(c => c.id !== id));
-  } else if (scope === 'project') {
-    saveProjectKeywordCategories(app.currentProjectId, loadProjectKeywordCategories(app.currentProjectId).filter(c => c.id !== id));
+  } else if (scope) {
+    const ownerId = scopeOwnerId(scope);
+    saveProjectKeywordCategories(ownerId, loadProjectKeywordCategories(ownerId).filter(c => c.id !== id));
   }
   renderKeywordCategoryList();
   scheduleKeywordDiffRerender();
@@ -8991,10 +9867,10 @@ function deleteKeywordCategory(id) {
  * Sets `enabled` on categories currently visible in the modal (issue #111,
  * extended by issue #113 with a `scope` to target just one store): `scope`
  * 'all' (default) covers every global category plus (when a project is
- * active) that project's own categories — i.e. all entries
- * loadKeywordCategories() would return; 'global' / 'project' restrict the
- * change to just that store (a 'project' call with no active project is a
- * no-op). Writes the affected store(s) in one pass rather than calling
+ * active) its collection's and its own categories — i.e. all entries
+ * loadKeywordCategories() would return; 'global' / 'collection' / 'project'
+ * restrict the change to just that store (a call for an unavailable scope
+ * is a no-op). Writes the affected store(s) in one pass rather than calling
  * updateKeywordCategory() per entry, then re-renders the whole row list and
  * diff in one go.
  */
@@ -9006,11 +9882,13 @@ function setAllKeywordCategoriesEnabled(enabled, scope = 'all') {
       saveGlobalKeywordCategories(globalCategories);
     }
   }
-  if ((scope === 'all' || scope === 'project') && app.currentProjectId) {
-    const projectCategories = loadProjectKeywordCategories(app.currentProjectId);
-    if (projectCategories.length > 0) {
-      for (const c of projectCategories) c.enabled = enabled;
-      saveProjectKeywordCategories(app.currentProjectId, projectCategories);
+  for (const owned of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(owned);
+    if ((scope !== 'all' && scope !== owned) || !ownerId) continue;
+    const ownedCategories = loadProjectKeywordCategories(ownerId);
+    if (ownedCategories.length > 0) {
+      for (const c of ownedCategories) c.enabled = enabled;
+      saveProjectKeywordCategories(ownerId, ownedCategories);
     }
   }
   renderKeywordCategoryList();
@@ -9025,6 +9903,8 @@ document.getElementById('keyword-category-enable-all-global-btn').addEventListen
 document.getElementById('keyword-category-disable-all-global-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false, 'global'));
 document.getElementById('keyword-category-enable-all-project-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true, 'project'));
 document.getElementById('keyword-category-disable-all-project-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false, 'project'));
+document.getElementById('keyword-category-enable-all-collection-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(true, 'collection'));
+document.getElementById('keyword-category-disable-all-collection-btn').addEventListener('click', () => setAllKeywordCategoriesEnabled(false, 'collection'));
 
 // Bulk keyword registration: a collapsible form (toggled by "一括登録") that
 // splits its textarea into one new category per line and registers them all
@@ -9034,8 +9914,12 @@ const keywordBulkTextarea = document.getElementById('keyword-bulk-textarea');
 const keywordBulkScopeSelect = document.getElementById('keyword-bulk-scope-select');
 
 function openKeywordBulkForm() {
-  keywordBulkScopeSelect.querySelector('option[value="project"]').disabled = !app.currentProjectId;
-  if (!app.currentProjectId) keywordBulkScopeSelect.value = 'global';
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const option = keywordBulkScopeSelect.querySelector(`option[value="${scope}"]`);
+    option.disabled = !scopeOwnerId(scope);
+    if (scope === 'collection') option.hidden = option.disabled;
+  }
+  if (keywordBulkScopeSelect.selectedOptions[0].disabled) keywordBulkScopeSelect.value = 'global';
   keywordBulkTextarea.value = '';
   keywordBulkForm.hidden = false;
   keywordBulkTextarea.focus();
@@ -9052,7 +9936,7 @@ document.getElementById('keyword-category-bulk-btn').addEventListener('click', (
 document.getElementById('keyword-bulk-cancel-btn').addEventListener('click', closeKeywordBulkForm);
 
 document.getElementById('keyword-bulk-submit-btn').addEventListener('click', () => {
-  const scope = keywordBulkScopeSelect.value === 'project' && app.currentProjectId ? 'project' : 'global';
+  const scope = keywordBulkScopeSelect.value !== 'global' && scopeOwnerId(keywordBulkScopeSelect.value) ? keywordBulkScopeSelect.value : 'global';
   const count = bulkAddKeywordCategories(keywordBulkTextarea.value, scope);
   if (count === 0) return;
   closeKeywordBulkForm();
@@ -9068,10 +9952,13 @@ document.getElementById('keyword-bulk-submit-btn').addEventListener('click', () 
 // re-renders both the row list and the results immediately.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Which store (global or the active project's own) an extraction keyword id currently lives in, or null if neither. */
+/** Which store (global, the active project's collection's, or its own) an extraction keyword id currently lives in, or null if none. */
 function findExtractKeywordScope(id) {
   if (loadGlobalExtractKeywords().some(k => k.id === id)) return 'global';
-  if (app.currentProjectId && loadProjectExtractKeywords(app.currentProjectId).some(k => k.id === id)) return 'project';
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId && loadProjectExtractKeywords(ownerId).some(k => k.id === id)) return scope;
+  }
   return null;
 }
 
@@ -9092,20 +9979,21 @@ function updateExtractKeyword(id, patch) {
     Object.assign(entry, patch);
     saveGlobalExtractKeywords(keywords);
   } else {
-    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    const ownerId = scopeOwnerId(scope);
+    const keywords = loadProjectExtractKeywords(ownerId);
     const entry = keywords.find(k => k.id === id);
     if (!entry) return;
     Object.assign(entry, patch);
-    saveProjectExtractKeywords(app.currentProjectId, keywords);
+    saveProjectExtractKeywords(ownerId, keywords);
   }
   scheduleExtractResultsRerender();
 }
 
-/** Moves a keyword between the global store and the active project's own store, keeping its id/keyword/fileFilter/caseSensitive/addedOnly. */
+/** Moves a keyword between the global, collection and project stores, keeping its id/keyword/fileFilter/caseSensitive/addedOnly. */
 function moveExtractKeywordScope(id, newScope) {
   const fromScope = findExtractKeywordScope(id);
   if (!fromScope || fromScope === newScope) return;
-  if (newScope === 'project' && !app.currentProjectId) return;
+  if (newScope !== 'global' && !scopeOwnerId(newScope)) return;
 
   let entry;
   if (fromScope === 'global') {
@@ -9115,11 +10003,12 @@ function moveExtractKeywordScope(id, newScope) {
     [entry] = keywords.splice(idx, 1);
     saveGlobalExtractKeywords(keywords);
   } else {
-    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    const ownerId = scopeOwnerId(fromScope);
+    const keywords = loadProjectExtractKeywords(ownerId);
     const idx = keywords.findIndex(k => k.id === id);
     if (idx === -1) return;
     [entry] = keywords.splice(idx, 1);
-    saveProjectExtractKeywords(app.currentProjectId, keywords);
+    saveProjectExtractKeywords(ownerId, keywords);
   }
 
   if (newScope === 'global') {
@@ -9127,9 +10016,10 @@ function moveExtractKeywordScope(id, newScope) {
     keywords.push(entry);
     saveGlobalExtractKeywords(keywords);
   } else {
-    const keywords = loadProjectExtractKeywords(app.currentProjectId);
+    const ownerId = scopeOwnerId(newScope);
+    const keywords = loadProjectExtractKeywords(ownerId);
     keywords.push(entry);
-    saveProjectExtractKeywords(app.currentProjectId, keywords);
+    saveProjectExtractKeywords(ownerId, keywords);
   }
 
   renderExtractKeywordList();
@@ -9139,8 +10029,9 @@ function deleteExtractKeyword(id) {
   const scope = findExtractKeywordScope(id);
   if (scope === 'global') {
     saveGlobalExtractKeywords(loadGlobalExtractKeywords().filter(k => k.id !== id));
-  } else if (scope === 'project') {
-    saveProjectExtractKeywords(app.currentProjectId, loadProjectExtractKeywords(app.currentProjectId).filter(k => k.id !== id));
+  } else if (scope) {
+    const ownerId = scopeOwnerId(scope);
+    saveProjectExtractKeywords(ownerId, loadProjectExtractKeywords(ownerId).filter(k => k.id !== id));
   }
   renderExtractKeywordList();
 }
@@ -9149,10 +10040,10 @@ function deleteExtractKeyword(id) {
  * Sets `enabled` on keywords currently visible in the modal (issue #109,
  * extended by issue #113 with a `scope` to target just one store): `scope`
  * 'all' (default) covers every global keyword plus (when a project is
- * active) that project's own keywords — i.e. all entries
- * loadExtractKeywords() would return; 'global' / 'project' restrict the
- * change to just that store (a 'project' call with no active project is a
- * no-op). Writes the affected store(s) in one pass rather than calling
+ * active) its collection's and its own keywords — i.e. all entries
+ * loadExtractKeywords() would return; 'global' / 'collection' / 'project'
+ * restrict the change to just that store (a call for an unavailable scope
+ * is a no-op). Writes the affected store(s) in one pass rather than calling
  * updateExtractKeyword() per entry, then re-renders the whole row list and
  * results in one go.
  */
@@ -9164,11 +10055,13 @@ function setAllExtractKeywordsEnabled(enabled, scope = 'all') {
       saveGlobalExtractKeywords(globalKeywords);
     }
   }
-  if ((scope === 'all' || scope === 'project') && app.currentProjectId) {
-    const projectKeywords = loadProjectExtractKeywords(app.currentProjectId);
-    if (projectKeywords.length > 0) {
-      for (const k of projectKeywords) k.enabled = enabled;
-      saveProjectExtractKeywords(app.currentProjectId, projectKeywords);
+  for (const owned of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(owned);
+    if ((scope !== 'all' && scope !== owned) || !ownerId) continue;
+    const ownedKeywords = loadProjectExtractKeywords(ownerId);
+    if (ownedKeywords.length > 0) {
+      for (const k of ownedKeywords) k.enabled = enabled;
+      saveProjectExtractKeywords(ownerId, ownedKeywords);
     }
   }
   renderExtractKeywordList();
@@ -9272,19 +10165,9 @@ function buildExtractKeywordRow(entry) {
   // no active project, mirroring the keyword-highlight category scope select.
   const scopeSelect = document.createElement('select');
   scopeSelect.className = 'extract-keyword-scope-select';
-  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
-  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
-
-  const globalOption = document.createElement('option');
-  globalOption.value = 'global';
-  globalOption.textContent = '全体';
-  scopeSelect.appendChild(globalOption);
-
-  const projectOption = document.createElement('option');
-  projectOption.value = 'project';
-  projectOption.textContent = 'プロジェクト';
-  projectOption.disabled = !app.currentProjectId;
-  scopeSelect.appendChild(projectOption);
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定・このコレクション・このプロジェクトのみ）');
+  scopeSelect.title = '全体設定にするか、現在のコレクション・プロジェクトだけの設定にするかを選べます';
+  appendSettingScopeOptions(scopeSelect);
 
   scopeSelect.value = entry.scope;
   scopeSelect.addEventListener('change', () => {
@@ -9432,8 +10315,12 @@ function renderExtractResults() {
 function renderExtractKeywordList() {
   const container = document.getElementById('extract-keywords');
   container.innerHTML = '';
-  document.getElementById('extract-keyword-enable-all-project-btn').disabled = !app.currentProjectId;
-  document.getElementById('extract-keyword-disable-all-project-btn').disabled = !app.currentProjectId;
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const unavailable = !scopeOwnerId(scope);
+    document.getElementById(`extract-keyword-enable-all-${scope}-btn`).disabled = unavailable;
+    document.getElementById(`extract-keyword-disable-all-${scope}-btn`).disabled = unavailable;
+  }
+  document.getElementById('extract-keyword-collection-toggle-group').hidden = !scopeOwnerId('collection');
   const keywords = loadExtractKeywords();
   if (keywords.length === 0) {
     const empty = document.createElement('div');
@@ -9454,6 +10341,8 @@ document.getElementById('extract-keyword-enable-all-global-btn').addEventListene
 document.getElementById('extract-keyword-disable-all-global-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false, 'global'));
 document.getElementById('extract-keyword-enable-all-project-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true, 'project'));
 document.getElementById('extract-keyword-disable-all-project-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false, 'project'));
+document.getElementById('extract-keyword-enable-all-collection-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(true, 'collection'));
+document.getElementById('extract-keyword-disable-all-collection-btn').addEventListener('click', () => setAllExtractKeywordsEnabled(false, 'collection'));
 
 // Keyword line extraction modal open/close (issue #79): independent of the
 // settings modal above — its own overlay/backdrop-click/Escape handling.
@@ -9596,12 +10485,14 @@ function saveProjectAutoCommentRules(projectId, rules) {
   saveAllProjectAutoCommentRules(all);
 }
 
-/** Merged, scope-tagged view (global + the active project's own rules), like loadExtractKeywords(). */
+/** Merged, scope-tagged view (global + the active project's collection's + its own rules), like loadExtractKeywords(). */
 function loadAutoCommentRules() {
-  const global = loadGlobalAutoCommentRules().map(r => ({ ...r, scope: 'global' }));
-  if (!app.currentProjectId) return global;
-  const project = loadProjectAutoCommentRules(app.currentProjectId).map(r => ({ ...r, scope: 'project' }));
-  return [...global, ...project];
+  const result = loadGlobalAutoCommentRules().map(r => ({ ...r, scope: 'global' }));
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId) result.push(...loadProjectAutoCommentRules(ownerId).map(r => ({ ...r, scope })));
+  }
+  return result;
 }
 
 /**
@@ -9684,7 +10575,7 @@ function ensureChild(obj, key, asArray = false) {
  * @returns {number} number of comments added
  */
 function applyAutoLineComments() {
-  const pid = app.currentProjectId;
+  const pid = currentStateOwnerId();
   if (!pid || !app.parsedDiff) return 0;
   const rules = loadAutoCommentRules()
     .map(r => {
@@ -9753,10 +10644,13 @@ function applyAutoLineComments() {
 // a "今すぐ適用" button that runs applyAutoLineComments() on demand.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Which store (global or the active project's own) an auto rule id currently lives in, or null if neither. */
+/** Which store (global, the active project's collection's, or its own) an auto rule id currently lives in, or null if none. */
 function findAutoCommentRuleScope(id) {
   if (loadGlobalAutoCommentRules().some(r => r.id === id)) return 'global';
-  if (app.currentProjectId && loadProjectAutoCommentRules(app.currentProjectId).some(r => r.id === id)) return 'project';
+  for (const scope of OWNED_SETTING_SCOPES) {
+    const ownerId = scopeOwnerId(scope);
+    if (ownerId && loadProjectAutoCommentRules(ownerId).some(r => r.id === id)) return scope;
+  }
   return null;
 }
 
@@ -9769,35 +10663,38 @@ function updateAutoCommentRule(id, patch) {
     if (!rule) return;
     Object.assign(rule, patch);
     saveGlobalAutoCommentRules(rules);
-  } else if (scope === 'project') {
-    const rules = loadProjectAutoCommentRules(app.currentProjectId);
+  } else if (scope) {
+    const ownerId = scopeOwnerId(scope);
+    const rules = loadProjectAutoCommentRules(ownerId);
     const rule = rules.find(r => r.id === id);
     if (!rule) return;
     Object.assign(rule, patch);
-    saveProjectAutoCommentRules(app.currentProjectId, rules);
+    saveProjectAutoCommentRules(ownerId, rules);
   } else {
     return;
   }
   scheduleSettingsAutoSave();
 }
 
-/** Moves a rule between the global store and the active project's own store, keeping its id (so its applied log still matches). */
+/** Moves a rule between the global, collection and project stores, keeping its id (so its applied log still matches). */
 function moveAutoCommentRuleScope(id, newScope) {
   const fromScope = findAutoCommentRuleScope(id);
   if (!fromScope || fromScope === newScope) return;
-  if (newScope === 'project' && !app.currentProjectId) return;
+  if (newScope !== 'global' && !scopeOwnerId(newScope)) return;
 
-  const fromRules = fromScope === 'global' ? loadGlobalAutoCommentRules() : loadProjectAutoCommentRules(app.currentProjectId);
+  const fromOwnerId = scopeOwnerId(fromScope);
+  const fromRules = fromScope === 'global' ? loadGlobalAutoCommentRules() : loadProjectAutoCommentRules(fromOwnerId);
   const idx = fromRules.findIndex(r => r.id === id);
   if (idx === -1) return;
   const [rule] = fromRules.splice(idx, 1);
   if (fromScope === 'global') saveGlobalAutoCommentRules(fromRules);
-  else saveProjectAutoCommentRules(app.currentProjectId, fromRules);
+  else saveProjectAutoCommentRules(fromOwnerId, fromRules);
 
   if (newScope === 'global') {
     saveGlobalAutoCommentRules([...loadGlobalAutoCommentRules(), rule]);
   } else {
-    saveProjectAutoCommentRules(app.currentProjectId, [...loadProjectAutoCommentRules(app.currentProjectId), rule]);
+    const toOwnerId = scopeOwnerId(newScope);
+    saveProjectAutoCommentRules(toOwnerId, [...loadProjectAutoCommentRules(toOwnerId), rule]);
   }
   scheduleSettingsAutoSave();
   renderAutoCommentRuleList();
@@ -9808,8 +10705,9 @@ function deleteAutoCommentRule(id) {
   const scope = findAutoCommentRuleScope(id);
   if (scope === 'global') {
     saveGlobalAutoCommentRules(loadGlobalAutoCommentRules().filter(r => r.id !== id));
-  } else if (scope === 'project') {
-    saveProjectAutoCommentRules(app.currentProjectId, loadProjectAutoCommentRules(app.currentProjectId).filter(r => r.id !== id));
+  } else if (scope) {
+    const ownerId = scopeOwnerId(scope);
+    saveProjectAutoCommentRules(ownerId, loadProjectAutoCommentRules(ownerId).filter(r => r.id !== id));
   }
   scheduleSettingsAutoSave();
   renderAutoCommentRuleList();
@@ -9879,17 +10777,9 @@ function buildAutoCommentRuleRow(rule) {
 
   const scopeSelect = document.createElement('select');
   scopeSelect.className = 'extract-keyword-scope-select';
-  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定またはこのプロジェクトのみ）');
-  scopeSelect.title = '全体設定にするか、現在のプロジェクトだけの設定にするかを選べます';
-  const globalOption = document.createElement('option');
-  globalOption.value = 'global';
-  globalOption.textContent = '全体';
-  const projectOption = document.createElement('option');
-  projectOption.value = 'project';
-  projectOption.textContent = 'プロジェクト';
-  projectOption.disabled = !app.currentProjectId;
-  scopeSelect.appendChild(globalOption);
-  scopeSelect.appendChild(projectOption);
+  scopeSelect.setAttribute('aria-label', '適用範囲（全体設定・このコレクション・このプロジェクトのみ）');
+  scopeSelect.title = '全体設定にするか、現在のコレクション・プロジェクトだけの設定にするかを選べます';
+  appendSettingScopeOptions(scopeSelect);
   scopeSelect.value = rule.scope;
   scopeSelect.addEventListener('change', () => moveAutoCommentRuleScope(rule.id, scopeSelect.value));
 
