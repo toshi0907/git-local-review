@@ -493,8 +493,8 @@ function buildCollectionGroup(collection, members) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Sidebar project selection mode — the "☑ 選択" button turns the project
 // list into a multi-select list; the action bar then creates a collection
-// from the selected projects, adds them to an existing one, or takes them
-// out of theirs (see "Collection actions").
+// from the selected projects, adds them to an existing one, takes them out
+// of theirs (see "Collection actions"), or deletes them (deleteProjects()).
 // ─────────────────────────────────────────────────────────────────────────────
 function setProjectSelectMode(on) {
   projectSelectMode = on;
@@ -541,6 +541,7 @@ function renderProjectSelectBar(collections = loadCollections()) {
   document.getElementById('project-select-count').textContent = `${count}件選択中`;
   document.getElementById('collection-create-btn').disabled = count === 0;
   document.getElementById('collection-remove-btn').disabled = count === 0;
+  document.getElementById('project-delete-selected-btn').disabled = count === 0;
 
   const addSelect = document.getElementById('collection-add-select');
   addSelect.innerHTML = '';

@@ -129,7 +129,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/sidebar.js` | **Sidebar review-progress badge** | `updateProjectProgressBadge()` — サイドバーの各プロジェクト名の左に表示する、残レビューhunk数（または全レビュー済みなら✓）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
 | `js/sidebar.js` | **Sidebar open-comment badge** | `updateCommentBadge()` / `refreshCommentBadges()` — レビュー進捗バッジの右に表示する未完了コメント数（`💬 N`）バッジ。詳細は [Render: sidebar project list](#render-sidebar-project-list) を参照 |
 | `js/sidebar.js` | **Render: sidebar project list** | `renderProjectList()`。#83 でコンパクト表示化（詳細は折りたたみ、外部更新バッジ表示）。プロジェクト1件の描画は `buildProjectItem()`、コレクションのグループ表示は `buildCollectionGroup()` |
-| `js/sidebar.js` | **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、コレクション操作バー `#project-select-bar` の描画（`renderProjectSelectBar()`） |
+| `js/sidebar.js` | **Sidebar project selection mode** | サイドバーの「☑ 選択」による複数選択モード（`setProjectSelectMode()` / `toggleProjectSelected()`）と、操作バー `#project-select-bar`（コレクション操作・一括削除）の描画（`renderProjectSelectBar()`） |
 | `js/diff-view.js` | **Render: stat summary** | `renderStatSummary()` — `git diff --stat` 風サマリパネル |
 | `js/diff-view.js` | **Render: full diff view** | `renderDiff()`。`buildCommitSectionHeader()` によるコミット見出しの挿入もこの近辺にある |
 | `js/diff-view.js` | **Word-level diff highlighting** | `computeWordDiffPairs()` / `diffWordTokens()` — `git --word-diff` 相当の単語単位ハイライト（トップバーの「単語単位で差分表示」チェックボックスで切替）。詳細は [Build a single hunk card](#build-a-single-hunk-card) を参照 |
@@ -142,7 +142,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/diff-view.js` | **Empty state helpers** | 空状態メッセージ表示 |
 | `js/comments.js` | **Line comments** | 行コメントの追加・編集・削除（`addLineComment()` 等）、diff 内のコメント行・入力欄の描画、ハンクヘッダーの件数バッジ、`c` キー処理（`openLineCommentComposerForFocusedHunk()`）、メモパネル内の一覧描画（`renderLineCommentList()`）とジャンプ（`jumpToLineComment()`）。詳細は [Line comments](#line-comments) を参照 |
 | `js/comments.js` | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル）。パネル下部には行コメント一覧（`#line-comment-section`）も同居するが、その描画は「Line comments」セクション側にある |
-| `js/projects.js` | **Project actions** | プロジェクトの選択・削除・並び替え |
+| `js/projects.js` | **Project actions** | プロジェクトの選択・削除（単体 `deleteProject()` / 一括 `deleteProjects()`）・並び替え |
 | `js/projects.js` | **Collection actions** | コレクションの作成・追加・除外・名前変更・解散（`createCollectionFromProjects()` / `addProjectsToCollection()` / `removeProjectsFromCollections()` / `renameCollection()` / `dissolveCollection()`）と、参加時の状態マージ（`mergeStateIntoOwner()`）・除外時の状態／設定コピー（`copyStateToOwner()` / `copyCollectionSettingsToProject()`） |
 | `js/projects.js` | **Conflict modal** | ファイル名衝突ダイアログ |
 | `js/projects.js` | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
@@ -449,7 +449,7 @@ renderProjectList()
 
 **コレクションのグループ表示:** コレクションに所属するプロジェクトは `buildCollectionGroup()` が1つのグループ（`.collection-group`）にまとめて描画します。グループはソート順で最初に現れるメンバーの位置に表示し、中に全メンバーをソート順で並べます。見出し（`.collection-header`）には折りたたみトグル・残レビュー数バッジ・未完了コメントバッジ・コレクション名・件数・名前変更（✏️）・解散（✕）ボタンがあり、見出しクリックで折りたたみます（`collapsedCollectionIds`）。見出しのバッジ（`updateCollectionProgressBadge()`）は、メンバー間で重複を除いた（同じファイルパス＋ハッシュは1件と数える）ハンク数から残数を表示します。保存済み diff テキストがないメンバーは集計から除き、ハンクキーを計算中のメンバーがいる間はバッジを非表示にします。見出しの太い左ボーダー（紫）はメンバー部分（`.collection-members`、薄紫背景）にも続き、各メンバーにはツリー状のガイド線（`::before` / `::after`）を描くので、グループの範囲が前後の通常プロジェクトと区別できます。グループの前後には余白を空けます。
 
-**複数選択モード:** 「プロジェクト一覧」見出しの「☑ 選択」ボタン（`#project-select-mode-btn`）で選択モードに入ると、各項目にチェックボックスが付き、項目クリックが選択の切り替えになります（コレクション見出しのチェックボックスはメンバーを一括選択）。一覧上部の操作バー `#project-select-bar` から、選択中のプロジェクトで「📁 新規コレクション」「➕ 既存に追加」「➖ コレクションから外す」を実行できます（[Collections](#collectionsプロジェクトコレクション) 参照）。
+**複数選択モード:** 「プロジェクト一覧」見出しの「☑ 選択」ボタン（`#project-select-mode-btn`）で選択モードに入ると、各項目にチェックボックスが付き、項目クリックが選択の切り替えになります（コレクション見出しのチェックボックスはメンバーを一括選択）。一覧上部の操作バー `#project-select-bar` から、選択中のプロジェクトで「📁 新規コレクション」「➕ 既存に追加」「➖ コレクションから外す」「🗑 削除」を実行できます（[Collections](#collectionsプロジェクトコレクション) 参照）。「🗑 削除」（`#project-delete-selected-btn`）は `deleteProjects()` が確認ダイアログ（全メンバーが削除されて空になるコレクションがあれば、その名前と共有状態も削除される旨を表示）を出したうえで、各プロジェクトを単体削除（`deleteProject()`）と同じ `removeProjectData()` で削除し、最後に `refreshAfterProjectDeletion()` でまとめて再描画します。
 
 ---
 
