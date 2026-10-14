@@ -242,6 +242,7 @@ const SK_AUTO_COMMENT_RULES = 'gitLocalReview_autoCommentRules';
 const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 const SK_COLLECTIONS     = 'gitLocalReview_collections';
+const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
 const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
 ```
 
@@ -264,6 +265,8 @@ const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
 `SK_AUTO_COMMENT_RULES` / `SK_PROJECT_AUTO_COMMENT_RULES` は自動行コメントのルール（全体設定の配列 / `{ [projectId]: rule[] }`）、`SK_AUTO_COMMENT_APPLIED` は「どのルールをどの行に適用済みか」のログ（`{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }`）です。詳細は [Auto line comments](#auto-line-comments) を参照してください。
 
 `SK_COLLECTIONS` はプロジェクトコレクションの一覧 `{ id, name, createdAt }[]` です（`loadCollections()` / `saveCollections()`、不正値は `sanitizeCollections()` が除去）。所属はプロジェクト側の `collectionId` に保持します。`SK_COLLECTION_AUTO_RULES`（issue #132）はコレクション自動追加ルール `{ id, pattern }[]`（全体設定のみ、配列の順が照合順）です（`loadCollectionAutoRules()` / `saveCollectionAutoRules()`、不正な正規表現は `sanitizeCollectionAutoRules()` が除去）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
+
+`SK_COLLECTION_INITIAL_STATE`（issue #130）は設定モーダルの「コレクションの初期状態」を `'open' | 'closed'` の文字列で保持します（`loadCollectionInitialState()` / `saveCollectionInitialState()`、未設定・不正値は `'open'`）。ページ読み込み時のサイドバーのコレクションの開閉状態にのみ使い、変更しても現在の開閉状態は変わりません（次回読み込みから反映）。`'closed'` のときは `init()` が、復元するプロジェクト（`SK_CURRENT`）を含むコレクション以外のIDを `collapsedCollectionIds` に入れてから最初の `renderProjectList()` を呼びます。
 
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
@@ -289,7 +292,7 @@ const app = {
 };
 ```
 
-`app` とは別に、サイドバーの UI 状態としてモジュール変数 `expandedProjectIds`・`projectsWithExternalFileUpdate`（[Render: sidebar project list](#render-sidebar-project-list) 参照）、`collapsedCollectionIds`（折りたたみ中のコレクション）、`projectSelectMode` / `selectedProjectIds`（複数選択モードとその選択中ID）があります。いずれも保存されません。
+`app` とは別に、サイドバーの UI 状態としてモジュール変数 `expandedProjectIds`・`projectsWithExternalFileUpdate`（[Render: sidebar project list](#render-sidebar-project-list) 参照）、`collapsedCollectionIds`（折りたたみ中のコレクション）、`projectSelectMode` / `selectedProjectIds`（複数選択モードとその選択中ID）があります。いずれも保存されません（`collapsedCollectionIds` の初期値のみ `SK_COLLECTION_INITIAL_STATE` で決まります）。
 
 ---
 
@@ -833,6 +836,7 @@ init()
   ├─ reviewFilter（表示フィルター）の復元
   ├─ commentFilter（「コメントあり」フィルター）の復元
   ├─ hideDoneLineComments（行コメントの「チェック済み非表示」）の復元 → applyLineCommentVisibility()
+  ├─ 「コレクションの初期状態」セレクトの復元・変更イベント登録
   ├─ refreshHandleIndex()
   ├─ [File System Access 対応ブラウザのみ]
   │     ├─ refreshOpenFolderUI()
@@ -840,6 +844,7 @@ init()
   │     ├─ loadSettingsFromFolderOnStartup()   設定ファイルがあれば自動読み込み
   │     ├─ startSettingsExternalChangeWatcher()
   │     └─ startProjectFileUpdateWatcher()     プロジェクトファイルの外部更新監視（#83）
+  ├─ [コレクションの初期状態が「閉じる」のとき] 復元対象プロジェクトのコレクション以外を collapsedCollectionIds に追加
   ├─ renderProjectList()
   └─ 最後に開いていたプロジェクトを復元 (SK_CURRENT → restoreProjectDiff)
 ```
@@ -896,6 +901,8 @@ init()
 │  gitLocalReview_autoCommentApplied 自動行コメントの   │
 │                                適用済みログ             │
 │  gitLocalReview_collections   プロジェクトコレクション │
+│  gitLocalReview_collectionInitialState コレクションの │
+│                                初期状態（開く/閉じる）  │
 │  gitLocalReview_collectionAutoRules コレクション自動 │
 │                                追加ルール（全体設定）   │
 │  ※ reviews / memos / lineComments / autoCommentApplied │

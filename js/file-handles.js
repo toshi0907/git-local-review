@@ -25,7 +25,7 @@ let projectIdsWithHandles = new Set();
  */
 let expandedProjectIds = new Set();
 let projectsWithExternalFileUpdate = new Set();
-/** Collection groups collapsed in the sidebar (UI-only, not persisted). */
+/** Collection groups collapsed in the sidebar (UI-only, not persisted; seeded on page load from SK_COLLECTION_INITIAL_STATE). */
 let collapsedCollectionIds = new Set();
 /** Sidebar multi-select mode for building collections, and the IDs selected in it (UI-only, not persisted). */
 let projectSelectMode = false;
