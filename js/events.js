@@ -135,6 +135,9 @@ document.getElementById('collection-add-select').addEventListener('change', (e) 
 document.getElementById('collection-remove-btn').addEventListener('click', () => {
   if (removeProjectsFromCollections(getSelectedProjectIdsInOrder())) setProjectSelectMode(false);
 });
+document.getElementById('project-delete-selected-btn').addEventListener('click', () => {
+  if (deleteProjects(getSelectedProjectIdsInOrder())) setProjectSelectMode(false);
+});
 
 document.getElementById('modal-btn-new').addEventListener('click', () => {
   const fn      = modalFileName;

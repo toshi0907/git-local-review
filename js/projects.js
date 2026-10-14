@@ -101,6 +101,35 @@ function deleteProject(projectId) {
   }
   if (!confirm(message)) return;
 
+  removeProjectData(projectId);
+  refreshAfterProjectDeletion();
+}
+
+/** Permanently delete several projects at once (sidebar selection mode). Returns whether they were deleted. */
+function deleteProjects(projectIds) {
+  const projects = loadProjects();
+  const ids = projectIds.filter(id => projects.some(p => p.id === id));
+  if (ids.length === 0) return false;
+  // Collections whose members are all being deleted lose their shared state with them.
+  const idSet = new Set(ids);
+  const emptiedCollections = loadCollections().filter(c => {
+    const memberIds = getCollectionMemberIds(c.id, projects);
+    return memberIds.length > 0 && memberIds.every(id => idSet.has(id));
+  });
+  let message = `選択した ${ids.length} 件のプロジェクトを削除しますか？\nチェック状態も合わせて削除されます。`;
+  if (emptiedCollections.length > 0) {
+    message += `\n\n次のコレクションはプロジェクトがなくなるため、共有しているチェック状態・行コメント・メモ・コレクション範囲の設定も合わせて削除されます：\n` +
+      emptiedCollections.map(c => `・${c.name}`).join('\n');
+  }
+  if (!confirm(message)) return false;
+
+  for (const id of ids) removeProjectData(id);
+  refreshAfterProjectDeletion();
+  return true;
+}
+
+/** Removes a project and all of its stored data, without confirmation or re-rendering. */
+function removeProjectData(projectId) {
   // Leave its collection without copying the shared state (it's about to be
   // deleted anyway); the shared state stays with the remaining members.
   detachProjectFromCollection(projectId, false);
@@ -117,19 +146,24 @@ function deleteProject(projectId) {
   invalidateProjectProgressCache(projectId);
 
   saveProjects(loadProjects().filter(p => p.id !== projectId));
-  scheduleSettingsAutoSave();
 
   if (app.currentProjectId === projectId) {
     app.currentProjectId = null;
     app.parsedDiff = null;
     localStorage.removeItem(SK_CURRENT);
+  }
+}
+
+/** Re-render after one or more projects were removed via removeProjectData(). */
+function refreshAfterProjectDeletion() {
+  scheduleSettingsAutoSave();
+  if (!app.currentProjectId) {
     showEmptyState('<span class="icon" aria-hidden="true">📄</span>Diffファイルを読み込んでください');
     renderKeywordCategoryList();
     renderExtractKeywordList();
     renderAutoCommentRuleList();
   }
   refreshMemoUI();
-
   renderProjectList();
 }
 

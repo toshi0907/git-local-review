@@ -98,7 +98,7 @@
     </div>
     <div class="sidebar-section-title">
       <span>プロジェクト一覧</span>
-      <button type="button" class="project-select-mode-btn" id="project-select-mode-btn" aria-pressed="false" title="複数のプロジェクトを選んでコレクションにまとめます">☑ 選択</button>
+      <button type="button" class="project-select-mode-btn" id="project-select-mode-btn" aria-pressed="false" title="複数のプロジェクトを選んでコレクションにまとめたり、まとめて削除したりします">☑ 選択</button>
     </div>
     <div class="sort-row">
       <label for="project-sort-select">並び順</label>
@@ -114,6 +114,7 @@
       <button type="button" class="project-select-action-btn" id="collection-create-btn" title="選択したプロジェクトで新しいコレクションを作成">📁 新規コレクション</button>
       <select class="project-select-action-select" id="collection-add-select" aria-label="選択したプロジェクトを既存のコレクションに追加"></select>
       <button type="button" class="project-select-action-btn" id="collection-remove-btn" title="選択したプロジェクトをコレクションから外す（共有中の状態は各プロジェクトにコピー）">➖ コレクションから外す</button>
+      <button type="button" class="project-select-action-btn danger" id="project-delete-selected-btn" title="選択したプロジェクトを削除">🗑 削除</button>
     </div>
     <div class="project-list" id="project-list"></div>
   </div>

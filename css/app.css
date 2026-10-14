@@ -684,7 +684,7 @@ body {
 .project-select-mode-btn:hover { background: #eaeef2; }
 .project-select-mode-btn[aria-pressed="true"] { background: #ddf4ff; border-color: #54aeff; color: #0969da; }
 
-/* Action bar shown in project selection mode (collection create/add/remove). */
+/* Action bar shown in project selection mode (collection create/add/remove, delete). */
 .project-select-bar {
   display: flex;
   flex-wrap: wrap;
@@ -709,6 +709,8 @@ body {
   max-width: 100%;
 }
 .project-select-action-btn:hover:not(:disabled) { background: #eaeef2; }
+.project-select-action-btn.danger { color: #cf222e; }
+.project-select-action-btn.danger:hover:not(:disabled) { background: #ffeef0; border-color: #cf222e; }
 .project-select-action-btn:disabled,
 .project-select-action-select:disabled { opacity: 0.5; cursor: default; }
 
