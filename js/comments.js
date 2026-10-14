@@ -773,9 +773,8 @@ function getCurrentProjectMemos() {
   return loadAllMemos()[currentStateOwnerId()] || [];
 }
 
-/** Number of the current project's line comments that aren't checked yet. */
-function countOpenLineComments() {
-  const projectComments = getProjectLineComments();
+/** Number of line comments in a state owner's map (default: the current project's) that aren't checked yet. */
+function countOpenLineComments(projectComments = getProjectLineComments()) {
   let n = 0;
   for (const filePath of Object.keys(projectComments)) {
     for (const hash of Object.keys(projectComments[filePath])) {
@@ -804,6 +803,8 @@ function refreshMemoBadge() {
       : `レビューメモ（未完了: メモ ${openMemos} 件 / 行コメント ${openComments} 件）`;
   }
   refreshTopbarTooltip();
+  // Every comment/memo change ends up here, so keep the sidebar in step too.
+  refreshCommentBadges();
 }
 
 /** id of the memo currently being edited inline, or null. Reset whenever
