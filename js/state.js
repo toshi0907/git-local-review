@@ -38,6 +38,8 @@ const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 /** Project collections: [{ id, name, createdAt }]. Membership lives on each project's `collectionId`. */
 const SK_COLLECTIONS      = 'gitLocalReview_collections';
+/** Initial (page-load) state of sidebar collection groups (issue #130): 'open' (default) | 'closed'. */
+const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -447,6 +449,27 @@ function saveHideDoneLineComments(enabled) {
     localStorage.setItem(SK_HIDE_DONE_LINE_COMMENTS, enabled ? 'true' : 'false');
   } catch (e) {
     console.error('Failed to save hide-done line comments preference:', e);
+  }
+}
+
+const VALID_COLLECTION_INITIAL_STATES = ['open', 'closed'];
+const DEFAULT_COLLECTION_INITIAL_STATE = 'open';
+
+function loadCollectionInitialState() {
+  try {
+    const val = localStorage.getItem(SK_COLLECTION_INITIAL_STATE);
+    return VALID_COLLECTION_INITIAL_STATES.includes(val) ? val : DEFAULT_COLLECTION_INITIAL_STATE;
+  } catch (e) {
+    console.error('Failed to load collection initial state preference:', e);
+    return DEFAULT_COLLECTION_INITIAL_STATE;
+  }
+}
+
+function saveCollectionInitialState(state) {
+  try {
+    localStorage.setItem(SK_COLLECTION_INITIAL_STATE, VALID_COLLECTION_INITIAL_STATES.includes(state) ? state : DEFAULT_COLLECTION_INITIAL_STATE);
+  } catch (e) {
+    console.error('Failed to save collection initial state preference:', e);
   }
 }
 
