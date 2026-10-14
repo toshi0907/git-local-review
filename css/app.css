@@ -715,15 +715,18 @@ body {
 .proj-select-checkbox { flex-shrink: 0; margin: 2px 0 0; cursor: pointer; }
 .project-item.selected { background: #fff8c5; }
 
-/* Collection group: a collapsible header followed by its (indented) members. */
-.collection-group { border-bottom: 1px solid #d0d7de; }
+/* Collection group: a collapsible header followed by its (indented) members.
+   The header's thick left border continues down the members (with a light
+   purple background and tree guide lines), so the group's extent stays
+   clear against the plain projects before and after it (issue #131). */
+.collection-group { margin: 6px 0; }
 .collection-header {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
   background: #f3f0ff;
-  border-left: 3px solid #8250df;
+  border-left: 7px solid #8250df;
   cursor: pointer;
   font-size: 12px;
 }
@@ -758,7 +761,17 @@ body {
   cursor: pointer;
 }
 .collection-action-btn:hover { background: #fff; border-color: #d0d7de; }
-.collection-members .project-item { padding-left: 24px; }
+.collection-members { border-left: 7px solid #8250df; background: #faf8ff; }
+/* Members drop their own left border (the group's replaces it); the active
+   member is marked with an inset bar instead. */
+.collection-members .project-item { position: relative; padding-left: 32px; border-left: none; }
+.collection-members .project-item.active { box-shadow: inset 4px 0 0 #0969da; }
+/* Tree guide lines: a vertical line through the members and a branch to each one. */
+.collection-members .project-item::before,
+.collection-members .project-item::after { content: ''; position: absolute; left: 11px; pointer-events: none; }
+.collection-members .project-item::before { top: 0; bottom: 0; border-left: 3px solid #a08ae6; }
+.collection-members .project-item::after { top: 20px; width: 12px; border-top: 3px solid #a08ae6; }
+.collection-members .project-item:last-child::before { bottom: auto; height: 23px; }
 .collection-group.collapsed .collection-members { display: none; }
 .collection-group.collapsed.has-active .collection-header { border-left-color: #0969da; }
 
