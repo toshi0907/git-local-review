@@ -76,13 +76,16 @@ function reconcileCollections() {
  * `collectionId`. A collection's shared reviews/memos/lineComments/
  * autoCommentApplied and its collection-scoped settings are stored under the
  * collection ID inside the existing per-ID maps, so they need no new fields.
+ * schemaVersion 9 (issue #132): added `collectionAutoRules`
+ * (SK_COLLECTION_AUTO_RULES, merged by id like `autoCommentRules`).
  */
 function buildExportData() {
   return {
-    schemaVersion: 8,
+    schemaVersion: 9,
     exportedAt: new Date().toISOString(),
     projects: loadProjects(),
     collections: loadCollections(),
+    collectionAutoRules: loadCollectionAutoRules(),
     reviews: loadAllReviews(),
     memos: loadAllMemos(),
     lineComments: loadAllLineComments(),
@@ -189,6 +192,8 @@ function mergeImportedData(data) {
   mergeImportedKeywordCategories(data.keywordCategories, data.projectKeywordCategories);
   mergeImportedExtractKeywords(data.extractKeywords, data.projectExtractKeywords);
   mergeImportedAutoCommentRules(data.autoCommentRules, data.projectAutoCommentRules);
+  mergeImportedCollectionAutoRules(data.collectionAutoRules);
+  renderCollectionAutoRuleList();
   if (importedProjects.length === 0) return 0;
 
   const byId = new Map(loadProjects().map(p => [p.id, p]));

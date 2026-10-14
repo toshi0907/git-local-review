@@ -238,6 +238,23 @@
       <div class="encoding-row settings-checkbox-row">
         <label title="チェック済みの行コメントを差分内に表示しません（メモパネルの一覧には表示されます）"><input type="checkbox" id="hide-done-line-comments-checkbox">チェック済みの行コメントを差分内で非表示にする</label>
       </div>
+      <div class="collection-auto-section" id="collection-auto-section">
+        <div class="io-section-label">コレクション自動追加ルール</div>
+        <p class="collection-auto-help">新規プロジェクト作成時、ファイル名（拡張子を含む）が正規表現にマッチすると、キャプチャグループ1（なければマッチ全体）を名前とするコレクションに自動で追加します。上のルールから順に照合し、最初にマッチしたものを使います。</p>
+        <ol class="collection-auto-rule-list" id="collection-auto-rule-list"></ol>
+        <div class="collection-auto-empty" id="collection-auto-rule-empty">ルールは登録されていません</div>
+        <div class="collection-auto-input-row">
+          <input type="text" id="collection-auto-rule-input" class="collection-auto-input" placeholder="例: ^(feat-[^-]+)-" aria-label="追加する正規表現" spellcheck="false" autocomplete="off">
+          <button type="button" class="folder-btn" id="collection-auto-rule-add-btn">追加</button>
+        </div>
+        <div class="collection-auto-error" id="collection-auto-rule-error" role="alert" hidden></div>
+        <div class="collection-auto-input-row">
+          <label for="collection-auto-rule-test-input" class="collection-auto-test-label">テスト:</label>
+          <input type="text" id="collection-auto-rule-test-input" class="collection-auto-input" placeholder="例: feat-xxx-aaa.diff" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="collection-auto-test-result" id="collection-auto-rule-test-result" aria-live="polite" hidden></div>
+        <button type="button" class="folder-btn collection-auto-apply-btn" id="collection-auto-rule-apply-btn" title="コレクション未所属の既存プロジェクトにルールを適用">既存のプロジェクトに適用…</button>
+      </div>
     </div>
   </div>
 </div>
@@ -382,6 +399,7 @@
 <script src="js/events.js"></script>
 <script src="js/keywords-ui.js"></script>
 <script src="js/auto-comments.js"></script>
+<script src="js/collection-auto-rules.js"></script>
 <script src="js/init.js"></script>
 </body>
 </html>

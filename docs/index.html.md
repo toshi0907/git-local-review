@@ -153,6 +153,8 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/keywords-ui.js` | **Keyword line extraction UI** | キーワード行抽出モーダル（issue #79）の行編集UI（キーワードテキスト・対象ファイル名（issue #92）・大文字小文字区別のON/OFF（issue #95、「Aa」チェックボックス）・全体/プロジェクトの適用範囲・削除ボタン）、抽出結果の描画（`renderExtractResults()`）、モーダルの開閉処理。データ層の関数群（`loadExtractKeywords()` 等）は「Keyword highlight」直後の「Keyword line extraction」セクションにあるが、UI部分はこのセクションにまとまっている。モーダル本体（`.extract-modal`）は幅 `90vw`（issue #90。他のモーダルの基準サイズである `.modal` の `width: 92%; max-width: 500px;` を上書き）で、抽出結果が横に長くなりがちな用途に合わせて広めに表示する |
 | `js/auto-comments.js` | **Auto line comments** | 自動行コメントのデータ層。ルール（キーワード＋コメント本文）の保存（全体/プロジェクト）、適用済みログ、ルールを現在の diff に適用する `applyAutoLineComments()`。詳細は [Auto line comments](#auto-line-comments) を参照 |
 | `js/auto-comments.js` | **Auto line comments UI** | トップバーの「🤖 自動コメント」ボタンで開くモーダル `#auto-comment-modal-overlay` のルール編集UI（有効/無効・キーワード・Aa・+のみ・対象ファイル名・適用範囲・削除・コメント本文）、「▶ 今すぐ適用」ボタン（`runAutoLineCommentsManually()`）、モーダルの開閉処理。行編集UIの見た目はキーワード行抽出のクラス（`.extract-keyword-*`）を流用する |
+| `js/collection-auto-rules.js` | **Collection auto-add rules — data layer** | コレクション自動追加ルール（issue #132）の保存（`loadCollectionAutoRules()` 等）、ファイル名との照合（`matchCollectionAutoRules()`）、新規プロジェクトへの適用（`applyCollectionAutoRulesToProject()`）、既存プロジェクトへの一括適用（`applyCollectionAutoRulesToExistingProjects()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
+| `js/collection-auto-rules.js` | **Collection auto-add rules — settings modal UI** | 設定モーダルの「コレクション自動追加ルール」欄（ルール一覧の ↑↓✕、追加時の正規表現エラー表示、テスト入力欄のプレビュー、「既存のプロジェクトに適用…」ボタン） |
 | `js/init.js` | **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
 | `js/init.js` | **Initialise** | `init()` — 起動時初期化 |
 
@@ -240,6 +242,7 @@ const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 const SK_COLLECTIONS     = 'gitLocalReview_collections';
 const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
+const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
 ```
 
 > **プロジェクトID / コレクションID:** `SK_REVIEWS` / `SK_MEMOS` / `SK_LINE_COMMENTS` / `SK_AUTO_COMMENT_APPLIED` と、`SK_PROJECT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS` / `SK_PROJECT_AUTO_COMMENT_RULES` の各マップのキー（以下 `projectId` と表記）には、プロジェクトIDだけでなくコレクションID（`coll_…`）も入ります。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
@@ -260,7 +263,7 @@ const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
 
 `SK_AUTO_COMMENT_RULES` / `SK_PROJECT_AUTO_COMMENT_RULES` は自動行コメントのルール（全体設定の配列 / `{ [projectId]: rule[] }`）、`SK_AUTO_COMMENT_APPLIED` は「どのルールをどの行に適用済みか」のログ（`{ [projectId]: { [filePath]: { [hunkHash]: { [lineIdx]: ruleId[] } } } }`）です。詳細は [Auto line comments](#auto-line-comments) を参照してください。
 
-`SK_COLLECTIONS` はプロジェクトコレクションの一覧 `{ id, name, createdAt }[]` です（`loadCollections()` / `saveCollections()`、不正値は `sanitizeCollections()` が除去）。所属はプロジェクト側の `collectionId` に保持します。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
+`SK_COLLECTIONS` はプロジェクトコレクションの一覧 `{ id, name, createdAt }[]` です（`loadCollections()` / `saveCollections()`、不正値は `sanitizeCollections()` が除去）。所属はプロジェクト側の `collectionId` に保持します。`SK_COLLECTION_AUTO_RULES`（issue #132）はコレクション自動追加ルール `{ id, pattern }[]`（全体設定のみ、配列の順が照合順）です（`loadCollectionAutoRules()` / `saveCollectionAutoRules()`、不正な正規表現は `sanitizeCollectionAutoRules()` が除去）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
 
 `SK_COLLECTION_INITIAL_STATE`（issue #130）は設定モーダルの「コレクションの初期状態」を `'open' | 'closed'` の文字列で保持します（`loadCollectionInitialState()` / `saveCollectionInitialState()`、未設定・不正値は `'open'`）。ページ読み込み時のサイドバーのコレクションの開閉状態にのみ使い、変更しても現在の開閉状態は変わりません（次回読み込みから反映）。`'closed'` のときは `init()` が、復元するプロジェクト（`SK_CURRENT`）を含むコレクション以外のIDを `collapsedCollectionIds` に入れてから最初の `renderProjectList()` を呼びます。
 
@@ -441,7 +444,7 @@ renderProjectList()
 
 現在アクティブなプロジェクト（`app.currentProjectId`）は `app.parsedDiff` と `loadAllReviews()` からその場で同期的に計算します（`countHunkProgress()`）。それ以外のプロジェクトは diff テキストを `loadFileContent()` で読み、`parseDiff()` + `computeAllHashes()`（非同期、Web Crypto）で全ハンクをハッシュ化する必要があるため、その結果のハンクキー（ファイルパス＋ハッシュ）を `projectProgressCache`（`Map<projectId, {files}>`）にキャッシュします（`getKnownProjectHunkFiles()`）。キャッシュは `saveFileContent()` / `deleteFileContent()` で diff テキストが変わったときに破棄されるため、レビューのたびに diff テキスト全体を読み直すことはありません。件数自体はキャッシュせず、描画のたびにその時点のレビュー状態（`loadAllReviews()[getStateOwnerId(projectId)]`）から数えるため、リセット・インポートや、同じコレクションの別プロジェクトでのレビュー変更でバッジが古くなることはありません。非同期計算が完了した時点で `renderProjectList()` が別の描画を行っている可能性があるため、結果は必ずその時点の `app.projectBadgeEls.get(projectId)` を経由して反映します（古い `<span>` 要素への書き込みを避けるため）。ハンクのレビューステータスが変わるたびに `refreshProgress()` → `refreshActiveProjectProgressBadges()` が、アクティブなプロジェクト（コレクション所属中はコレクションの全メンバーとコレクション見出し）のバッジを更新します。
 
-**コレクションのグループ表示:** コレクションに所属するプロジェクトは `buildCollectionGroup()` が1つのグループ（`.collection-group`）にまとめて描画します。グループはソート順で最初に現れるメンバーの位置に表示し、中に全メンバーをソート順で並べます。見出し（`.collection-header`）には折りたたみトグル・残レビュー数バッジ・コレクション名・件数・名前変更（✏️）・解散（✕）ボタンがあり、見出しクリックで折りたたみます（`collapsedCollectionIds`）。見出しのバッジ（`updateCollectionProgressBadge()`）は、メンバー間で重複を除いた（同じファイルパス＋ハッシュは1件と数える）ハンク数から残数を表示します。保存済み diff テキストがないメンバーは集計から除き、ハンクキーを計算中のメンバーがいる間はバッジを非表示にします。
+**コレクションのグループ表示:** コレクションに所属するプロジェクトは `buildCollectionGroup()` が1つのグループ（`.collection-group`）にまとめて描画します。グループはソート順で最初に現れるメンバーの位置に表示し、中に全メンバーをソート順で並べます。見出し（`.collection-header`）には折りたたみトグル・残レビュー数バッジ・コレクション名・件数・名前変更（✏️）・解散（✕）ボタンがあり、見出しクリックで折りたたみます（`collapsedCollectionIds`）。見出しのバッジ（`updateCollectionProgressBadge()`）は、メンバー間で重複を除いた（同じファイルパス＋ハッシュは1件と数える）ハンク数から残数を表示します。保存済み diff テキストがないメンバーは集計から除き、ハンクキーを計算中のメンバーがいる間はバッジを非表示にします。見出しの太い左ボーダー（紫）はメンバー部分（`.collection-members`、薄紫背景）にも続き、各メンバーにはツリー状のガイド線（`::before` / `::after`）を描くので、グループの範囲が前後の通常プロジェクトと区別できます。グループの前後には余白を空けます。
 
 **複数選択モード:** 「プロジェクト一覧」見出しの「☑ 選択」ボタン（`#project-select-mode-btn`）で選択モードに入ると、各項目にチェックボックスが付き、項目クリックが選択の切り替えになります（コレクション見出しのチェックボックスはメンバーを一括選択）。一覧上部の操作バー `#project-select-bar` から、選択中のプロジェクトで「📁 新規コレクション」「➕ 既存に追加」「➖ コレクションから外す」を実行できます（[Collections](#collectionsプロジェクトコレクション) 参照）。
 
@@ -470,6 +473,16 @@ renderProjectList()
 | リセット | 所属中はコレクションで共有しているレビュー状態をリセット |
 
 操作後は `refreshAfterCollectionChange()` がメモ・各設定モーダル・サイドバー・diff を再描画します。インポート時、`collectionId` を持たないインポートデータのプロジェクト（`schemaVersion: 7` 以前のエクスポートや古い設定ファイル）は、ローカルでの所属を引き継ぎます（所属が外れてコレクションの共有状態が消えるのを防ぐため）。インポートの最後に `reconcileCollections()` が「存在しないコレクションを指すプロジェクトには仮のコレクションを作る」「メンバーのプロジェクトID側に入った状態をコレクションへ統合する」「メンバーのいないコレクションを、その状態ごと削除する」ことで整合性を保ちます。
+
+**自動追加ルール（issue #132、`js/collection-auto-rules.js`）:**
+
+設定モーダルの「コレクション自動追加ルール」に正規表現（フラグなし）を登録しておくと、新規プロジェクト作成時に自動でコレクションへ追加します。
+
+- `createNewProject()` がプロジェクトを保存した直後（状態を読み書きする前）に `applyCollectionAutoRulesToProject()` を呼びます。既存プロジェクトの更新（`updateExistingProject()`）では照合しません。
+- 照合対象は拡張子を含むファイル名（`fileName`）です。`matchCollectionAutoRules()` がルールを上から順に照合し、コレクション名が得られた最初のルールを採用します。コレクション名はキャプチャグループ1（グループがなければマッチ全体）を `trim()` したもので、空になる場合はマッチしなかったものとして次のルールへ進みます（`collectionNameFromRegex()`）。
+- 追加先は `findOrCreateCollectionByName()` が、名前が完全一致（大文字小文字を区別）するコレクションのうち `createdAt` が最も古いものを選び、なければ新規作成します。参加は手動と同じ `attachProjectToCollection()` です。新規作成時は確認ダイアログを出しません。
+- 既にコレクションに所属しているプロジェクトは対象外です。「既存のプロジェクトに適用…」ボタン（`applyCollectionAutoRulesToExistingProjects()`）は、コレクション未所属の既存プロジェクトを `createdAt` の古い順に照合し、`confirm()` で件数と対応（最大10件）を確認してから追加します。
+- 追加時は `new RegExp(pattern)` で検証し、不正な正規表現・空・登録済みと同じ正規表現はエラー表示して登録しません。「テスト」欄に入力したファイル名を、登録済みルールと入力中の正規表現の両方で照合した結果をプレビュー表示します（`renderCollectionAutoRuleTest()`）。
 
 ---
 
@@ -642,11 +655,14 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 
 ```json
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "exportedAt": "2026-08-12T00:00:00.000Z",
   "projects": [...],
   "collections": [
     { "id": "coll_20261008_ab12cd34", "name": "feature-x", "createdAt": 1791417600000 }
+  ],
+  "collectionAutoRules": [
+    { "id": "car_...", "pattern": "^(feat-[^-]+)-" }
   ],
   "reviews": {
     "projectId": { "filePath": { "hunkHash": "needs_changes" } }
@@ -696,6 +712,8 @@ MemoItem: { id: string, text: string, done: boolean, createdAt: number, updatedA
 `autoCommentRules` / `projectAutoCommentRules` / `autoCommentApplied`（`schemaVersion: 7`）は自動行コメントのルールと適用済みログです。ルールは `mergeImportedAutoCommentRules()` が `extractKeywords` と同じ方針（同じ `id` を上書き）でマージし、適用済みログは `lineComments` と同様にプロジェクトID単位で置き換えます（`lineComments` が置き換えられたのに適用済みログを含まないプロジェクトは、ローカルのログを削除してコメントとの整合を保ちます）。
 
 `collections`（`schemaVersion: 8`）はプロジェクトコレクションの一覧で、各プロジェクトには所属先の `collectionId` が付きます（`sanitizeImportedProjects()` が引き継ぎ）。コレクションの共有状態とコレクション範囲の設定は、`reviews` や `projectKeywordCategories` などの既存のマップにコレクションIDのキーで含まれるため、追加のキーはありません。有効なプロジェクトが1件以上あるインポートでは、`collections` を同じ `id` で上書きマージし、`collectionId` を持たないプロジェクトはローカルでの所属を引き継ぎ、最後に `reconcileCollections()` で整合性を保ちます（[Collections](#collectionsプロジェクトコレクション) 参照）。
+
+`collectionAutoRules`（`schemaVersion: 9`、issue #132）はコレクション自動追加ルールです。`mergeImportedCollectionAutoRules()` が同じ `id` を上書きしてマージし（プロジェクトの有無にかかわらず実行）、設定モーダルの一覧を再描画します。
 
 `mergeImportedData()` 自体はプロジェクト件数に依存せず `keywordCategories`/`projectKeywordCategories` を先にマージしますが、これが実際に効くのは `loadSettingsFromFolderOnStartup()` や `checkSettingsFileExternalChange()`（設定フォルダからの自動読み込み・外部変更検知）のように `mergeImportedData()` を直接呼ぶ経路のみです。手動インポートの `importAppData(file)` は、インポート対象のプロジェクトが0件の場合はキーワードカテゴリの有無に関わらず「インポート可能なプロジェクトが見つかりませんでした」で早期returnし `mergeImportedData()` 自体を呼ばないため、プロジェクトを1件も含まないJSONファイルをUIから手動インポートしてキーワードカテゴリだけ復元する、という使い方はできません。
 
@@ -882,6 +900,8 @@ init()
 │  gitLocalReview_collections   プロジェクトコレクション │
 │  gitLocalReview_collectionInitialState コレクションの │
 │                                初期状態（開く/閉じる）  │
+│  gitLocalReview_collectionAutoRules コレクション自動 │
+│                                追加ルール（全体設定）   │
 │  ※ reviews / memos / lineComments / autoCommentApplied │
 │    と project* 系のキーにはコレクションIDも入る        │
 └─────────────────────────────────────────────────────┘
@@ -990,6 +1010,8 @@ diff 行                旧ファイル列       新ファイル列
                          │
                          ▼
      createNewProject() / updateExistingProject()
+                         │
+         （新規作成時のみ）applyCollectionAutoRulesToProject()
                          │
               applyAutoLineComments()  自動行コメント
                          │
