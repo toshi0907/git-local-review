@@ -117,6 +117,11 @@ function initTopbarTooltips() {
     applyLineCommentVisibility();
   });
 
+  const collectionInitialStateSelect = document.getElementById('collection-initial-state-select');
+  collectionInitialStateSelect.value = loadCollectionInitialState();
+  // Only affects the next page load; the current open/closed state is left as is.
+  collectionInitialStateSelect.addEventListener('change', () => saveCollectionInitialState(collectionInitialStateSelect.value));
+
   document.getElementById('project-sort-select').value = loadProjectSort();
   await refreshHandleIndex();
 
@@ -130,6 +135,13 @@ function initTopbarTooltips() {
     document.getElementById('open-folder-row').style.display = 'none';
     document.getElementById('settings-folder-row').style.display = 'none';
     document.getElementById('settings-save-section').style.display = 'none';
+  }
+
+  // Issue #130: with the 'closed' initial state, start every collection
+  // collapsed except the one holding the project about to be restored.
+  if (loadCollectionInitialState() === 'closed') {
+    const activeCollectionId = getProjectCollectionId(localStorage.getItem(SK_CURRENT));
+    collapsedCollectionIds = new Set(loadCollections().map(c => c.id).filter(id => id !== activeCollectionId));
   }
 
   renderProjectList();
