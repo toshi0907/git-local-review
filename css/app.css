@@ -1696,6 +1696,87 @@ div.line-comment-label { margin-bottom: 6px; }
   padding: 0 24px 24px;
 }
 
+/* ===== Collection auto-add rules (issue #132) ===== */
+.collection-auto-section {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e4e8;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.collection-auto-help {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.collection-auto-rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collection-auto-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+}
+
+.collection-auto-rule-index { flex-shrink: 0; min-width: 18px; }
+
+.collection-auto-rule-pattern {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #24292e;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+}
+
+.collection-auto-rule-btn { padding: 2px 6px; }
+.collection-auto-rule-btn:disabled { opacity: 0.4; cursor: default; }
+
+.collection-auto-empty { font-size: 11px; color: #8c959f; }
+
+.collection-auto-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.collection-auto-test-label { flex-shrink: 0; }
+
+.collection-auto-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+}
+
+.collection-auto-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #cf222e;
+}
+
+.collection-auto-test-result {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #24292e;
+  white-space: pre-line;
+}
+
+.collection-auto-apply-btn { margin-top: 10px; }
+.collection-auto-apply-btn:disabled { opacity: 0.5; cursor: default; }
+
 /* ===== Keyword highlight modal (issue #93) ===== */
 .keyword-modal {
   max-width: 560px;
