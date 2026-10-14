@@ -175,6 +175,46 @@ function refreshActiveProjectProgressBadges() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sidebar open-comment badge
+//
+// Shows, next to the review-progress badge, how many line comments are still
+// unchecked plus how many memos are still not done (the same count as the
+// topbar 📝 badge, but for every project). Line comments and memos are stored
+// under the state owner ID, so a collection's members share one count: it is
+// shown on the collection header only, not on each member (issue #129).
+// ─────────────────────────────────────────────────────────────────────────────
+/** Sidebar open-comment badge elements keyed by state owner ID (project or collection), populated during renderProjectList. */
+const commentBadgeEls = new Map();
+
+/** Paint one open-comment badge for a state owner ID; hidden when nothing is open. */
+function updateCommentBadge(ownerId, allLineComments = loadAllLineComments(), allMemos = loadAllMemos()) {
+  const el = commentBadgeEls.get(ownerId);
+  if (!el) return;
+  const openComments = countOpenLineComments(allLineComments[ownerId] || Object.create(null));
+  const openMemos = (allMemos[ownerId] || []).filter(m => !m.done).length;
+  const openCount = openComments + openMemos;
+  el.hidden = openCount === 0;
+  el.textContent = `💬 ${openCount}`;
+  el.title = `未完了コメント: 行コメント ${openComments} 件 / メモ ${openMemos} 件`;
+}
+
+/** Repaint every sidebar open-comment badge (one localStorage read for all of them). */
+function refreshCommentBadges() {
+  const allLineComments = loadAllLineComments();
+  const allMemos = loadAllMemos();
+  for (const ownerId of commentBadgeEls.keys()) updateCommentBadge(ownerId, allLineComments, allMemos);
+}
+
+/** A fresh (hidden) open-comment badge element registered for `ownerId`. */
+function createCommentBadgeEl(ownerId) {
+  const el = document.createElement('span');
+  el.className = 'proj-comment-badge';
+  el.hidden = true;
+  commentBadgeEls.set(ownerId, el);
+  return el;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Render: sidebar project list
 // ─────────────────────────────────────────────────────────────────────────────
 function renderProjectList() {
@@ -184,6 +224,7 @@ function renderProjectList() {
 
   app.projectBadgeEls.clear();
   collectionBadgeEls.clear();
+  commentBadgeEls.clear();
   // Drop selections of projects that no longer exist.
   for (const id of [...selectedProjectIds]) {
     if (!projects.some(p => p.id === id)) selectedProjectIds.delete(id);
@@ -216,6 +257,7 @@ function renderProjectList() {
     for (const member of members) updateProjectProgressBadge(member.id, app.projectBadgeEls.get(member.id));
     updateCollectionProgressBadge(collection.id);
   }
+  refreshCommentBadges();
 }
 
 /** One project's sidebar entry (also used inside a collection group). */
@@ -347,6 +389,8 @@ function buildProjectItem(proj) {
     topRowEl.appendChild(selectBox);
   }
   topRowEl.appendChild(progressBadgeEl);
+  // A collection member's comments are shared, so only its header shows the count.
+  if (!getProjectCollectionId(proj.id)) topRowEl.appendChild(createCommentBadgeEl(proj.id));
   topRowEl.appendChild(nameEl);
   item.appendChild(topRowEl);
   item.appendChild(bottomRowEl);
@@ -402,6 +446,7 @@ function buildCollectionGroup(collection, members) {
   badgeEl.hidden = true;
   collectionBadgeEls.set(collection.id, badgeEl);
   header.appendChild(badgeEl);
+  header.appendChild(createCommentBadgeEl(collection.id));
 
   const nameEl = document.createElement('span');
   nameEl.className = 'collection-name';

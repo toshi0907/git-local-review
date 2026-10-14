@@ -870,6 +870,23 @@ body {
 .proj-progress-badge.badge-remaining { background: #ffd7d5; color: #cf222e; }
 .proj-progress-badge.badge-complete  { background: #ccffd8; color: #1a7f37; }
 
+/* Sidebar open-comment badge ("💬 N" = unchecked line comments + not-done
+   memos), next to the progress badge; hidden when nothing is open. */
+.proj-comment-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #fff8c5;
+  color: #9a6700;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.proj-comment-badge[hidden] { display: none; }
+
 .btn-reload-update {
   color: #b42318;
   border-color: #fda29b;
