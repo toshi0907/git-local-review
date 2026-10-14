@@ -38,6 +38,8 @@ const SK_PROJECT_AUTO_COMMENT_RULES = 'gitLocalReview_projectAutoCommentRules';
 const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 /** Project collections: [{ id, name, createdAt }]. Membership lives on each project's `collectionId`. */
 const SK_COLLECTIONS      = 'gitLocalReview_collections';
+/** Collection auto-add rules (issue #132): [{ id, pattern }], matched top to bottom against a new project's file name. */
+const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';

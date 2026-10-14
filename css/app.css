@@ -715,15 +715,18 @@ body {
 .proj-select-checkbox { flex-shrink: 0; margin: 2px 0 0; cursor: pointer; }
 .project-item.selected { background: #fff8c5; }
 
-/* Collection group: a collapsible header followed by its (indented) members. */
-.collection-group { border-bottom: 1px solid #d0d7de; }
+/* Collection group: a collapsible header followed by its (indented) members.
+   The header's thick left border continues down the members (with a light
+   purple background and tree guide lines), so the group's extent stays
+   clear against the plain projects before and after it (issue #131). */
+.collection-group { margin: 6px 0; }
 .collection-header {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
   background: #f3f0ff;
-  border-left: 3px solid #8250df;
+  border-left: 7px solid #8250df;
   cursor: pointer;
   font-size: 12px;
 }
@@ -758,7 +761,17 @@ body {
   cursor: pointer;
 }
 .collection-action-btn:hover { background: #fff; border-color: #d0d7de; }
-.collection-members .project-item { padding-left: 24px; }
+.collection-members { border-left: 7px solid #8250df; background: #faf8ff; }
+/* Members drop their own left border (the group's replaces it); the active
+   member is marked with an inset bar instead. */
+.collection-members .project-item { position: relative; padding-left: 32px; border-left: none; }
+.collection-members .project-item.active { box-shadow: inset 4px 0 0 #0969da; }
+/* Tree guide lines: a vertical line through the members and a branch to each one. */
+.collection-members .project-item::before,
+.collection-members .project-item::after { content: ''; position: absolute; left: 11px; pointer-events: none; }
+.collection-members .project-item::before { top: 0; bottom: 0; border-left: 3px solid #a08ae6; }
+.collection-members .project-item::after { top: 20px; width: 12px; border-top: 3px solid #a08ae6; }
+.collection-members .project-item:last-child::before { bottom: auto; height: 23px; }
 .collection-group.collapsed .collection-members { display: none; }
 .collection-group.collapsed.has-active .collection-header { border-left-color: #0969da; }
 
@@ -1699,6 +1712,87 @@ div.line-comment-label { margin-bottom: 6px; }
   overflow-y: auto;
   padding: 0 24px 24px;
 }
+
+/* ===== Collection auto-add rules (issue #132) ===== */
+.collection-auto-section {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e4e8;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.collection-auto-help {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.collection-auto-rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.collection-auto-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
+}
+
+.collection-auto-rule-index { flex-shrink: 0; min-width: 18px; }
+
+.collection-auto-rule-pattern {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #24292e;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+}
+
+.collection-auto-rule-btn { padding: 2px 6px; }
+.collection-auto-rule-btn:disabled { opacity: 0.4; cursor: default; }
+
+.collection-auto-empty { font-size: 11px; color: #8c959f; }
+
+.collection-auto-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.collection-auto-test-label { flex-shrink: 0; }
+
+.collection-auto-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 11px;
+}
+
+.collection-auto-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #cf222e;
+}
+
+.collection-auto-test-result {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #24292e;
+  white-space: pre-line;
+}
+
+.collection-auto-apply-btn { margin-top: 10px; }
+.collection-auto-apply-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ===== Keyword highlight modal (issue #93) ===== */
 .keyword-modal {

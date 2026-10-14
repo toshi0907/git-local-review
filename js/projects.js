@@ -148,6 +148,8 @@ function createNewProject(fileName, parsed, rawText, fileHandle = null, encoding
   const projects = loadProjects();
   projects.push({ id, fileName, createdAt: now, lastUpdated: now, encoding: encodingPref, resolvedEncoding, resolvedMessageEncoding });
   saveProjects(projects);
+  // Before anything reads/writes its state, so it lands under the collection's ID.
+  applyCollectionAutoRulesToProject(id);
   scheduleSettingsAutoSave();
   saveFileContent(id, rawText);
   if (fileHandle) saveFileHandle(id, fileHandle).then(() => recordProjectFileBaseline(id, fileHandle)).then(renderProjectList);
