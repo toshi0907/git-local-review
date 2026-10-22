@@ -746,10 +746,19 @@ function renderLineCommentList() {
   }
   emptyEl.style.display = 'none';
 
+  if (doneCount === total) {
+    // Only shown (via CSS) while done items are hidden (issue #138), so the
+    // list doesn't look empty for no reason.
+    const hint = document.createElement('li');
+    hint.className = 'memo-hidden-hint';
+    hint.textContent = `すべて対応済みです（${total} 件を非表示中）`;
+    listEl.appendChild(hint);
+  }
   for (const { loc, comment } of live) listEl.appendChild(buildLineCommentListItem(loc, comment, true));
   if (orphans.length > 0) {
     const divider = document.createElement('li');
-    divider.className = 'memo-list-divider';
+    // Hidden along with its items when they're all done and done items are hidden (issue #138).
+    divider.className = 'memo-list-divider' + (orphans.every(e => e.comment.done) ? ' done' : '');
     if (getCurrentCollectionId()) {
       // Shared comments include those on hunks that only exist in another
       // member's diff (e.g. per-commit hunks merged into one by git diff).
