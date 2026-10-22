@@ -352,8 +352,9 @@ function insertLineCommentRow(anchor, row, idx) {
 
 /**
  * After any line-comment change in `card`: persist to the settings folder,
- * refresh the hunk's comment badge and the memo panel list, and re-render
- * the whole diff if the "コメントありのみ" filter would now hide this hunk.
+ * refresh the hunk's comment badge and the memo panel list, and drop the
+ * card (or re-render the whole diff, see removeHunkCardInPlace()) if the
+ * "コメントありのみ" filter would now hide this hunk.
  */
 function afterLineCommentsChanged(card) {
   scheduleSettingsAutoSave();
@@ -362,7 +363,7 @@ function afterLineCommentsChanged(card) {
     const count = countLineComments(getHunkLineComments(card.dataset.filePath, card.dataset.hunkHash));
     const badge = card.querySelector('.hunk-comment-badge');
     if (badge) updateHunkCommentBadge(badge, count);
-    if (app.commentFilter && count === 0) {
+    if (app.commentFilter && count === 0 && !removeHunkCardInPlace(card)) {
       renderDiff();
       return;
     }
@@ -603,11 +604,11 @@ function jumpToLineComment(filePath, hash, commentId) {
   // A row hidden by the line-comment visibility toggles (issue #124) has no
   // layout box, so scroll to the commented line itself instead.
   if (row && row.getClientRects().length === 0) {
-    (findLineAnchorRow(card, Number(row.dataset.lineIdx)) || card).scrollIntoView({ block: 'center' });
+    scrollIntoViewSettled(findLineAnchorRow(card, Number(row.dataset.lineIdx)) || card, { block: 'center' });
     return;
   }
   const target = row || card;
-  target.scrollIntoView({ block: 'center' });
+  scrollIntoViewSettled(target, { block: 'center' });
   if (row) {
     row.classList.remove('flash');
     void row.offsetWidth; // restart the animation if it's already running
