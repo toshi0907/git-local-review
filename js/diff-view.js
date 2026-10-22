@@ -137,6 +137,7 @@ function renderDiff() {
   const lineCommentDrafts = captureLineCommentDrafts();
   container.innerHTML = '';
   app.fileProgressEls.clear();
+  app.hunkCards = [];
 
   const files = app.parsedDiff;
   if (!files || files.length === 0) {
@@ -156,6 +157,10 @@ function renderDiff() {
   const ownerId        = currentStateOwnerId();
   const projectReviews = ownerId ? (allReviews[ownerId] || Object.create(null)) : Object.create(null);
   const projectLineComments = getProjectLineComments();
+  // Keyword categories are read once per render (not per hunk); changing them
+  // re-renders the whole diff (see the keyword-categories listeners), so this
+  // always reflects the latest configured list.
+  const keywordGroups = getActiveKeywordGroups();
 
   const filter = app.reviewFilter;
   const reviewFilterActive = isReviewFilterActive(filter);
@@ -231,8 +236,10 @@ function renderDiff() {
     for (const hunk of file.hunks) {
       const status = fileReviews[hunk.hash] || null;
       if (filterActive && !hunkVisible(file.filePath, hunk, status)) continue;
-      section.appendChild(buildHunkCard(file.filePath, hunk, status, fileLanguage,
-        lineCommentsForHunk(projectLineComments, file.filePath, hunk.hash)));
+      const card = buildHunkCard(file.filePath, hunk, status, fileLanguage,
+        lineCommentsForHunk(projectLineComments, file.filePath, hunk.hash), keywordGroups);
+      section.appendChild(card);
+      app.hunkCards.push(card);
     }
 
     container.appendChild(section);
@@ -661,12 +668,31 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
 }
 
 /**
+ * highlight.js output per parsed hunk object, so re-renders of the same diff
+ * (view mode / word-diff / filter / keyword changes) don't re-highlight every
+ * hunk. Keyed by the hunk object itself: a newly loaded diff produces new
+ * hunk objects, and the old entries are garbage-collected with them.
+ * @type {WeakMap<object, {language:(string|null), hlLines:(string[]|null)}>}
+ */
+const hunkHighlightCache = new WeakMap();
+
+function getHighlightedHunkLines(hunk, language, filePath) {
+  const cached = hunkHighlightCache.get(hunk);
+  if (cached && cached.language === language) return cached.hlLines;
+  const hlLines = highlightHunkLines(hunk.lines, language, filePath);
+  hunkHighlightCache.set(hunk, { language, hlLines });
+  return hlLines;
+}
+
+/**
  * `lineComments` is this hunk's { [lineIdx]: LineComment[] } map, or
  * undefined to look it up from localStorage (renderDiff() passes it in so
- * line comments are only read once per render).
+ * line comments are only read once per render). `keywordGroups` likewise
+ * defaults to getActiveKeywordGroups() when not passed in.
  */
-function buildHunkCard(filePath, hunk, status, language = null, lineComments = undefined) {
+function buildHunkCard(filePath, hunk, status, language = null, lineComments = undefined, keywordGroups = undefined) {
   if (lineComments === undefined) lineComments = getHunkLineComments(filePath, hunk.hash);
+  if (keywordGroups === undefined) keywordGroups = getActiveKeywordGroups();
   const card = document.createElement('div');
   const startsCollapsed = status === 'approved';
   card.className = 'hunk-card' + (status ? ' status-' + status : '') + (startsCollapsed ? ' collapsed' : '');
@@ -728,12 +754,7 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
 
   // Pre-compute highlighted lines for this hunk (may be null if unavailable).
   // When language is null, highlightHunkLines returns immediately (O(1)).
-  const hlLines = highlightHunkLines(hunk.lines, language, filePath);
-
-  // Keyword categories are read once per hunk render; changing them
-  // re-renders the whole diff (see the keyword-categories listeners below),
-  // so this always reflects the latest configured list.
-  const keywordGroups = getActiveKeywordGroups();
+  const hlLines = getHighlightedHunkLines(hunk, language, filePath);
 
   if (isSplit) {
     const thead = document.createElement('thead');
@@ -823,13 +844,36 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
   }
   setHunkCollapsedState(card, newStatus === 'approved');
 
-  if (isReviewFilterActive(app.reviewFilter)) {
-    // The review filter needs hunks/files to appear or disappear
-    // immediately, so re-run the full render rather than a lightweight update.
-    renderDiff();
-  } else {
-    refreshProgress();
+  if (isReviewFilterActive(app.reviewFilter) && !hunkPassesReviewFilter(newStatus, app.reviewFilter)) {
+    // The hunk no longer matches the review filter: drop just this card
+    // instead of re-rendering the whole diff. Only when that empties its file
+    // section (the section, its commit heading and the stat summary would
+    // need to change too) fall back to a full render.
+    if (!removeHunkCardInPlace(card)) {
+      renderDiff();
+      return;
+    }
   }
+  refreshProgress();
+}
+
+/**
+ * Removes a hunk card hidden by a review status change from the DOM and from
+ * app.hunkCards, keeping keyboard focus on the same position (i.e. the next
+ * hunk). Returns false, without removing anything, when the card is the last
+ * one in its file section — the caller then re-renders the whole diff.
+ */
+function removeHunkCardInPlace(card) {
+  const section = card.closest('.file-section');
+  if (!section || section.querySelectorAll('.hunk-card').length <= 1) return false;
+  const index = app.hunkCards.indexOf(card);
+  card.remove();
+  if (index !== -1) app.hunkCards.splice(index, 1);
+  // A removed card before the focused one shifts it down by one; removing the
+  // focused card itself leaves the index on its successor.
+  const focusIndex = index !== -1 && index < app.focusedHunkIndex ? app.focusedHunkIndex - 1 : app.focusedHunkIndex;
+  setFocusedHunk(focusIndex, { scroll: false });
+  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -883,15 +927,19 @@ function setOverallProgress(reviewed, total, needsChanges = 0, onHold = 0) {
 // レビュー済み on the focused hunk). See keydown listener near the bottom of
 // this script for the key handling itself.
 // ─────────────────────────────────────────────────────────────────────────────
+/** The currently rendered hunk cards in document order (app.hunkCards, maintained by renderDiff()). */
 function getHunkCards() {
-  return Array.from(document.querySelectorAll('#diff-container .hunk-card'));
+  return app.hunkCards;
 }
 
+/** Moves the .focused class to the card at app.focusedHunkIndex, touching only the previous and new card. */
 function updateFocusedHunkVisual() {
-  const cards = getHunkCards();
-  cards.forEach((card, i) => {
-    card.classList.toggle('focused', i === app.focusedHunkIndex);
-  });
+  const container = document.getElementById('diff-container');
+  const next = app.hunkCards[app.focusedHunkIndex] || null;
+  for (const card of container.querySelectorAll('.hunk-card.focused')) {
+    if (card !== next) card.classList.remove('focused');
+  }
+  if (next) next.classList.add('focused');
 }
 
 // Moves keyboard focus to the hunk at `index` (clamped to the valid range of
@@ -900,6 +948,7 @@ function setFocusedHunk(index, { scroll = true } = {}) {
   const cards = getHunkCards();
   if (cards.length === 0) {
     app.focusedHunkIndex = -1;
+    updateFocusedHunkVisual();
     return;
   }
 
@@ -1092,6 +1141,7 @@ function initDiffFontSettings() {
 function showEmptyState(html) {
   document.getElementById('diff-container').innerHTML = '';
   app.fileProgressEls.clear();
+  app.hunkCards = [];
   const el = document.getElementById('empty-state');
   el.innerHTML = html;
   el.style.display = 'block';

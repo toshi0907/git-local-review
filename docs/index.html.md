@@ -209,8 +209,10 @@ test/                ← テスト用 .diff サンプルファイル
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
           ├─ collapsed は status === 'approved' のときだけ true に
-          └─ isReviewFilterActive(app.reviewFilter) が false（全チェックON、または全チェックOFF）なら refreshProgress() のみ、
-             それ以外はハンクの表示/非表示が変わるため renderDiff() 全体を再実行
+          └─ 新しい状態がフィルタ条件に一致する（isReviewFilterActive(app.reviewFilter) が false の場合を含む）なら refreshProgress() のみ。
+             一致しなくなった場合は removeHunkCardInPlace() でそのカードだけを DOM と app.hunkCards から取り除き
+             （フォーカスは同じ位置＝次のハンクに留まる）、refreshProgress()。
+             そのカードがファイル内で最後の1枚だった場合のみ（ファイル見出し・コミット見出し・stat サマリーも変わるため）renderDiff() 全体を再実行
 ```
 
 ---
@@ -296,6 +298,7 @@ const app = {
   hideDoneLineComments: false, // true のとき diff 内のチェック済み行コメントと、メモパネル一覧の対応済みメモ・行コメントを非表示（SK_HIDE_DONE_LINE_COMMENTS に保存）
   hideAllLineComments: false,  // true のとき diff 内の行コメントを一時的にすべて非表示（保存しない。再読み込みで表示に戻る）
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
+  hunkCards: [],             // 現在レンダリング中のハンクカード要素（文書順）。renderDiff() が構築し、removeHunkCardInPlace() が同期。getHunkCards() が返す
 };
 ```
 
@@ -545,7 +548,7 @@ buildHunkCard(filePath, hunk, status, language, lineComments?): HTMLElement
 **内部処理:**
 
 1. `computeLineRecords(hunk)` — 行ごとに `{ type, content, oldLabel, newLabel }` を計算
-2. `highlightHunkLines()` — syntax highlight HTML を生成（`language` が null の場合はスキップ）
+2. `getHighlightedHunkLines()` — `highlightHunkLines()` で syntax highlight HTML を生成（`language` が null の場合はスキップ）。結果は hunk オブジェクトをキーとする `WeakMap`（`hunkHighlightCache`）に言語ごとキャッシュされ、同じ diff の再描画（表示モード・単語差分・フィルタ・キーワード変更など）では再計算しない。キーワードカテゴリ（`getActiveKeywordGroups()`）も `renderDiff()` が1回だけ読み込んで各カードに渡す
 3. `REVIEW_STATUSES` から承認/要修正/保留の3ボタン（`.review-status-group`）を生成。クリックで `setHunkReviewStatus()` を呼び出し、既にアクティブなボタンをもう一度押すと未レビューに戻る
 4. Unified / Split の分岐で異なる `<table>` 構造を構築（行コメントの「+」ボタンとコメント行もここで生成。[Line comments](#line-comments) 参照）
 5. キーワードハイライト (`applyKeywordHighlight()`) を適用
@@ -588,13 +591,13 @@ Unified 表示では、同じペアの `-` 行・`+` 行が別々の `<tr>` と�
 // j → 次のハンク、k → 前のハンク
 // Space → レビュー状態を 未レビュー → 承認 → 要修正 → 保留 → 未レビュー… の順で循環
 // 1 / 2 / 3 → 承認 / 要修正 / 保留 を直接設定（同じ状態をもう一度押すと未レビューに戻る）
-getHunkCards(): NodeList     // 現在レンダリング中のハンクカード一覧
+getHunkCards(): HTMLElement[] // 現在レンダリング中のハンクカード一覧（app.hunkCards。DOM を再検索しない）
 setFocusedHunk(index)        // フォーカスを index に移動してスクロール
 cycleFocusedHunkStatus()     // Space の処理
 setFocusedHunkStatus(value)  // 1/2/3 の処理
 ```
 
-フォーカス中のハンクカードには `focused` クラスが付きます。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
+フォーカス中のハンクカードには `focused` クラスが付きます（`updateFocusedHunkVisual()` は旧・新のカードだけを更新し、全カードを走査しません）。ハンクカードには CSS で `content-visibility: auto` を指定しており、画面外のハンクのレイアウト・描画をブラウザが省略します（ハンク数が多い diff の描画負荷対策）。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
 
 ---
 
@@ -872,6 +875,7 @@ init()
 │  app.commentFilter                                  │
 │  app.hideDoneLineComments / app.hideAllLineComments │
 │  app.focusedHunkIndex                               │
+│  app.hunkCards (DOM 参照キャッシュ)                   │
 │  app.fileProgressEls (DOM 参照キャッシュ)             │
 │  app.projectBadgeEls (DOM 参照キャッシュ)             │
 │  projectProgressCache (サイドバーバッジ計算キャッシュ) │

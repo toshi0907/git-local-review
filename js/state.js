@@ -112,6 +112,9 @@ const app = {
   /** Index into the flat, document-order list of currently rendered hunk cards
    *  that has keyboard focus (j/k to move, Space to cycle its review status). -1 = none. */
   focusedHunkIndex: -1,
+  /** @type {HTMLElement[]} Document-order list of the currently rendered hunk cards, rebuilt by renderDiff()
+   *  and kept in sync when a card is removed in place (see getHunkCards()), so j/k / click don't re-query the DOM */
+  hunkCards: [],
 };
 
 /**
