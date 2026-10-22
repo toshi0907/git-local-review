@@ -1,0 +1,36 @@
+diff --git a/src/sample.js b/src/sample.js
+index 1111111..2222222 100644
+--- a/src/sample.js
++++ b/src/sample.js
+@@ -1,29 +1,29 @@
+ function alpha() {
+   return 1;
+ }
+ 
+ 
+ 
+ function beta() {
+   return 2;
+ }
+ 
+ 
+ function gamma() {
+-  return 3;
++  return 33;
+ }
+ 
+ 
+ function delta() {
+   return 4;
+ }
+ 
+ 
+ function epsilon() {
+-  return 5;
++  return 55;
+ }
+ 
+ 
+ function zeta() {
+   return 6;
+ }
