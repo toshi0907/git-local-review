@@ -56,7 +56,7 @@ function renderStatSummary(files) {
       for (const sec of sections) {
         const pathEl = sec.querySelector('.file-path');
         if (pathEl && pathEl.textContent === stat.filePath) {
-          sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          scrollIntoViewSettled(sec, { behavior: 'smooth', block: 'start' });
           break;
         }
       }
@@ -667,6 +667,10 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
   return tbody;
 }
 
+/** Rough per-part heights (px) for the --hunk-estimated-height placeholder set in buildHunkCard(). */
+const HUNK_HEADER_ESTIMATED_PX = 40;
+const HUNK_ROW_ESTIMATED_PX    = 20;
+
 /**
  * highlight.js output per parsed hunk object, so re-renders of the same diff
  * (view mode / word-diff / filter / keyword changes) don't re-highlight every
@@ -680,7 +684,9 @@ function getHighlightedHunkLines(hunk, language, filePath) {
   const cached = hunkHighlightCache.get(hunk);
   if (cached && cached.language === language) return cached.hlLines;
   const hlLines = highlightHunkLines(hunk.lines, language, filePath);
-  hunkHighlightCache.set(hunk, { language, hlLines });
+  // A null result for a known language is a highlight.js failure; leave it
+  // uncached so the next render retries, as it did before caching.
+  if (hlLines || !language) hunkHighlightCache.set(hunk, { language, hlLines });
   return hlLines;
 }
 
@@ -698,6 +704,12 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   card.className = 'hunk-card' + (status ? ' status-' + status : '') + (startsCollapsed ? ' collapsed' : '');
   card.dataset.filePath = filePath;
   card.dataset.hunkHash = hunk.hash;
+  // Placeholder height used by `content-visibility: auto` (see .hunk-card in
+  // app.css) until the card is first rendered: header bar + optional split
+  // view heading + one row per diff line. Only an estimate — keeping it close
+  // to the real height keeps the scrollbar and scroll targets steady.
+  card.style.setProperty('--hunk-estimated-height',
+    `${HUNK_HEADER_ESTIMATED_PX + (app.viewMode === 'split' ? HUNK_ROW_ESTIMATED_PX : 0) + hunk.lines.length * HUNK_ROW_ESTIMATED_PX}px`);
 
   // ── Header bar ──────────────────────────────────────
   const bar = document.createElement('div');
@@ -846,9 +858,8 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
 
   if (isReviewFilterActive(app.reviewFilter) && !hunkPassesReviewFilter(newStatus, app.reviewFilter)) {
     // The hunk no longer matches the review filter: drop just this card
-    // instead of re-rendering the whole diff. Only when that empties its file
-    // section (the section, its commit heading and the stat summary would
-    // need to change too) fall back to a full render.
+    // instead of re-rendering the whole diff (falls back to a full render
+    // when that isn't possible, see removeHunkCardInPlace()).
     if (!removeHunkCardInPlace(card)) {
       renderDiff();
       return;
@@ -858,14 +869,22 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
 }
 
 /**
- * Removes a hunk card hidden by a review status change from the DOM and from
+ * Removes a hunk card that a filter now hides from the DOM and from
  * app.hunkCards, keeping keyboard focus on the same position (i.e. the next
- * hunk). Returns false, without removing anything, when the card is the last
- * one in its file section — the caller then re-renders the whole diff.
+ * hunk). Used for both the review-status filter and the "コメントありのみ"
+ * filter. Returns false, without removing anything, when the caller must
+ * re-render the whole diff instead:
+ *  - the card is the last one in its file section (the section, its commit
+ *    heading and the stat summary would have to change too), or
+ *  - another rendered card shares its file path + hash (identical hunk
+ *    content, e.g. the same change in two `git log -p` commits) — those
+ *    share review status and line comments, so they must change together.
  */
 function removeHunkCardInPlace(card) {
   const section = card.closest('.file-section');
   if (!section || section.querySelectorAll('.hunk-card').length <= 1) return false;
+  const { filePath, hunkHash } = card.dataset;
+  if (app.hunkCards.some(c => c !== card && c.dataset.filePath === filePath && c.dataset.hunkHash === hunkHash)) return false;
   const index = app.hunkCards.indexOf(card);
   card.remove();
   if (index !== -1) app.hunkCards.splice(index, 1);
@@ -932,14 +951,33 @@ function getHunkCards() {
   return app.hunkCards;
 }
 
+/** The card that currently carries the .focused class (may be detached after a re-render). */
+let focusedHunkCardEl = null;
+
 /** Moves the .focused class to the card at app.focusedHunkIndex, touching only the previous and new card. */
 function updateFocusedHunkVisual() {
-  const container = document.getElementById('diff-container');
   const next = app.hunkCards[app.focusedHunkIndex] || null;
-  for (const card of container.querySelectorAll('.hunk-card.focused')) {
-    if (card !== next) card.classList.remove('focused');
-  }
+  if (focusedHunkCardEl && focusedHunkCardEl !== next) focusedHunkCardEl.classList.remove('focused');
   if (next) next.classList.add('focused');
+  focusedHunkCardEl = next;
+}
+
+/**
+ * scrollIntoView() that re-aligns once the cards around the target have been
+ * laid out at their real height. Off-screen hunk cards use an estimated
+ * height under `content-visibility: auto`, so the first scroll can land a
+ * little off once they render: re-run it (instantly) two frames later, or
+ * after a smooth scroll has finished (`scrollend`; where unsupported, the
+ * smooth scroll is simply not corrected).
+ */
+function scrollIntoViewSettled(el, options) {
+  el.scrollIntoView(options);
+  const realign = () => { if (el.isConnected) el.scrollIntoView({ ...options, behavior: 'instant' }); };
+  if (options.behavior === 'smooth') {
+    document.addEventListener('scrollend', realign, { once: true, capture: true });
+  } else {
+    requestAnimationFrame(() => requestAnimationFrame(realign));
+  }
 }
 
 // Moves keyboard focus to the hunk at `index` (clamped to the valid range of
@@ -957,7 +995,7 @@ function setFocusedHunk(index, { scroll = true } = {}) {
   updateFocusedHunkVisual();
 
   if (scroll) {
-    cards[clamped].scrollIntoView({ block: 'nearest' });
+    scrollIntoViewSettled(cards[clamped], { block: 'nearest' });
   }
 }
 

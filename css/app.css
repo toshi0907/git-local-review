@@ -1212,12 +1212,15 @@ body {
   border-top: 1px solid #e1e4e8;
   transition: background 0.15s;
   /* Skip layout/paint of off-screen hunks — with hundreds of hunks the
-     full-document layout otherwise dominates render time. `auto` in
-     contain-intrinsic-size remembers each card's last rendered height, so
-     the scrollbar settles once a card has been on screen. */
+     full-document layout otherwise dominates render time. Until a card is
+     first rendered its height is the per-card estimate set by
+     buildHunkCard(); `auto` then remembers its real rendered height. */
   content-visibility: auto;
-  contain-intrinsic-size: auto 300px;
+  contain-intrinsic-size: auto var(--hunk-estimated-height, 300px);
 }
+
+/* A collapsed card is just its header bar. */
+.hunk-card.collapsed { contain-intrinsic-size: auto 36px; }
 
 .hunk-card:first-of-type { border-top: none; }
 

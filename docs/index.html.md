@@ -212,7 +212,9 @@ test/                ← テスト用 .diff サンプルファイル
           └─ 新しい状態がフィルタ条件に一致する（isReviewFilterActive(app.reviewFilter) が false の場合を含む）なら refreshProgress() のみ。
              一致しなくなった場合は removeHunkCardInPlace() でそのカードだけを DOM と app.hunkCards から取り除き
              （フォーカスは同じ位置＝次のハンクに留まる）、refreshProgress()。
-             そのカードがファイル内で最後の1枚だった場合のみ（ファイル見出し・コミット見出し・stat サマリーも変わるため）renderDiff() 全体を再実行
+             そのカードがファイル内で最後の1枚だった場合（ファイル見出し・コミット見出し・stat サマリーも変わるため）、
+             または同じ filePath + hash のカードが他にも表示されている場合（git log -p で同一内容のハンクが複数コミットにあるなど。
+             レビュー状態・行コメントを共有するため一緒に変わる必要がある）のみ renderDiff() 全体を再実行
 ```
 
 ---
@@ -536,7 +538,7 @@ renderDiff()
 ### Build a single hunk card
 
 ```javascript
-buildHunkCard(filePath, hunk, status, language, lineComments?): HTMLElement
+buildHunkCard(filePath, hunk, status, language, lineComments?, keywordGroups?): HTMLElement
 ```
 
 `lineComments` はこのハンクの `{ [lineIdx]: LineComment[] }`（無ければ `null`）。省略時は localStorage から読み込みます（`renderDiff()` は1回だけ読み込んだものを渡します）。
@@ -597,7 +599,7 @@ cycleFocusedHunkStatus()     // Space の処理
 setFocusedHunkStatus(value)  // 1/2/3 の処理
 ```
 
-フォーカス中のハンクカードには `focused` クラスが付きます（`updateFocusedHunkVisual()` は旧・新のカードだけを更新し、全カードを走査しません）。ハンクカードには CSS で `content-visibility: auto` を指定しており、画面外のハンクのレイアウト・描画をブラウザが省略します（ハンク数が多い diff の描画負荷対策）。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
+フォーカス中のハンクカードには `focused` クラスが付きます（`updateFocusedHunkVisual()` は旧・新のカードだけを更新し、全カードを走査しません）。ハンクカードには CSS で `content-visibility: auto` を指定しており、画面外のハンクのレイアウト・描画をブラウザが省略します（ハンク数が多い diff の描画負荷対策）。未描画のカードの高さは `buildHunkCard()` がヘッダー＋行数から見積もってカスタムプロパティ `--hunk-estimated-height` に設定し（折りたたみ中はヘッダー分のみ）、一度描画されたカードは実際の高さが記憶されます。見積もりとのずれでスクロール位置が外れないよう、j/k・stat サマリーのファイル名クリック・メモパネルからのジャンプは `scrollIntoViewSettled()`（周囲のカードが実寸で描画された後にもう一度位置合わせする `scrollIntoView()`）を使います。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
 
 ---
 
@@ -612,7 +614,7 @@ LineComment: { id, text, createdAt, updatedAt, done, lineType: '+'|'-'|' ', line
 
 - **紐付け:** `(filePath, hunk.hash, lineIdx)` で行を特定します。`lineIdx` は `hunk.lines`（= `computeLineRecords()` の `idx`）内の位置です。ハンクハッシュはハンク本文から計算されるため（[ハンクの同一性判定](#ハンクの同一性判定-hunk-hash)）、レビュー状態と同様に、ハンクの内容が同じなら行番号がずれてもコメントが引き継がれます。`lineType` 以降はコメント時点の行のスナップショットで、元の行が見つからなくなったコメント（孤立コメント）の表示に使います。
 - **描画:** `buildUnifiedTbody()` / `buildSplitTbody()` は各行の行番号セルに `buildLineCommentAddButton()` の「+」ボタン（行ホバーで表示）を置き、行の `<tr>` に `data-anchor-idx`（Split の左右ペア行では2つのidxを空白区切り）、各セルに `data-line-idx` を付けます。保存済みコメントは `appendLineCommentRows()` が該当行の直後に `.line-attached-row.line-comment-row`（`colspan` は Unified 3 / Split 4）として挿入します。
-- **操作:** 追加・編集・削除はハンクカード単位の委譲リスナー `handleLineCommentCardClick` が処理し、`renderDiff()` を呼ばずに該当行の周辺だけ DOM を差し替えます（入力中の他フォームやスクロール位置を保つため）。入力欄は `openLineCommentComposer(card, idx)`、編集は `startEditingLineComment(card, row)` が生成し、どちらも `buildLineCommentForm()`（`Ctrl/Cmd+Enter` で保存、`Esc` でキャンセル。`Esc` は `stopPropagation()` でメモパネルを閉じるハンドラーへ伝播させない）を使います。変更後は `afterLineCommentsChanged(card)` が設定フォルダへの自動保存予約・件数バッジ・トップバーのメモバッジ（`refreshMemoBadge()`。未チェックのメモ＋未チェックの行コメント（`countOpenLineComments()`）の合計）・一覧の更新を行い、「コメントあり」フィルタ中にハンクのコメントが0件になった場合のみ `renderDiff()` で再描画します。
+- **操作:** 追加・編集・削除はハンクカード単位の委譲リスナー `handleLineCommentCardClick` が処理し、`renderDiff()` を呼ばずに該当行の周辺だけ DOM を差し替えます（入力中の他フォームやスクロール位置を保つため）。入力欄は `openLineCommentComposer(card, idx)`、編集は `startEditingLineComment(card, row)` が生成し、どちらも `buildLineCommentForm()`（`Ctrl/Cmd+Enter` で保存、`Esc` でキャンセル。`Esc` は `stopPropagation()` でメモパネルを閉じるハンドラーへ伝播させない）を使います。変更後は `afterLineCommentsChanged(card)` が設定フォルダへの自動保存予約・件数バッジ・トップバーのメモバッジ（`refreshMemoBadge()`。未チェックのメモ＋未チェックの行コメント（`countOpenLineComments()`）の合計）・一覧の更新を行い、「コメントあり」フィルタ中にハンクのコメントが0件になった場合は `removeHunkCardInPlace(card)` でそのカードだけを取り除きます（取り除けない場合のみ `renderDiff()` で再描画。条件は[レビュー状態変更時のフロー](#レビュー状態変更時のフロー)と同じ）。
 - **チェック状態（issue #120）:** `done` はメモのチェックボックスと同様のチェック状態です（欠損時は `false`。既存データ・古いエクスポートもそのまま読み込めます）。コメント行のヘッダーとメモパネルの一覧項目に `buildLineCommentDoneCheckbox()` のチェックボックスを置き、`setLineCommentDone()` で保存します。diff 側はカード単位の委譲 `change` リスナー `handleLineCommentCardChange`、一覧側は項目ごとのリスナーが処理し、`applyLineCommentDoneToRow()` でもう一方（diff のコメント行）にも反映したうえで `afterLineCommentsChanged()` を呼びます。チェック済みのコメントは本文に取り消し線が付き（`.done`）、一覧の見出しには「チェック済み/全件」を表示します。マウスでクリックした場合はフォーカスを外し、`j`/`k`/`c` 等のショートカットがそのまま効くようにします。
 - **表示切り替え（issue #124）:** diff 内のコメント行の表示を切り替えます（既定はすべて表示）。トップバーの「💬コメントあり」の隣にある「非表示」トグルボタン（`#hide-all-line-comments-btn`、`aria-pressed`）は `app.hideAllLineComments`（保存しない一時的な状態）を、設定モーダルの「対応済みのコメントを非表示にする（差分内・メモパネル）」チェックボックス（`#hide-done-line-comments-checkbox`）とメモパネルヘッダーの「✓ 対応済みを隠す」トグルボタン（`#memo-hide-done-btn`、`aria-pressed`。issue #138）は同じ `app.hideDoneLineComments`（`SK_HIDE_DONE_LINE_COMMENTS` に保存）を切り替え、互いに同期します。`applyLineCommentVisibility()` が `#diff-container` に `.hide-done-line-comments` / `.hide-all-line-comments` クラスを、`#memo-panel` に `.hide-done-comments` クラスを付け外しし、CSS でコメント行・一覧の `.memo-item.done` / `.line-comment-item.done` を `display: none` にするだけなので再描画は不要で、ハンクの件数バッジ・「コメントあり」フィルタ・トップバー／サイドバーの未完了件数バッジには影響しません。メモパネルでは非表示中も行コメント見出しの `（done/total）` と「対応済み（N）」区切り（`.memo-done-divider`、非表示中は「・非表示中」を付記）を残し、隠れている件数が分かるようにします。行コメントがすべて対応済みのときは「すべて対応済みです（N 件を非表示中）」（`.memo-hidden-hint`）を表示し、対応済みのみの孤立コメント区切り（`.memo-list-divider.done`）は項目とともに隠します。編集中のメモ（`.memo-item.editing`）は非表示になりません。この設定は従来どおり localStorage のみに保存し、エクスポート／設定フォルダ保存の対象には含めません。`app.hideAllLineComments` は diff 内のみが対象で、メモパネルの一覧には影響しません。編集フォームを開いているコメント行（`:has(.line-comment-form)`）と新規コメントの入力欄は非表示になりません。非表示のコメントへ一覧からジャンプした場合、`jumpToLineComment()` はコメント行の代わりにコメント対象の行へスクロールします。
 - **再描画時の下書き保持:** `renderDiff()` はカードを作り直すため、冒頭で `captureLineCommentDrafts()` が開いている入力欄・編集フォームの未保存テキスト（とフォーカス・選択範囲）を退避し、末尾で `restoreLineCommentDrafts()` が新しいカードに復元します（フィルタで非表示になったハンクの下書きは復元されません）。
