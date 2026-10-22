@@ -208,6 +208,7 @@ test/                ← テスト用 .diff サンプルファイル
           │  （クリック済みの状態をもう一度選ぶとキーを削除 = 未レビューに戻す）
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
+          │  （同じ filePath + hash のカードが複数表示されていれば、すべてを同じ状態に更新）
           ├─ collapsed は status === 'approved' のときだけ true に
           └─ 新しい状態がフィルタ条件に一致する（isReviewFilterActive(app.reviewFilter) が false の場合を含む）なら refreshProgress() のみ。
              一致しなくなった場合は removeHunkCardInPlace() でそのカードだけを DOM と app.hunkCards から取り除き
@@ -599,7 +600,7 @@ cycleFocusedHunkStatus()     // Space の処理
 setFocusedHunkStatus(value)  // 1/2/3 の処理
 ```
 
-フォーカス中のハンクカードには `focused` クラスが付きます（`updateFocusedHunkVisual()` は旧・新のカードだけを更新し、全カードを走査しません）。ハンクカードには CSS で `content-visibility: auto` を指定しており、画面外のハンクのレイアウト・描画をブラウザが省略します（ハンク数が多い diff の描画負荷対策）。未描画のカードの高さは `buildHunkCard()` がヘッダー＋行数から見積もってカスタムプロパティ `--hunk-estimated-height` に設定し（折りたたみ中はヘッダー分のみ）、一度描画されたカードは実際の高さが記憶されます。見積もりとのずれでスクロール位置が外れないよう、j/k・stat サマリーのファイル名クリック・メモパネルからのジャンプは `scrollIntoViewSettled()`（周囲のカードが実寸で描画された後にもう一度位置合わせする `scrollIntoView()`）を使います。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
+フォーカス中のハンクカードには `focused` クラスが付きます（`updateFocusedHunkVisual()` は旧・新のカードだけを更新し、全カードを走査しません）。ハンクカードには CSS で `content-visibility: auto` を指定しており、画面外のハンクのレイアウト・描画をブラウザが省略します（ハンク数が多い diff の描画負荷対策）。未描画のカードの高さは `buildHunkCard()` がヘッダー＋行数から見積もってカスタムプロパティ `--hunk-estimated-height` に設定し（折りたたみ中はヘッダー分のみ）、一度描画されたカードは実際の高さが記憶されます。見積もりとのずれでスクロール位置が外れないよう、j/k・stat サマリーのファイル名クリック・メモパネルからのジャンプは `scrollIntoViewSettled()`（周囲のカードが実寸で描画された後にもう一度位置合わせする `scrollIntoView()`）を使います。smooth スクロールでは `scrollend` 後に位置合わせし、スクロールが始まらなかった場合（すでに表示位置にある）や新しいスクロール要求が来た場合は保留中の位置合わせを破棄します。フォーム入力中・モーダル表示中はイベントを無視します。キーとステータスの対応は `REVIEW_STATUSES`（Storage keys セクション付近）で一元管理されています。
 
 ---
 

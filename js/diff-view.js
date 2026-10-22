@@ -846,15 +846,22 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
   saveAllReviews(allReviews);
   scheduleSettingsAutoSave();
 
-  for (const s of REVIEW_STATUSES) card.classList.remove('status-' + s.value);
-  if (newStatus) card.classList.add('status-' + newStatus);
+  // Cards sharing this file path + hash (identical hunk content, e.g. the
+  // same change in two `git log -p` commits) share the stored status, so
+  // repaint every one of them, not just the card that was clicked.
+  const sameHunkCards = app.hunkCards.filter(c => c.dataset.filePath === filePath && c.dataset.hunkHash === hash);
+  if (!sameHunkCards.includes(card)) sameHunkCards.push(card);
+  for (const target of sameHunkCards) {
+    for (const s of REVIEW_STATUSES) target.classList.remove('status-' + s.value);
+    if (newStatus) target.classList.add('status-' + newStatus);
 
-  for (const btn of card.querySelectorAll('.review-status-btn')) {
-    const isActive = btn.dataset.status === newStatus;
-    btn.classList.toggle('active', isActive);
-    btn.setAttribute('aria-pressed', String(isActive));
+    for (const btn of target.querySelectorAll('.review-status-btn')) {
+      const isActive = btn.dataset.status === newStatus;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
+    }
+    setHunkCollapsedState(target, newStatus === 'approved');
   }
-  setHunkCollapsedState(card, newStatus === 'approved');
 
   if (isReviewFilterActive(app.reviewFilter) && !hunkPassesReviewFilter(newStatus, app.reviewFilter)) {
     // The hunk no longer matches the review filter: drop just this card
@@ -962,6 +969,11 @@ function updateFocusedHunkVisual() {
   focusedHunkCardEl = next;
 }
 
+/** Cancels the realign still pending from the last scrollIntoViewSettled() call, or null. */
+let cancelPendingRealign = null;
+/** How long a smooth scrollIntoViewSettled() waits for scrolling to start before assuming none is needed. */
+const SMOOTH_SCROLL_START_TIMEOUT_MS = 150;
+
 /**
  * scrollIntoView() that re-aligns once the cards around the target have been
  * laid out at their real height. Off-screen hunk cards use an estimated
@@ -971,12 +983,34 @@ function updateFocusedHunkVisual() {
  * smooth scroll is simply not corrected).
  */
 function scrollIntoViewSettled(el, options) {
+  // A newer scroll request supersedes a still-pending realign of an older one.
+  if (cancelPendingRealign) cancelPendingRealign();
   el.scrollIntoView(options);
   const realign = () => { if (el.isConnected) el.scrollIntoView({ ...options, behavior: 'instant' }); };
+
   if (options.behavior === 'smooth') {
-    document.addEventListener('scrollend', realign, { once: true, capture: true });
+    // No `scrollend` fires when the target is already in place, so only wait
+    // for one if a scroll actually started shortly after the request —
+    // otherwise drop the listeners rather than leave a stale realign behind
+    // to snap back on the user's next manual scroll.
+    let scrolled = false;
+    const onScroll = () => { scrolled = true; };
+    const onScrollEnd = () => { cleanup(); realign(); };
+    const noScrollTimer = setTimeout(() => { if (!scrolled) cleanup(); }, SMOOTH_SCROLL_START_TIMEOUT_MS);
+    const cleanup = () => {
+      document.removeEventListener('scroll', onScroll, true);
+      document.removeEventListener('scrollend', onScrollEnd, true);
+      clearTimeout(noScrollTimer);
+      cancelPendingRealign = null;
+    };
+    document.addEventListener('scroll', onScroll, true);
+    document.addEventListener('scrollend', onScrollEnd, true);
+    cancelPendingRealign = cleanup;
   } else {
-    requestAnimationFrame(() => requestAnimationFrame(realign));
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => { cancelPendingRealign = null; realign(); });
+    });
+    cancelPendingRealign = () => { cancelAnimationFrame(frame); cancelPendingRealign = null; };
   }
 }
 
