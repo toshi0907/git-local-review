@@ -129,14 +129,16 @@ function isBlankDiffLine(line) {
  * Split a single hunk into several smaller hunks wherever a run of
  * HUNK_SPLIT_BLANK_RUN or more consecutive blank lines occurs, but only if
  * the hunk's total line count exceeds HUNK_SPLIT_LINE_THRESHOLD. Each blank
- * run is kept as trailing context of the sub-hunk that precedes it.
+ * run is kept as trailing context of the sub-hunk that precedes it. Pieces
+ * containing no +/- lines are merged into a neighbouring piece so that every
+ * resulting sub-hunk has at least one change.
  * @param {{header:string, lines:string[]}} hunk
  * @returns {Array<{header:string, lines:string[]}>}
  */
 function splitLargeHunk(hunk) {
   if (hunk.lines.length <= HUNK_SPLIT_LINE_THRESHOLD) return [hunk];
 
-  const groups = [];
+  const rawGroups = [];
   let current = [];
   let i = 0;
   while (i < hunk.lines.length) {
@@ -147,14 +149,31 @@ function splitLargeHunk(hunk) {
       for (let j = 1; j < runLen; j++) current.push(hunk.lines[i + j]);
       i += runLen;
       if (runLen >= HUNK_SPLIT_BLANK_RUN && i < hunk.lines.length) {
-        groups.push(current);
+        rawGroups.push(current);
         current = [];
       }
       continue;
     }
     i++;
   }
-  if (current.length > 0) groups.push(current);
+  if (current.length > 0) rawGroups.push(current);
+
+  // A group made only of context lines has nothing to review, so fold it into
+  // the preceding change group as trailing context (or, if no change group
+  // precedes it, into the next one as leading context).
+  const groups = [];
+  let pending = [];
+  for (const g of rawGroups) {
+    if (g.some(l => l[0] === '+' || l[0] === '-')) {
+      groups.push(pending.concat(g));
+      pending = [];
+    } else if (groups.length > 0) {
+      groups[groups.length - 1].push(...g);
+    } else {
+      pending.push(...g);
+    }
+  }
+  if (pending.length > 0) groups.push(pending);
 
   if (groups.length <= 1) return [hunk];
 
