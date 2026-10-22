@@ -1,5 +1,13 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Diff font (issue #139): defaults for the diff table's font. The settings
+   modal overrides them on <html> via applyDiffFont(); the row height and the
+   line-number column follow --diff-font-size. */
+:root {
+  --diff-font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
+  --diff-font-size: 12px;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #f0f2f5;
@@ -370,6 +378,43 @@ body {
   gap: 4px;
   cursor: pointer;
 }
+
+/* Diff font settings (issue #139) */
+.diff-font-section {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e4e8;
+}
+
+.diff-font-help {
+  margin: 0;
+  font-size: 11px;
+  color: #57606a;
+  line-height: 1.5;
+}
+
+.diff-font-input,
+.diff-font-size-input {
+  padding: 3px 6px;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  background: #fff;
+  color: #24292e;
+  font-size: 12px;
+}
+
+.diff-font-input { flex: 1; min-width: 0; }
+.diff-font-input[aria-invalid="true"] { border-color: #cf222e; }
+.diff-font-size-input { width: 60px; }
+.diff-font-reset-btn { margin-left: auto; }
+
+.diff-font-error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #cf222e;
+}
+
+.diff-font-error[hidden] { display: none; }
 
 .encoding-row select,
 .proj-encoding select {
@@ -1300,15 +1345,18 @@ body {
 .diff-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: 'SFMono-Regular', Consolas, 'Courier New', monospace;
-  font-size: 12px;
+  font-family: var(--diff-font-family);
+  font-size: var(--diff-font-size);
   table-layout: fixed;
 }
 
-.diff-table tbody tr { line-height: 20px; }
+/* 20px at the default 12px font size. */
+.diff-table tbody tr { line-height: calc(var(--diff-font-size) + 8px); }
 
 .line-num {
-  width: 50px;
+  /* 50px at the default 12px font size; widens with the font so 4–5 digit
+     line numbers still fit in the fixed table layout. */
+  width: calc(var(--diff-font-size) * 3.5 + 8px);
   text-align: right;
   padding: 0 8px;
   color: #8b949e;
@@ -1344,7 +1392,7 @@ body {
 
 .line-prefix {
   display: inline-block;
-  width: 14px;
+  width: calc(var(--diff-font-size) + 2px);
 }
 
 .line-add { background: #e6ffec; }
@@ -1375,8 +1423,6 @@ td.line-num.line-del { background: #ffd7d5; }
   background: #fffce0;
   font-style: italic;
   color: #8b949e;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 12px;
   padding: 2px 8px;
 }
 
@@ -1437,7 +1483,9 @@ td.line-num.line-del { background: #ffd7d5; }
 .hunk-comment-badge[hidden] { display: none; }
 
 .line-comment-cell {
-  padding: 6px 12px 6px 60px;
+  /* Indent scales with .line-num's width (60px at the default 12px diff
+     font size) so it stays proportional to the line-number gutter. */
+  padding: 6px 12px 6px calc(var(--diff-font-size) * 3.5 + 18px);
   background: #f6f8fa;
   border-top: 1px solid #e1e4e8;
   border-bottom: 1px solid #e1e4e8;
@@ -1513,7 +1561,8 @@ div.line-comment-label { margin-bottom: 6px; }
 .line-comment-delete-btn:hover { background: #ffeef0; color: #cf222e; }
 
 .line-comment-text {
-  font-size: 13px;
+  /* 13px at the default 12px diff font size (issue #139) */
+  font-size: calc(var(--diff-font-size) + 1px);
   line-height: 1.5;
   color: #24292e;
   white-space: pre-wrap;
@@ -1530,7 +1579,7 @@ div.line-comment-label { margin-bottom: 6px; }
   border: 1px solid #d0d7de;
   border-radius: 6px;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(var(--diff-font-size) + 1px);
   line-height: 1.5;
   resize: vertical;
 }

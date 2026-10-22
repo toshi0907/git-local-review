@@ -240,6 +240,29 @@
       <div class="encoding-row settings-checkbox-row">
         <label title="対応済み（チェック済み）の行コメントを差分内に、対応済みのメモ・行コメントをメモパネルの一覧に表示しません（メモパネルの「✓ 対応済みを隠す」と連動）"><input type="checkbox" id="hide-done-line-comments-checkbox">対応済みのコメントを非表示にする（差分内・メモパネル）</label>
       </div>
+      <div class="diff-font-section" id="diff-font-section">
+        <div class="io-section-label">差分のフォント</div>
+        <p class="diff-font-help">コード・行番号の表示に使います（サイズは差分内の行コメントにも反映されます）。この端末にインストールされているフォントのみ使用できます（CSS の font-family 形式。空欄で既定）。</p>
+        <div class="encoding-row">
+          <label for="diff-font-family-input">フォント</label>
+          <input type="text" id="diff-font-family-input" class="diff-font-input" list="diff-font-family-options" placeholder="既定（SFMono-Regular, Consolas, monospace）" maxlength="200" spellcheck="false" autocomplete="off">
+          <datalist id="diff-font-family-options">
+            <option value="Consolas, monospace"></option>
+            <option value="Menlo, monospace"></option>
+            <option value="Monaco, monospace"></option>
+            <option value="&quot;Cascadia Code&quot;, monospace"></option>
+            <option value="&quot;Source Han Code JP&quot;, monospace"></option>
+            <option value="monospace"></option>
+          </datalist>
+        </div>
+        <div class="diff-font-error" id="diff-font-family-error" aria-live="polite" hidden>font-family として解釈できないため、既定のフォントで表示しています</div>
+        <div class="encoding-row">
+          <label for="diff-font-size-input">サイズ</label>
+          <input type="number" id="diff-font-size-input" class="diff-font-size-input" min="10" max="20" step="1" inputmode="numeric">
+          <span>px（10〜20）</span>
+          <button type="button" class="folder-btn diff-font-reset-btn" id="diff-font-reset-btn" title="差分のフォントとサイズを既定に戻す">既定に戻す</button>
+        </div>
+      </div>
       <div class="collection-auto-section" id="collection-auto-section">
         <div class="io-section-label">コレクション自動追加ルール</div>
         <p class="collection-auto-help">新規プロジェクト作成時、ファイル名（拡張子を含む）が正規表現にマッチすると、キャプチャグループ1（なければマッチ全体）を名前とするコレクションに自動で追加します。上のルールから順に照合し、最初にマッチしたものを使います。</p>
