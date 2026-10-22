@@ -141,16 +141,20 @@ function updateHunkCommentBadge(badge, count) {
 }
 
 /**
- * Reflects app.hideDoneLineComments / app.hideAllLineComments (issue #124)
- * on the diff container's classes (CSS hides the rows, so no re-render is
- * needed and the hunk filters/badges are unaffected) and on the top-bar controls.
+ * Reflects app.hideDoneLineComments / app.hideAllLineComments (issues #124,
+ * #138) on the diff container's and memo panel's classes (CSS hides the
+ * rows/items, so no re-render is needed and the hunk filters/badges are
+ * unaffected) and on the controls that toggle them.
  */
 function applyLineCommentVisibility() {
   const container = document.getElementById('diff-container');
   container.classList.toggle('hide-done-line-comments', app.hideDoneLineComments);
   container.classList.toggle('hide-all-line-comments', app.hideAllLineComments);
+  document.getElementById('memo-panel').classList.toggle('hide-done-comments', app.hideDoneLineComments);
   const checkbox = document.getElementById('hide-done-line-comments-checkbox');
   if (checkbox) checkbox.checked = app.hideDoneLineComments;
+  const memoBtn = document.getElementById('memo-hide-done-btn');
+  if (memoBtn) memoBtn.setAttribute('aria-pressed', String(app.hideDoneLineComments));
   const btn = document.getElementById('hide-all-line-comments-btn');
   if (btn) btn.setAttribute('aria-pressed', String(app.hideAllLineComments));
 }
@@ -742,10 +746,19 @@ function renderLineCommentList() {
   }
   emptyEl.style.display = 'none';
 
+  if (doneCount === total) {
+    // Only shown (via CSS) while done items are hidden (issue #138), so the
+    // list doesn't look empty for no reason.
+    const hint = document.createElement('li');
+    hint.className = 'memo-hidden-hint';
+    hint.textContent = `すべて対応済みです（${total} 件を非表示中）`;
+    listEl.appendChild(hint);
+  }
   for (const { loc, comment } of live) listEl.appendChild(buildLineCommentListItem(loc, comment, true));
   if (orphans.length > 0) {
     const divider = document.createElement('li');
-    divider.className = 'memo-list-divider';
+    // Hidden along with its items when they're all done and done items are hidden (issue #138).
+    divider.className = 'memo-list-divider' + (orphans.every(e => e.comment.done) ? ' done' : '');
     if (getCurrentCollectionId()) {
       // Shared comments include those on hunks that only exist in another
       // member's diff (e.g. per-commit hunks merged into one by git diff).
@@ -950,7 +963,7 @@ function renderMemoList() {
   for (const m of pending) listEl.appendChild(buildMemoItem(m));
   if (done.length > 0) {
     const divider = document.createElement('li');
-    divider.className = 'memo-list-divider';
+    divider.className = 'memo-list-divider memo-done-divider';
     divider.textContent = `対応済み（${done.length}）`;
     listEl.appendChild(divider);
     for (const m of done) listEl.appendChild(buildMemoItem(m));

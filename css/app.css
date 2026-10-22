@@ -2129,7 +2129,33 @@ div.line-comment-label { margin-bottom: 6px; }
   flex-shrink: 0;
 }
 
-.memo-panel-header h2 { font-size: 15px; font-weight: 700; color: #24292e; }
+.memo-panel-header h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  color: #24292e;
+}
+
+/* "✓ 対応済みを隠す" toggle (issue #138), synced with the settings checkbox. */
+.memo-hide-done-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+  margin-right: 4px;
+  padding: 2px 8px;
+  background: none;
+  border: 1px solid #d0d7de;
+  border-radius: 5px;
+  color: #57606a;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.memo-hide-done-btn:hover { background: #f0f2f5; color: #24292e; }
+.memo-hide-done-btn[aria-pressed="true"] { background: #1a7f37; border-color: #1a7f37; color: #fff; }
 
 .memo-panel-close {
   background: none;
@@ -2406,6 +2432,24 @@ button.line-comment-item-main:hover { background: #f6f8fa; }
   color: #8b949e;
   background: #f6f8fa;
 }
+
+/* Hide done items in the memo panel lists (issue #138): class set on
+   #memo-panel by applyLineCommentVisibility(). A memo being edited is
+   rendered as .memo-item.editing (no .done), so it stays visible. The
+   "対応済み（N）" divider and the 行コメント (done/total) count stay so the
+   hidden count is still visible. */
+.memo-panel.hide-done-comments .memo-item.done,
+.memo-panel.hide-done-comments .line-comment-item.done,
+.memo-panel.hide-done-comments .memo-list-divider.done,
+.memo-panel:not(.hide-done-comments) .memo-hidden-hint { display: none; }
+
+.memo-hidden-hint {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #8b949e;
+}
+.memo-panel.hide-done-comments .memo-done-divider::after { content: '・非表示中'; }
 
 /* ===== Wide-viewport memo panel docking (issue #57) =====
    On viewports at least 1200px wide there's enough room to keep the memo
