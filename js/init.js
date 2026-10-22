@@ -117,6 +117,8 @@ function initTopbarTooltips() {
     applyLineCommentVisibility();
   });
 
+  initDiffFontSettings();
+
   const collectionInitialStateSelect = document.getElementById('collection-initial-state-select');
   collectionInitialStateSelect.value = loadCollectionInitialState();
   // Only affects the next page load; the current open/closed state is left as is.

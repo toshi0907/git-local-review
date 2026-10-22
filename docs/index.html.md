@@ -139,6 +139,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/diff-view.js` | **Refresh progress badges** | `refreshProgress()` — 再レンダリングなしで進捗更新 |
 | `js/diff-view.js` | **Keyboard navigation** | `j` / `k` / `Space` / `1` / `2` / `3` / `c` ショートカット（キー処理自体は Event listeners セクションの `keydown` リスナー） |
 | `js/diff-view.js` | **View mode toggle** | Unified ↔ Split ボタン処理 |
+| `js/diff-view.js` | **Diff font** | 差分表示のフォント設定（issue #139）。`applyDiffFont()` が CSS カスタムプロパティ `--diff-font-family` / `--diff-font-size` を `<html>` に設定し、`initDiffFontSettings()` が設定モーダルの入力欄を初期化・イベント登録する。詳細は [Storage keys](#storage-keys) の `SK_DIFF_FONT` を参照 |
 | `js/diff-view.js` | **Empty state helpers** | 空状態メッセージ表示 |
 | `js/comments.js` | **Line comments** | 行コメントの追加・編集・削除（`addLineComment()` 等）、diff 内のコメント行・入力欄の描画、ハンクヘッダーの件数バッジ、`c` キー処理（`openLineCommentComposerForFocusedHunk()`）、メモパネル内の一覧描画（`renderLineCommentList()`）とジャンプ（`jumpToLineComment()`）。詳細は [Line comments](#line-comments) を参照 |
 | `js/comments.js` | **Review memos** | レビューメモ（スライドパネル、リサイズハンドル）。パネル下部には行コメント一覧（`#line-comment-section`）も同居するが、その描画は「Line comments」セクション側にある |
@@ -244,6 +245,7 @@ const SK_AUTO_COMMENT_APPLIED = 'gitLocalReview_autoCommentApplied';
 const SK_COLLECTIONS     = 'gitLocalReview_collections';
 const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
 const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
+const SK_DIFF_FONT       = 'gitLocalReview_diffFont';
 ```
 
 > **プロジェクトID / コレクションID:** `SK_REVIEWS` / `SK_MEMOS` / `SK_LINE_COMMENTS` / `SK_AUTO_COMMENT_APPLIED` と、`SK_PROJECT_KEYWORDS` / `SK_PROJECT_EXTRACT_KEYWORDS` / `SK_PROJECT_AUTO_COMMENT_RULES` の各マップのキー（以下 `projectId` と表記）には、プロジェクトIDだけでなくコレクションID（`coll_…`）も入ります。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
@@ -267,6 +269,11 @@ const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
 `SK_COLLECTIONS` はプロジェクトコレクションの一覧 `{ id, name, createdAt }[]` です（`loadCollections()` / `saveCollections()`、不正値は `sanitizeCollections()` が除去）。所属はプロジェクト側の `collectionId` に保持します。`SK_COLLECTION_AUTO_RULES`（issue #132）はコレクション自動追加ルール `{ id, pattern }[]`（全体設定のみ、配列の順が照合順）です（`loadCollectionAutoRules()` / `saveCollectionAutoRules()`、不正な正規表現は `sanitizeCollectionAutoRules()` が除去）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照してください。
 
 `SK_COLLECTION_INITIAL_STATE`（issue #130）は設定モーダルの「コレクションの初期状態」を `'open' | 'closed'` の文字列で保持します（`loadCollectionInitialState()` / `saveCollectionInitialState()`、未設定・不正値は `'open'`）。ページ読み込み時のサイドバーのコレクションの開閉状態にのみ使い、変更しても現在の開閉状態は変わりません（次回読み込みから反映）。`'closed'` のときは `init()` が、復元するプロジェクト（`SK_CURRENT`）を含むコレクション以外のIDを `collapsedCollectionIds` に入れてから最初の `renderProjectList()` を呼びます。
+
+`SK_DIFF_FONT`（issue #139）は設定モーダルの「差分のフォント」を `{ family, size }` の JSON で保持します（`loadDiffFont()` / `saveDiffFont()`、未設定・不正値は `{ family: '', size: 12 }`。既定値に戻したときはキーを削除）。`family` は CSS の `font-family` 形式の文字列で、`''` は既定（`'SFMono-Regular', Consolas, 'Courier New', monospace`）を意味します。読み書きの両方で `sanitizeDiffFontFamily()`（`;` `{` `}` `<` `>` `\` と制御文字を除去、200文字まで）と `sanitizeDiffFontSize()`（整数に丸めて 10〜20px に収める）を通します。
+- 反映は `applyDiffFont()` が `document.documentElement.style` に `--diff-font-family` / `--diff-font-size` を設定するだけなので `renderDiff()` は不要です（入力中に即時プレビュー）。既定値（`css/app.css` の `:root`）と同じ場合はプロパティを削除します。`CSS.supports('font-family', …)` で解釈できない値は適用せず（無効な値を入れるとカスタムプロパティが computed-value time で無効になり UI フォントに化けるため）、入力欄の下にエラーを表示します。
+- `.diff-table` の `font-family` / `font-size` に加え、行の高さ（`line-height: calc(var(--diff-font-size) + 8px)`、既定 20px）・行番号列の幅（`calc(var(--diff-font-size) * 3.5 + 8px)`、既定 50px）・`+`/`-` プレフィックスの幅がフォントサイズに追従します。差分内の行コメントはフォントファミリーは UI フォントのまま、本文（`.line-comment-text`）と編集欄のサイズのみ追従します（`calc(var(--diff-font-size) + 1px)`、既定 13px）。UI（サイドバー・トップバー・モーダル等）のフォントは対象外です。
+- 使えるのは端末にインストール済みのフォントのみです（Web フォントは外部通信禁止・CSP の `default-src 'none'` により読み込みません）。候補は `<datalist id="diff-font-family-options">` の固定リストで、`queryLocalFonts()` は使いません。端末ごとにインストール済みフォントが異なるため、エクスポート JSON・設定フォルダ保存の対象外です。
 
 `SK_MEMO_BULK_DELIMITER`（issue #104 で追加）はメモの一括登録で使う区切り文字（複数文字可、プロジェクト間で共有）を保持する単純な文字列キーです（`loadMemoBulkDelimiter()` / `saveMemoBulkDelimiter(delimiter)`）。キーが未設定または空文字列の場合は `DEFAULT_MEMO_BULK_DELIMITER`（`'---'`）にフォールバックします。詳細は [Review memos](#review-memos) を参照してください。
 
@@ -836,6 +843,7 @@ init()
   ├─ reviewFilter（表示フィルター）の復元
   ├─ commentFilter（「コメントあり」フィルター）の復元
   ├─ hideDoneLineComments（行コメントの「チェック済み非表示」）の復元 → applyLineCommentVisibility()
+  ├─ initDiffFontSettings()                    差分のフォント（SK_DIFF_FONT）の復元・反映・イベント登録
   ├─ 「コレクションの初期状態」セレクトの復元・変更イベント登録
   ├─ refreshHandleIndex()
   ├─ [File System Access 対応ブラウザのみ]
@@ -905,6 +913,8 @@ init()
 │                                初期状態（開く/閉じる）  │
 │  gitLocalReview_collectionAutoRules コレクション自動 │
 │                                追加ルール（全体設定）   │
+│  gitLocalReview_diffFont      差分のフォント           │
+│                                { family, size }        │
 │  ※ reviews / memos / lineComments / autoCommentApplied │
 │    と project* 系のキーにはコレクションIDも入る        │
 └─────────────────────────────────────────────────────┘

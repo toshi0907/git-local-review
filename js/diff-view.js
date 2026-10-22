@@ -997,6 +997,79 @@ function setWordDiff(enabled) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Diff font (issue #139): family / size of the diff table, applied through
+// css/app.css' --diff-font-family / --diff-font-size on <html> so the change
+// takes effect without re-rendering the diff
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Whether a sanitized family can be used as a font-family value. An unparsable
+ * value would make the custom property invalid at computed-value time (the
+ * diff would fall back to the inherited UI font), so it is ignored instead.
+ */
+function isUsableDiffFontFamily(family) {
+  return !!family && CSS.supports('font-family', family);
+}
+
+/** Applies { family, size } (already sanitized) to the document. */
+function applyDiffFont(font) {
+  const root = document.documentElement.style;
+  if (isUsableDiffFontFamily(font.family)) {
+    root.setProperty('--diff-font-family', font.family);
+  } else {
+    root.removeProperty('--diff-font-family');
+  }
+  if (font.size === DEFAULT_DIFF_FONT_SIZE) {
+    root.removeProperty('--diff-font-size');
+  } else {
+    root.setProperty('--diff-font-size', `${font.size}px`);
+  }
+  const error = document.getElementById('diff-font-family-error');
+  const invalid = !!font.family && !isUsableDiffFontFamily(font.family);
+  if (error) error.hidden = !invalid;
+  const input = document.getElementById('diff-font-family-input');
+  if (input) input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+}
+
+/** Wires the settings modal's diff font controls and applies the saved font. */
+function initDiffFontSettings() {
+  const familyInput = document.getElementById('diff-font-family-input');
+  const sizeInput = document.getElementById('diff-font-size-input');
+  const font = loadDiffFont();
+  familyInput.value = font.family;
+  sizeInput.value = String(font.size);
+  applyDiffFont(font);
+
+  const update = () => {
+    saveDiffFont(font);
+    applyDiffFont(font);
+  };
+  familyInput.addEventListener('input', () => {
+    font.family = sanitizeDiffFontFamily(familyInput.value);
+    update();
+  });
+  // Preview while typing / using the spinner, but only for in-range values;
+  // the committed value is clamped and written back on change.
+  sizeInput.addEventListener('input', () => {
+    const n = Number(sizeInput.value);
+    if (sizeInput.value === '' || !Number.isInteger(n) || n < DIFF_FONT_SIZE_MIN || n > DIFF_FONT_SIZE_MAX) return;
+    font.size = n;
+    update();
+  });
+  sizeInput.addEventListener('change', () => {
+    font.size = sizeInput.value === '' ? font.size : sanitizeDiffFontSize(sizeInput.value);
+    sizeInput.value = String(font.size);
+    update();
+  });
+  document.getElementById('diff-font-reset-btn').addEventListener('click', () => {
+    font.family = '';
+    font.size = DEFAULT_DIFF_FONT_SIZE;
+    familyInput.value = '';
+    sizeInput.value = String(font.size);
+    update();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Empty state helpers
 // ─────────────────────────────────────────────────────────────────────────────
 function showEmptyState(html) {

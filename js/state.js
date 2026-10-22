@@ -42,6 +42,8 @@ const SK_COLLECTIONS      = 'gitLocalReview_collections';
 const SK_COLLECTION_INITIAL_STATE = 'gitLocalReview_collectionInitialState';
 /** Collection auto-add rules (issue #132): [{ id, pattern }], matched top to bottom against a new project's file name. */
 const SK_COLLECTION_AUTO_RULES = 'gitLocalReview_collectionAutoRules';
+/** Diff font (issue #139): { family, size } JSON; '' family = default. localStorage only (fonts differ per device), not exported. */
+const SK_DIFF_FONT        = 'gitLocalReview_diffFont';
 
 const VALID_PROJECT_SORTS = ['updated-desc', 'updated-asc', 'name-asc', 'name-desc'];
 const DEFAULT_PROJECT_SORT = 'updated-desc';
@@ -472,6 +474,55 @@ function saveCollectionInitialState(state) {
     localStorage.setItem(SK_COLLECTION_INITIAL_STATE, VALID_COLLECTION_INITIAL_STATES.includes(state) ? state : DEFAULT_COLLECTION_INITIAL_STATE);
   } catch (e) {
     console.error('Failed to save collection initial state preference:', e);
+  }
+}
+
+/** Diff font size range in px (issue #139); the default matches css/app.css' --diff-font-size. */
+const DIFF_FONT_SIZE_MIN = 10;
+const DIFF_FONT_SIZE_MAX = 20;
+const DEFAULT_DIFF_FONT_SIZE = 12;
+const DIFF_FONT_FAMILY_MAX_LENGTH = 200;
+
+/**
+ * Normalises a user-entered CSS font-family list: drops characters that could
+ * end the declaration or rule (`;` `{` `}`), angle brackets, backslashes and
+ * control characters, then trims and caps the length. '' means "use the default".
+ */
+function sanitizeDiffFontFamily(family) {
+  if (typeof family !== 'string') return '';
+  return family.replace(/[;{}<>\\\u0000-\u001f\u007f]/g, '').trim().slice(0, DIFF_FONT_FAMILY_MAX_LENGTH).trim();
+}
+
+/** Rounds to an integer px size within [DIFF_FONT_SIZE_MIN, DIFF_FONT_SIZE_MAX]; non-numbers give the default. */
+function sanitizeDiffFontSize(size) {
+  const n = Number(size);
+  if (typeof size === 'boolean' || size === null || size === '' || !Number.isFinite(n)) return DEFAULT_DIFF_FONT_SIZE;
+  return Math.min(DIFF_FONT_SIZE_MAX, Math.max(DIFF_FONT_SIZE_MIN, Math.round(n)));
+}
+
+function loadDiffFont() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SK_DIFF_FONT) || 'null');
+    if (parsed && typeof parsed === 'object') {
+      return { family: sanitizeDiffFontFamily(parsed.family), size: sanitizeDiffFontSize(parsed.size) };
+    }
+  } catch (e) {
+    console.error('Failed to load diff font preference:', e);
+  }
+  return { family: '', size: DEFAULT_DIFF_FONT_SIZE };
+}
+
+function saveDiffFont(font) {
+  try {
+    const family = sanitizeDiffFontFamily(font.family);
+    const size = sanitizeDiffFontSize(font.size);
+    if (!family && size === DEFAULT_DIFF_FONT_SIZE) {
+      localStorage.removeItem(SK_DIFF_FONT);
+    } else {
+      localStorage.setItem(SK_DIFF_FONT, JSON.stringify({ family, size }));
+    }
+  } catch (e) {
+    console.error('Failed to save diff font preference:', e);
   }
 }
 
