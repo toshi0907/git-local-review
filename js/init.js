@@ -112,6 +112,11 @@ function initTopbarTooltips() {
     saveHideDoneLineComments(app.hideDoneLineComments);
     applyLineCommentVisibility();
   });
+  document.getElementById('memo-hide-done-btn').addEventListener('click', () => {
+    app.hideDoneLineComments = !app.hideDoneLineComments;
+    saveHideDoneLineComments(app.hideDoneLineComments);
+    applyLineCommentVisibility();
+  });
   document.getElementById('hide-all-line-comments-btn').addEventListener('click', () => {
     app.hideAllLineComments = !app.hideAllLineComments;
     applyLineCommentVisibility();

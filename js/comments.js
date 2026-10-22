@@ -141,16 +141,20 @@ function updateHunkCommentBadge(badge, count) {
 }
 
 /**
- * Reflects app.hideDoneLineComments / app.hideAllLineComments (issue #124)
- * on the diff container's classes (CSS hides the rows, so no re-render is
- * needed and the hunk filters/badges are unaffected) and on the top-bar controls.
+ * Reflects app.hideDoneLineComments / app.hideAllLineComments (issues #124,
+ * #138) on the diff container's and memo panel's classes (CSS hides the
+ * rows/items, so no re-render is needed and the hunk filters/badges are
+ * unaffected) and on the controls that toggle them.
  */
 function applyLineCommentVisibility() {
   const container = document.getElementById('diff-container');
   container.classList.toggle('hide-done-line-comments', app.hideDoneLineComments);
   container.classList.toggle('hide-all-line-comments', app.hideAllLineComments);
+  document.getElementById('memo-panel').classList.toggle('hide-done-comments', app.hideDoneLineComments);
   const checkbox = document.getElementById('hide-done-line-comments-checkbox');
   if (checkbox) checkbox.checked = app.hideDoneLineComments;
+  const memoBtn = document.getElementById('memo-hide-done-btn');
+  if (memoBtn) memoBtn.setAttribute('aria-pressed', String(app.hideDoneLineComments));
   const btn = document.getElementById('hide-all-line-comments-btn');
   if (btn) btn.setAttribute('aria-pressed', String(app.hideAllLineComments));
 }
@@ -950,7 +954,7 @@ function renderMemoList() {
   for (const m of pending) listEl.appendChild(buildMemoItem(m));
   if (done.length > 0) {
     const divider = document.createElement('li');
-    divider.className = 'memo-list-divider';
+    divider.className = 'memo-list-divider memo-done-divider';
     divider.textContent = `対応済み（${done.length}）`;
     listEl.appendChild(divider);
     for (const m of done) listEl.appendChild(buildMemoItem(m));
