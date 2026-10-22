@@ -976,6 +976,8 @@ diff 行                旧ファイル列       新ファイル列
 
 `-` 行と `+` 行が連続して現れる場合は同一行の変更とみなし、同じ `<tr>` の左右に並べます（`buildSplitTbody()` 内のペアリングロジック）。
 
+テーブルは `table-layout: fixed` のため列幅は先頭行で決まりますが、先頭行は `colspan=2` の見出し（変更前 / 変更後）なので、そのままでは 4 列が均等幅になります。これを避けるため `<colgroup>` で列（`col-line-num` / `col-line-content` ×2）を宣言し、行番号列の幅を CSS（`.diff-table-split col.col-line-num`）で `.line-num` と同じ幅に固定しています。
+
 単語単位の差分表示（`app.wordDiff`、Unified 表示でも使われる同じ「置き換えペア」の考え方）はこのペアリングをそのまま流用しています。詳細は [Build a single hunk card](#build-a-single-hunk-card) の「Word-level diff highlighting」を参照してください。
 
 ---

@@ -736,6 +736,18 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   const keywordGroups = getActiveKeywordGroups();
 
   if (isSplit) {
+    // With table-layout: fixed, column widths come from the first row; the
+    // colspan=2 header cells would split the width evenly across all four
+    // columns, so declare them explicitly to keep the line-number gutters
+    // narrow.
+    const colgroup = document.createElement('colgroup');
+    for (const cls of ['col-line-num', 'col-line-content', 'col-line-num', 'col-line-content']) {
+      const col = document.createElement('col');
+      col.className = cls;
+      colgroup.appendChild(col);
+    }
+    table.appendChild(colgroup);
+
     const thead = document.createElement('thead');
     const trHead = document.createElement('tr');
     const thOld = document.createElement('th'); thOld.colSpan = 2; thOld.textContent = '変更前';
