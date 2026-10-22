@@ -138,6 +138,7 @@
     <div class="memo-panel-resizer" id="memo-panel-resizer" aria-hidden="true"></div>
     <div class="memo-panel-header">
       <h2>📝 レビューメモ</h2>
+      <button type="button" class="memo-hide-done-btn" id="memo-hide-done-btn" aria-pressed="false" title="対応済み（チェック済み）のメモ・行コメントを差分内とメモパネルの一覧で非表示にします（設定モーダルと連動）">✓ 対応済みを隠す</button>
       <button type="button" class="memo-panel-close" id="memo-panel-close" aria-label="閉じる">✕</button>
     </div>
     <form class="memo-add-form" id="memo-add-form">
@@ -237,7 +238,7 @@
         </select>
       </div>
       <div class="encoding-row settings-checkbox-row">
-        <label title="チェック済みの行コメントを差分内に表示しません（メモパネルの一覧には表示されます）"><input type="checkbox" id="hide-done-line-comments-checkbox">チェック済みの行コメントを差分内で非表示にする</label>
+        <label title="対応済み（チェック済み）の行コメントを差分内に、対応済みのメモ・行コメントをメモパネルの一覧に表示しません（メモパネルの「✓ 対応済みを隠す」と連動）"><input type="checkbox" id="hide-done-line-comments-checkbox">対応済みのコメントを非表示にする（差分内・メモパネル）</label>
       </div>
       <div class="diff-font-section" id="diff-font-section">
         <div class="io-section-label">差分のフォント</div>

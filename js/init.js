@@ -107,10 +107,17 @@ function initTopbarTooltips() {
 
   app.hideDoneLineComments = loadHideDoneLineComments();
   applyLineCommentVisibility();
-  document.getElementById('hide-done-line-comments-checkbox').addEventListener('change', (e) => {
-    app.hideDoneLineComments = e.target.checked;
-    saveHideDoneLineComments(app.hideDoneLineComments);
+  // The settings checkbox and the memo panel's toggle share one state (issue #138).
+  const setHideDoneLineComments = (enabled) => {
+    app.hideDoneLineComments = enabled;
+    saveHideDoneLineComments(enabled);
     applyLineCommentVisibility();
+  };
+  document.getElementById('hide-done-line-comments-checkbox').addEventListener('change', (e) => {
+    setHideDoneLineComments(e.target.checked);
+  });
+  document.getElementById('memo-hide-done-btn').addEventListener('click', () => {
+    setHideDoneLineComments(!app.hideDoneLineComments);
   });
   document.getElementById('hide-all-line-comments-btn').addEventListener('click', () => {
     app.hideAllLineComments = !app.hideAllLineComments;
