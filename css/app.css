@@ -1483,7 +1483,9 @@ td.line-num.line-del { background: #ffd7d5; }
 .hunk-comment-badge[hidden] { display: none; }
 
 .line-comment-cell {
-  padding: 6px 12px 6px 60px;
+  /* Indent scales with .line-num's width (60px at the default 12px diff
+     font size) so it stays proportional to the line-number gutter. */
+  padding: 6px 12px 6px calc(var(--diff-font-size) * 3.5 + 18px);
   background: #f6f8fa;
   border-top: 1px solid #e1e4e8;
   border-bottom: 1px solid #e1e4e8;

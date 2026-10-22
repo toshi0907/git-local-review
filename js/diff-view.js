@@ -1001,19 +1001,31 @@ function setWordDiff(enabled) {
 // css/app.css' --diff-font-family / --diff-font-size on <html> so the change
 // takes effect without re-rendering the diff
 // ─────────────────────────────────────────────────────────────────────────────
+/** CSS-wide keywords, which a custom property substitutes as "guaranteed invalid". */
+const CSS_WIDE_KEYWORD_RE = /^(?:initial|inherit|unset|revert|revert-layer)$/i;
+
 /**
  * Whether a sanitized family can be used as a font-family value. An unparsable
- * value would make the custom property invalid at computed-value time (the
- * diff would fall back to the inherited UI font), so it is ignored instead.
+ * value, a CSS-wide keyword or a function such as var() would make the custom
+ * property invalid at computed-value time (the diff would fall back to the
+ * inherited UI font), so they are ignored instead.
  */
 function isUsableDiffFontFamily(family) {
-  return !!family && CSS.supports('font-family', family);
+  return !!family
+    && !CSS_WIDE_KEYWORD_RE.test(family)
+    && !/[a-z-]\(/i.test(family)
+    && CSS.supports('font-family', family);
 }
 
-/** Applies { family, size } (already sanitized) to the document. */
-function applyDiffFont(font) {
+/**
+ * Applies { family, size } (already sanitized) to the document. The error
+ * message is only refreshed when `showError` is set (on commit rather than on
+ * every keystroke, so half-typed values don't flash it).
+ */
+function applyDiffFont(font, showError) {
   const root = document.documentElement.style;
-  if (isUsableDiffFontFamily(font.family)) {
+  const usable = isUsableDiffFontFamily(font.family);
+  if (usable) {
     root.setProperty('--diff-font-family', font.family);
   } else {
     root.removeProperty('--diff-font-family');
@@ -1023,11 +1035,10 @@ function applyDiffFont(font) {
   } else {
     root.setProperty('--diff-font-size', `${font.size}px`);
   }
-  const error = document.getElementById('diff-font-family-error');
-  const invalid = !!font.family && !isUsableDiffFontFamily(font.family);
-  if (error) error.hidden = !invalid;
-  const input = document.getElementById('diff-font-family-input');
-  if (input) input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+  if (!showError) return;
+  const invalid = !!font.family && !usable;
+  document.getElementById('diff-font-family-error').hidden = !invalid;
+  document.getElementById('diff-font-family-input').setAttribute('aria-invalid', invalid ? 'true' : 'false');
 }
 
 /** Wires the settings modal's diff font controls and applies the saved font. */
@@ -1037,15 +1048,21 @@ function initDiffFontSettings() {
   const font = loadDiffFont();
   familyInput.value = font.family;
   sizeInput.value = String(font.size);
-  applyDiffFont(font);
+  applyDiffFont(font, true);
 
-  const update = () => {
+  const update = (showError) => {
     saveDiffFont(font);
-    applyDiffFont(font);
+    applyDiffFont(font, showError);
   };
+  // Preview while typing; on commit, show what was actually saved.
   familyInput.addEventListener('input', () => {
     font.family = sanitizeDiffFontFamily(familyInput.value);
-    update();
+    update(false);
+  });
+  familyInput.addEventListener('change', () => {
+    font.family = sanitizeDiffFontFamily(familyInput.value);
+    familyInput.value = font.family;
+    update(true);
   });
   // Preview while typing / using the spinner, but only for in-range values;
   // the committed value is clamped and written back on change.
@@ -1053,19 +1070,19 @@ function initDiffFontSettings() {
     const n = Number(sizeInput.value);
     if (sizeInput.value === '' || !Number.isInteger(n) || n < DIFF_FONT_SIZE_MIN || n > DIFF_FONT_SIZE_MAX) return;
     font.size = n;
-    update();
+    update(false);
   });
   sizeInput.addEventListener('change', () => {
     font.size = sizeInput.value === '' ? font.size : sanitizeDiffFontSize(sizeInput.value);
     sizeInput.value = String(font.size);
-    update();
+    update(false);
   });
   document.getElementById('diff-font-reset-btn').addEventListener('click', () => {
     font.family = '';
     font.size = DEFAULT_DIFF_FONT_SIZE;
     familyInput.value = '';
     sizeInput.value = String(font.size);
-    update();
+    update(true);
   });
 }
 
