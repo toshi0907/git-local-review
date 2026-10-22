@@ -1427,6 +1427,10 @@ td.line-num.line-del { background: #ffd7d5; }
 }
 
 /* ===== Diff table: side-by-side (split) mode ===== */
+/* Same width as .line-num; the <colgroup> fixes the column widths because
+   the colspan=2 header row would otherwise split them evenly. */
+.diff-table-split col.col-line-num { width: calc(var(--diff-font-size) * 3.5 + 8px); }
+
 .diff-table-split .col-divider { border-left: 2px solid #d0d7de; }
 
 .diff-table-split thead th {
