@@ -93,6 +93,7 @@ function initTextFilter() {
   const input = document.getElementById('text-filter-input');
   const caseCheckbox = document.getElementById('text-filter-case-checkbox');
   const regexCheckbox = document.getElementById('text-filter-regex-checkbox');
+  const errorEl = document.getElementById('text-filter-error');
   const defaultTooltip = input.dataset.tooltip;
   let timer = null;
 
@@ -107,6 +108,8 @@ function initTextFilter() {
     const invalid = next.regex && next.query !== '' && !compileTextFilterRegex(next);
     input.classList.toggle('invalid', invalid);
     input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    // Shown inline as well: the tooltip isn't visible after a mouse click.
+    errorEl.hidden = !invalid;
     input.dataset.tooltip = invalid ? '正規表現が正しくありません（直前の条件で絞り込んでいます）' : defaultTooltip;
     refreshTopbarTooltip();
     if (invalid) return;

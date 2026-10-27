@@ -41,6 +41,7 @@
   </div>
   <div class="text-filter-group" id="text-filter-group" role="search">
     <input type="search" id="text-filter-input" class="text-filter-input" placeholder="ハンクを絞り込み" aria-label="文字列でハンクを絞り込み" data-tooltip="入力した文字列を含む行があるハンクのみ表示します（差分の行内容が対象。他の絞り込みと併用可）" autocomplete="off" spellcheck="false">
+    <span class="text-filter-error" id="text-filter-error" role="status" hidden>正規表現エラー</span>
     <label class="filter-checkbox-label text-filter-option" data-tooltip="大文字・小文字を区別する"><input type="checkbox" id="text-filter-case-checkbox" aria-label="大文字・小文字を区別"><span aria-hidden="true">Aa</span></label>
     <label class="filter-checkbox-label text-filter-option" data-tooltip="正規表現として扱う"><input type="checkbox" id="text-filter-regex-checkbox" aria-label="正規表現"><span aria-hidden="true">.*</span></label>
   </div>

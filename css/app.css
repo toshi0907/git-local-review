@@ -159,6 +159,12 @@ body {
 
 .text-filter-input:focus { border-color: #58a6ff; }
 .text-filter-input.invalid { border-color: #f85149; }
+.text-filter-input.invalid:focus { outline: 2px solid #58a6ff; outline-offset: -1px; }
+
+.text-filter-error {
+  color: #f85149;
+  font-size: 12px;
+}
 
 .text-filter-option {
   gap: 2px;
