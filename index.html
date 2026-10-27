@@ -39,6 +39,11 @@
     <label class="filter-checkbox-label" data-tooltip="行コメントが付いたハンクのみ表示します（レビュー状態の絞り込みと併用可）"><input type="checkbox" id="comment-filter-checkbox" aria-label="コメントあり"><span class="topbar-icon" aria-hidden="true">💬</span></label>
     <button type="button" class="line-comment-hide-all-btn topbar-icon" id="hide-all-line-comments-btn" aria-pressed="false" aria-label="差分内の行コメントを一時的にすべて非表示" data-tooltip="差分内の行コメントを一時的にすべて非表示にします（再読み込みで表示に戻ります）。チェック済みのみの非表示は設定から切り替えられます"><span aria-hidden="true">🙈</span></button>
   </div>
+  <div class="text-filter-group" id="text-filter-group" role="search">
+    <input type="search" id="text-filter-input" class="text-filter-input" placeholder="ハンクを絞り込み" aria-label="文字列でハンクを絞り込み" data-tooltip="入力した文字列を含む行があるハンクのみ表示します（差分の行内容が対象。他の絞り込みと併用可）" autocomplete="off" spellcheck="false">
+    <label class="filter-checkbox-label text-filter-option" data-tooltip="大文字・小文字を区別する"><input type="checkbox" id="text-filter-case-checkbox" aria-label="大文字・小文字を区別"><span aria-hidden="true">Aa</span></label>
+    <label class="filter-checkbox-label text-filter-option" data-tooltip="正規表現として扱う"><input type="checkbox" id="text-filter-regex-checkbox" aria-label="正規表現"><span aria-hidden="true">.*</span></label>
+  </div>
   <button type="button" class="settings-toggle-btn topbar-icon" id="settings-modal-open-btn" aria-label="設定" data-tooltip="設定" aria-haspopup="dialog" aria-controls="settings-modal-overlay" aria-expanded="false">
     <span aria-hidden="true">⚙️</span>
   </button>

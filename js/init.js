@@ -77,6 +77,55 @@ function initTopbarTooltips() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Top bar text filter
+// ─────────────────────────────────────────────────────────────────────────────
+// Typing in the text box re-renders the diff (debounced) to show only hunks
+// with a line containing the query; the Aa / .* checkboxes toggle case
+// sensitivity and regular-expression matching. Nothing is persisted. An
+// invalid regular expression marks the box as invalid and shows every hunk.
+
+const TEXT_FILTER_DEBOUNCE_MS = 150;
+
+function initTextFilter() {
+  const input = document.getElementById('text-filter-input');
+  const caseCheckbox = document.getElementById('text-filter-case-checkbox');
+  const regexCheckbox = document.getElementById('text-filter-regex-checkbox');
+  const defaultTooltip = input.dataset.tooltip;
+  let timer = null;
+
+  const apply = () => {
+    clearTimeout(timer);
+    timer = null;
+    app.textFilter = {
+      query: input.value,
+      caseSensitive: caseCheckbox.checked,
+      regex: regexCheckbox.checked,
+    };
+    const invalid = app.textFilter.regex && app.textFilter.query !== '' && !compileTextFilterRegex(app.textFilter);
+    input.classList.toggle('invalid', invalid);
+    input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    input.dataset.tooltip = invalid ? '正規表現が正しくありません（絞り込みは無効です）' : defaultTooltip;
+    refreshTopbarTooltip();
+    renderDiff();
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(apply, TEXT_FILTER_DEBOUNCE_MS);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && input.value !== '') {
+      // Clearing the box is this Escape's only effect (don't also close the memo panel).
+      e.stopPropagation();
+      input.value = '';
+      apply();
+    }
+  });
+  caseCheckbox.addEventListener('change', apply);
+  regexCheckbox.addEventListener('change', apply);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Initialise
 // ─────────────────────────────────────────────────────────────────────────────
 (async function init() {
@@ -104,6 +153,8 @@ function initTopbarTooltips() {
     saveCommentFilter(app.commentFilter);
     renderDiff();
   });
+
+  initTextFilter();
 
   app.hideDoneLineComments = loadHideDoneLineComments();
   applyLineCommentVisibility();
