@@ -164,15 +164,29 @@ function renderDiff() {
 
   const filter = app.reviewFilter;
   const reviewFilterActive = isReviewFilterActive(filter);
-  const filterActive = reviewFilterActive || app.commentFilter;
+  const textMatcher = buildTextFilterMatcher(app.textFilter);
+  const filterActive = reviewFilterActive || app.commentFilter || !!textMatcher;
   let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
   let renderedSections = 0;
 
-  // Whether a hunk passes both the review-status filter and the
-  // "コメントありのみ" filter (AND-ed together).
+  // hunkVisible() runs up to three times per hunk below; cache the text match
+  // (the costliest check) per hunk object for this render.
+  const textMatchCache = new Map();
+  const hunkPassesText = (hunk) => {
+    let passes = textMatchCache.get(hunk);
+    if (passes === undefined) {
+      passes = hunkPassesTextFilter(hunk, textMatcher);
+      textMatchCache.set(hunk, passes);
+    }
+    return passes;
+  };
+
+  // Whether a hunk passes the review-status filter, the "コメントありのみ"
+  // filter and the text filter (all AND-ed together).
   const hunkVisible = (filePath, hunk, status) =>
     (!reviewFilterActive || hunkPassesReviewFilter(status, filter)) &&
-    (!app.commentFilter || countLineComments(lineCommentsForHunk(projectLineComments, filePath, hunk.hash)) > 0);
+    (!app.commentFilter || countLineComments(lineCommentsForHunk(projectLineComments, filePath, hunk.hash)) > 0) &&
+    (!textMatcher || hunkPassesText(hunk));
 
   // Collect files that will actually be rendered (respects the filters)
   const visibleFiles = filterActive
@@ -249,7 +263,7 @@ function renderDiff() {
   if (filterActive && renderedSections === 0) {
     const msg = document.createElement('div');
     msg.className = 'empty-state';
-    const onlyNeedsChanges = !app.commentFilter && filter.needs_changes && !filter.unreviewed && !filter.approved && !filter.on_hold;
+    const onlyNeedsChanges = !app.commentFilter && !textMatcher && filter.needs_changes && !filter.unreviewed && !filter.approved && !filter.on_hold;
     if (onlyNeedsChanges) {
       msg.innerHTML = '<span class="icon" aria-hidden="true">🎉</span>「要修正」のハンクはありません';
     } else {
@@ -279,6 +293,42 @@ function renderDiff() {
  */
 function hunkPassesReviewFilter(status, filter) {
   return !!filter[status || 'unreviewed'];
+}
+
+/**
+ * Builds a `(text) => boolean` line matcher from an app.textFilter-shaped
+ * { query, caseSensitive, regex }, or returns null when the filter is
+ * inactive (empty query) or the query is an invalid regular expression —
+ * in both cases every hunk is shown.
+ */
+function buildTextFilterMatcher(textFilter) {
+  const query = textFilter.query;
+  if (!query) return null;
+  if (textFilter.regex) {
+    const re = compileTextFilterRegex(textFilter);
+    return re ? (text) => re.test(text) : null;
+  }
+  if (textFilter.caseSensitive) return (text) => text.includes(query);
+  const lowered = query.toLowerCase();
+  return (text) => text.toLowerCase().includes(lowered);
+}
+
+/** The text filter's query as a RegExp (no 'g' flag, so test() is stateless), or null if it doesn't compile. */
+function compileTextFilterRegex(textFilter) {
+  try {
+    return new RegExp(textFilter.query, textFilter.caseSensitive ? '' : 'i');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether any of the hunk's diff lines (added, removed or context; without
+ * the leading +/-/space marker) satisfies `matcher`. "\ No newline at end of
+ * file" marker lines are not diff content and never match.
+ */
+function hunkPassesTextFilter(hunk, matcher) {
+  return hunk.lines.some(line => !line.startsWith('\\') && matcher(line.slice(1)));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -105,6 +105,8 @@ const app = {
   reviewFilter: loadReviewFilter(),
   /** @type {boolean} When true, renderDiff() shows only hunks with at least one line comment (AND-ed with reviewFilter) */
   commentFilter: false,
+  /** @type {{query: string, caseSensitive: boolean, regex: boolean}} Text filter: when query is non-empty, renderDiff() shows only hunks with a diff line containing it (AND-ed with the other filters; not persisted) */
+  textFilter: { query: '', caseSensitive: false, regex: false },
   /** @type {boolean} When true, checked (done) line comments are hidden in the diff and done memos/line comments in the memo panel lists (persisted, SK_HIDE_DONE_LINE_COMMENTS) */
   hideDoneLineComments: false,
   /** @type {boolean} When true, every line comment is temporarily hidden in the diff (not persisted; resets on reload) */

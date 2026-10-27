@@ -131,6 +131,46 @@ body {
 .line-comment-hide-all-btn:hover:not([aria-pressed="true"]) { background: #373e47; }
 .line-comment-hide-all-btn[aria-pressed="true"] { background: #58a6ff; color: #0b1116; }
 
+/* Text filter in the top bar (see "Top bar text filter" in js/init.js). */
+.text-filter-group {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c9d1d9;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.text-filter-input {
+  width: 180px;
+  min-width: 80px;
+  flex: 0 1 180px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #e6edf3;
+  background: #1c2128;
+  border: 1px solid #444c56;
+  border-radius: 6px;
+  outline: none;
+}
+
+.text-filter-input:focus { border-color: #58a6ff; }
+.text-filter-input.invalid { border-color: #f85149; }
+.text-filter-input.invalid:focus { outline: 2px solid #58a6ff; outline-offset: -1px; }
+
+.text-filter-error {
+  color: #f85149;
+  font-size: 12px;
+}
+
+.text-filter-option {
+  gap: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .filter-checkbox-group-label {
   white-space: nowrap;
 }

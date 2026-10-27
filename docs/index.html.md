@@ -158,6 +158,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/collection-auto-rules.js` | **Collection auto-add rules — data layer** | コレクション自動追加ルール（issue #132）の保存（`loadCollectionAutoRules()` 等）、ファイル名との照合（`matchCollectionAutoRules()`）、新規プロジェクトへの適用（`applyCollectionAutoRulesToProject()`）、既存プロジェクトへの一括適用（`applyCollectionAutoRulesToExistingProjects()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
 | `js/collection-auto-rules.js` | **Collection auto-add rules — settings modal UI** | 設定モーダルの「コレクション自動追加ルール」欄（ルール一覧の ↑↓✕、追加時の正規表現エラー表示、テスト入力欄のプレビュー、「既存のプロジェクトに適用…」ボタン） |
 | `js/init.js` | **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
+| `js/init.js` | **Top bar text filter** | `initTextFilter()` — トップバーのテキストフィルタ（`#text-filter-input`、大小区別 `#text-filter-case-checkbox`、正規表現 `#text-filter-regex-checkbox`）の入力を `app.textFilter` に反映して `renderDiff()` する（入力は `TEXT_FILTER_DEBOUNCE_MS` でデバウンス、`Esc` でクリア）。不正な正規表現は入力欄に `.invalid` / `aria-invalid` を付けて入力欄の隣に「正規表現エラー」（`#text-filter-error`）を表示し、ツールチップをエラー文言に差し替えたうえで `app.textFilter` を更新しない（直前の条件を維持）。クエリが空のままのオプション切り替えなど、結果が変わらない変更では再描画しない |
 | `js/init.js` | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションは各ファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名で `js/` 配下を検索してください。
@@ -298,6 +299,7 @@ const app = {
   wordDiff: false,           // 単語単位差分表示（word-diff）のON/OFF。viewMode とは独立
   reviewFilter: { unreviewed: true, approved: true, needs_changes: true, on_hold: true }, // 表示するハンクをステータス別に絞り込むチェックボックス群の状態
   commentFilter: false,      // true のとき行コメントが付いたハンクのみ表示（reviewFilter と AND）
+  textFilter: { query: '', caseSensitive: false, regex: false }, // テキストフィルタ。query が空でなければその文字列を含む行があるハンクのみ表示（他のフィルタと AND。保存しない）
   hideDoneLineComments: false, // true のとき diff 内のチェック済み行コメントと、メモパネル一覧の対応済みメモ・行コメントを非表示（SK_HIDE_DONE_LINE_COMMENTS に保存）
   hideAllLineComments: false,  // true のとき diff 内の行コメントを一時的にすべて非表示（保存しない。再読み込みで表示に戻る）
   focusedHunkIndex: -1,      // キーボードフォーカス中のハンクインデックス
@@ -518,9 +520,13 @@ renderDiff()
   ├─ app.parsedDiff が null → 空状態表示して終了
   │
   ├─ for each file:
-  │     ├─ フィルタ（isReviewFilterActive(filter) または app.commentFilter）が有効かつ、条件に合うハンクが1つも無い → ファイルごとスキップ
+  │     ├─ フィルタ（isReviewFilterActive(filter)、app.commentFilter、またはテキストフィルタ）が有効かつ、条件に合うハンクが1つも無い → ファイルごとスキップ
   │     │  （表示フィルタのチェックボックス「未レビュー/承認/要修正/保留」で選ばれたステータスのみ表示。
-  │     │   「💬コメントあり」が ON なら、さらに行コメントのあるハンクに限定（AND））
+  │     │   「💬コメントあり」が ON なら、さらに行コメントのあるハンクに限定（AND）。
+  │     │   テキストフィルタは buildTextFilterMatcher(app.textFilter) で行マッチャーを作り、
+  │     │   hunkPassesTextFilter() でハンク内のいずれかの行内容（先頭の +/-/空白を除く。
+  │     │   "\ No newline" 行は対象外）が一致するハンクに限定（AND）。クエリが空のときは無効。
+  │     │   一致判定はハンクごとに1回だけ行いキャッシュする）
   │     ├─ file.commit があり、直前に描画したファイルの commit.hash と異なる
   │     │     → buildCommitSectionHeader(file.commit) を挿入（git log -p 入力のみ。commit が null の
   │     │        通常の git diff 入力では一切挿入されない）
@@ -850,6 +856,7 @@ init()
   ├─ loadViewMode() → updateViewModeButtons()
   ├─ reviewFilter（表示フィルター）の復元
   ├─ commentFilter（「コメントあり」フィルター）の復元
+  ├─ initTextFilter()                          テキストフィルタのイベント登録（状態は保存しない）
   ├─ hideDoneLineComments（行コメントの「チェック済み非表示」）の復元 → applyLineCommentVisibility()
   ├─ initDiffFontSettings()                    差分のフォント（SK_DIFF_FONT）の復元・反映・イベント登録
   ├─ 「コレクションの初期状態」セレクトの復元・変更イベント登録
