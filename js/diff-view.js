@@ -169,12 +169,24 @@ function renderDiff() {
   let totalHunks = 0, totalReviewed = 0, totalNeedsChanges = 0, totalOnHold = 0;
   let renderedSections = 0;
 
+  // hunkVisible() runs up to three times per hunk below; cache the text match
+  // (the costliest check) per hunk object for this render.
+  const textMatchCache = new Map();
+  const hunkPassesText = (hunk) => {
+    let passes = textMatchCache.get(hunk);
+    if (passes === undefined) {
+      passes = hunkPassesTextFilter(hunk, textMatcher);
+      textMatchCache.set(hunk, passes);
+    }
+    return passes;
+  };
+
   // Whether a hunk passes the review-status filter, the "コメントありのみ"
   // filter and the text filter (all AND-ed together).
   const hunkVisible = (filePath, hunk, status) =>
     (!reviewFilterActive || hunkPassesReviewFilter(status, filter)) &&
     (!app.commentFilter || countLineComments(lineCommentsForHunk(projectLineComments, filePath, hunk.hash)) > 0) &&
-    (!textMatcher || hunkPassesTextFilter(hunk, textMatcher));
+    (!textMatcher || hunkPassesText(hunk));
 
   // Collect files that will actually be rendered (respects the filters)
   const visibleFiles = filterActive
@@ -304,7 +316,7 @@ function buildTextFilterMatcher(textFilter) {
 /** The text filter's query as a RegExp (no 'g' flag, so test() is stateless), or null if it doesn't compile. */
 function compileTextFilterRegex(textFilter) {
   try {
-    return new RegExp(textFilter.query, textFilter.caseSensitive ? 'u' : 'iu');
+    return new RegExp(textFilter.query, textFilter.caseSensitive ? '' : 'i');
   } catch {
     return null;
   }

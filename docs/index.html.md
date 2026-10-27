@@ -158,7 +158,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/collection-auto-rules.js` | **Collection auto-add rules — data layer** | コレクション自動追加ルール（issue #132）の保存（`loadCollectionAutoRules()` 等）、ファイル名との照合（`matchCollectionAutoRules()`）、新規プロジェクトへの適用（`applyCollectionAutoRulesToProject()`）、既存プロジェクトへの一括適用（`applyCollectionAutoRulesToExistingProjects()`）。詳細は [Collections](#collectionsプロジェクトコレクション) を参照 |
 | `js/collection-auto-rules.js` | **Collection auto-add rules — settings modal UI** | 設定モーダルの「コレクション自動追加ルール」欄（ルール一覧の ↑↓✕、追加時の正規表現エラー表示、テスト入力欄のプレビュー、「既存のプロジェクトに適用…」ボタン） |
 | `js/init.js` | **Top bar tooltips** | トップバーのアイコン化されたボタン・チェックボックス（各要素の `data-tooltip`）の説明を、ホバー／キーボードフォーカス時に共有要素 `#topbar-tooltip` へ即時表示する `initTopbarTooltips()`。ツールチップは要素の下に表示し、画面端ではみ出さないよう左右位置をクランプする。メモボタンの未完了件数の内訳も `refreshMemoBadge()` がこのツールチップ文言に反映する |
-| `js/init.js` | **Top bar text filter** | `initTextFilter()` — トップバーのテキストフィルタ（`#text-filter-input`、大小区別 `#text-filter-case-checkbox`、正規表現 `#text-filter-regex-checkbox`）の入力を `app.textFilter` に反映して `renderDiff()` する（入力は `TEXT_FILTER_DEBOUNCE_MS` でデバウンス、`Esc` でクリア）。不正な正規表現は入力欄に `.invalid` / `aria-invalid` を付け、ツールチップをエラー文言に差し替える |
+| `js/init.js` | **Top bar text filter** | `initTextFilter()` — トップバーのテキストフィルタ（`#text-filter-input`、大小区別 `#text-filter-case-checkbox`、正規表現 `#text-filter-regex-checkbox`）の入力を `app.textFilter` に反映して `renderDiff()` する（入力は `TEXT_FILTER_DEBOUNCE_MS` でデバウンス、`Esc` でクリア）。不正な正規表現は入力欄に `.invalid` / `aria-invalid` を付け、ツールチップをエラー文言に差し替えたうえで `app.textFilter` を更新しない（直前の条件を維持）。クエリが空のままのオプション切り替えなど、結果が変わらない変更では再描画しない |
 | `js/init.js` | **Initialise** | `init()` — 起動時初期化 |
 
 > セクションは各ファイル内で上記の順に出現します（正確な行番号はメンテナンスコストが高いため記載していません）。該当箇所を探す際は、セクション区切りコメント（`// ──…──`）の直後にあるセクション名で `js/` 配下を検索してください。
@@ -525,8 +525,8 @@ renderDiff()
   │     │   「💬コメントあり」が ON なら、さらに行コメントのあるハンクに限定（AND）。
   │     │   テキストフィルタは buildTextFilterMatcher(app.textFilter) で行マッチャーを作り、
   │     │   hunkPassesTextFilter() でハンク内のいずれかの行内容（先頭の +/-/空白を除く。
-  │     │   "\ No newline" 行は対象外）が一致するハンクに限定（AND）。クエリが空、または
-  │     │   正規表現モードで不正な式のときは無効（全件表示））
+  │     │   "\ No newline" 行は対象外）が一致するハンクに限定（AND）。クエリが空のときは無効。
+  │     │   一致判定はハンクごとに1回だけ行いキャッシュする）
   │     ├─ file.commit があり、直前に描画したファイルの commit.hash と異なる
   │     │     → buildCommitSectionHeader(file.commit) を挿入（git log -p 入力のみ。commit が null の
   │     │        通常の git diff 入力では一切挿入されない）

@@ -70,9 +70,11 @@ function initTopbarTooltips() {
   topbar.addEventListener('focusout', () => { focused = null; render(); });
   // Clicking opens modals / re-renders; drop the tooltip so it doesn't linger.
   topbar.addEventListener('click', () => { hovered = null; focused = null; render(); });
+  // Capture phase, so it still runs when a control stops Escape's propagation
+  // (e.g. the text filter clearing its box).
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { hovered = null; focused = null; render(); }
-  });
+  }, true);
   window.addEventListener('resize', render);
 }
 
@@ -82,7 +84,8 @@ function initTopbarTooltips() {
 // Typing in the text box re-renders the diff (debounced) to show only hunks
 // with a line containing the query; the Aa / .* checkboxes toggle case
 // sensitivity and regular-expression matching. Nothing is persisted. An
-// invalid regular expression marks the box as invalid and shows every hunk.
+// invalid regular expression marks the box as invalid and keeps the previous
+// filter applied, so the view doesn't flip to unfiltered mid-typing.
 
 const TEXT_FILTER_DEBOUNCE_MS = 150;
 
@@ -96,17 +99,25 @@ function initTextFilter() {
   const apply = () => {
     clearTimeout(timer);
     timer = null;
-    app.textFilter = {
+    const next = {
       query: input.value,
       caseSensitive: caseCheckbox.checked,
       regex: regexCheckbox.checked,
     };
-    const invalid = app.textFilter.regex && app.textFilter.query !== '' && !compileTextFilterRegex(app.textFilter);
+    const invalid = next.regex && next.query !== '' && !compileTextFilterRegex(next);
     input.classList.toggle('invalid', invalid);
     input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
-    input.dataset.tooltip = invalid ? '正規表現が正しくありません（絞り込みは無効です）' : defaultTooltip;
+    input.dataset.tooltip = invalid ? '正規表現が正しくありません（直前の条件で絞り込んでいます）' : defaultTooltip;
     refreshTopbarTooltip();
-    renderDiff();
+    if (invalid) return;
+
+    const prev = app.textFilter;
+    app.textFilter = next;
+    // Re-render only when the visible result can change (the options are
+    // irrelevant while the query is empty).
+    const unchanged = prev.query === next.query &&
+      (next.query === '' || (prev.caseSensitive === next.caseSensitive && prev.regex === next.regex));
+    if (!unchanged) renderDiff();
   };
 
   input.addEventListener('input', () => {
@@ -114,7 +125,8 @@ function initTextFilter() {
     timer = setTimeout(apply, TEXT_FILTER_DEBOUNCE_MS);
   });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && input.value !== '') {
+    // e.isComposing: Escape that cancels an IME conversion must not clear the box.
+    if (e.key === 'Escape' && !e.isComposing && input.value !== '') {
       // Clearing the box is this Escape's only effect (don't also close the memo panel).
       e.stopPropagation();
       input.value = '';
