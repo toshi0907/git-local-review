@@ -750,8 +750,7 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   if (lineComments === undefined) lineComments = getHunkLineComments(filePath, hunk.hash);
   if (keywordGroups === undefined) keywordGroups = getActiveKeywordGroups();
   const card = document.createElement('div');
-  const startsCollapsed = status === 'approved';
-  card.className = 'hunk-card' + (status ? ' status-' + status : '') + (startsCollapsed ? ' collapsed' : '');
+  card.className = 'hunk-card' + (status ? ' status-' + status : '');
   card.dataset.filePath = filePath;
   card.dataset.hunkHash = hunk.hash;
   // Placeholder height used by `content-visibility: auto` (see .hunk-card in
@@ -767,8 +766,8 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
 
   const toggleBtn = document.createElement('button');
   toggleBtn.className = 'hunk-toggle-btn';
-  toggleBtn.title = startsCollapsed ? '展開' : '折りたたむ';
-  toggleBtn.textContent = startsCollapsed ? '▶' : '▼';
+  toggleBtn.title = '折りたたむ';
+  toggleBtn.textContent = '▼';
   toggleBtn.addEventListener('click', () => {
     setHunkCollapsedState(card, !card.classList.contains('collapsed'));
   });
@@ -886,8 +885,8 @@ function setHunkCollapsedState(card, collapsed) {
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * Sets (or clears, if `newStatus` is null) a hunk's review status, persists
- * it, updates the card's DOM in place (status classes, status buttons,
- * collapse state), and refreshes progress/filtering.
+ * it, updates the card's DOM in place (status classes, status buttons),
+ * and refreshes progress/filtering. The collapse state is left as is.
  * @param {HTMLElement} card
  * @param {string} filePath
  * @param {string} hash
@@ -922,7 +921,6 @@ function setHunkReviewStatus(card, filePath, hash, newStatus) {
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-pressed', String(isActive));
     }
-    setHunkCollapsedState(target, newStatus === 'approved');
   }
 
   if (isReviewFilterActive(app.reviewFilter) && !hunkPassesReviewFilter(newStatus, app.reviewFilter)) {

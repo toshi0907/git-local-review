@@ -210,7 +210,7 @@ test/                ← テスト用 .diff サンプルファイル
           ├─ saveAllReviews()          localStorage に保存
           ├─ カードの status-* クラス / ボタンの active・aria-pressed を更新
           │  （同じ filePath + hash のカードが複数表示されていれば、すべてを同じ状態に更新）
-          ├─ collapsed は status === 'approved' のときだけ true に
+          ├─ 折りたたみ状態は変更しない（手動で折りたたんだカードはそのまま）
           └─ 新しい状態がフィルタ条件に一致する（isReviewFilterActive(app.reviewFilter) が false の場合を含む）なら refreshProgress() のみ。
              一致しなくなった場合は removeHunkCardInPlace() でそのカードだけを DOM と app.hunkCards から取り除き
              （フォーカスは同じ位置＝次のハンクに留まる）、refreshProgress()。
@@ -552,7 +552,7 @@ buildHunkCard(filePath, hunk, status, language, lineComments?, keywordGroups?): 
 
 `lineComments` はこのハンクの `{ [lineIdx]: LineComment[] }`（無ければ `null`）。省略時は localStorage から読み込みます（`renderDiff()` は1回だけ読み込んだものを渡します）。
 
-`status` は `'approved' | 'needs_changes' | 'on_hold' | null`（`null` = 未レビュー）。カードには `status-approved` 等のクラスが付き、`status === 'approved'` のときのみ初期状態で折りたたまれます。
+`status` は `'approved' | 'needs_changes' | 'on_hold' | null`（`null` = 未レビュー）。カードには `status-approved` 等のクラスが付きます。状態にかかわらず初期状態は展開で、折りたたみはヘッダーの ▼/▶ ボタンによる手動操作のみです（承認済みハンクの表示・非表示はツールバーのレビュー状態フィルタで切り替えます）。
 
 1 つのハンクを表すカード要素を生成します。
 
