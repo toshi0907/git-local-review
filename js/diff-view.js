@@ -323,6 +323,153 @@ function compileTextFilterRegex(textFilter) {
 }
 
 /**
+ * Builds a `(text) => Array<{start, end}>` function returning the sorted,
+ * non-overlapping ranges (UTF-16 offsets) of `text` matched by the text
+ * filter, used to highlight the matched text within diff lines; or null when
+ * the filter is inactive (empty query) or the query is an invalid regular
+ * expression. Uses the same comparison rules as buildTextFilterMatcher():
+ * - plain, case-sensitive: exact substring search;
+ * - plain, case-insensitive: substring search on the toLowerCase()d text,
+ *   with a per-code-point offset map back to `text` (lowercasing can change
+ *   length);
+ * - regex: the query compiled with 'g' (+ 'i' unless case-sensitive), no 'u'
+ *   flag, exactly like compileTextFilterRegex(). Zero-length matches are
+ *   skipped, and a range that would split a surrogate pair is widened to
+ *   cover the whole pair (so e.g. `.` never highlights half an emoji).
+ */
+function buildTextFilterRangeFinder(textFilter) {
+  const query = textFilter.query;
+  if (!query) return null;
+
+  if (textFilter.regex) {
+    const base = compileTextFilterRegex(textFilter);
+    if (!base) return null;
+    const re = new RegExp(base.source, base.flags + 'g');
+    return (text) => {
+      const ranges = [];
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        if (m[0].length === 0) { re.lastIndex++; continue; }
+        ranges.push(widenToSurrogatePairs(text, m.index, m.index + m[0].length));
+      }
+      return mergeRanges(ranges);
+    };
+  }
+
+  if (textFilter.caseSensitive) {
+    return (text) => findAllSubstringRanges(text, query, null);
+  }
+
+  const lowered = query.toLowerCase();
+  return (text) => {
+    // map[i] = offset in `text` of the code point that produced lowerText[i];
+    // map[lowerText.length] = text.length.
+    let lowerText = '';
+    const map = [];
+    for (let i = 0; i < text.length;) {
+      const cp = text.codePointAt(i);
+      const ch = String.fromCodePoint(cp);
+      const low = ch.toLowerCase();
+      for (let k = 0; k < low.length; k++) map.push(i);
+      lowerText += low;
+      i += ch.length;
+    }
+    map.push(text.length);
+    // Search the whole-string lowercasing (what buildTextFilterMatcher()
+    // compares against): it differs from per-code-point lowercasing only in
+    // context-sensitive, length-preserving mappings such as a word-final 'Σ'
+    // → 'ς', so the per-code-point offset map still applies. Fall back to the
+    // per-code-point string should the lengths ever differ.
+    const wholeLower = text.toLowerCase();
+    const haystack = wholeLower.length === lowerText.length ? wholeLower : lowerText;
+    return findAllSubstringRanges(haystack, lowered, map, text);
+  };
+}
+
+/**
+ * Non-overlapping occurrences of `needle` in `haystack`. With `map` (see
+ * buildTextFilterRangeFinder), offsets are translated back to `original`:
+ * the start to the code point it begins in, the end to just past the code
+ * point containing the match's last unit.
+ */
+function findAllSubstringRanges(haystack, needle, map, original) {
+  const ranges = [];
+  let from = 0;
+  let i;
+  while ((i = haystack.indexOf(needle, from)) !== -1) {
+    const endIdx = i + needle.length;
+    if (map) {
+      const start = map[i];
+      const lastStart = map[endIdx - 1];
+      const end = lastStart + String.fromCodePoint(original.codePointAt(lastStart)).length;
+      ranges.push({ start, end });
+    } else {
+      ranges.push({ start: i, end: endIdx });
+    }
+    from = endIdx;
+  }
+  return map ? mergeRanges(ranges) : ranges;
+}
+
+/** Widens [start, end) so neither edge falls between a surrogate pair's halves. */
+function widenToSurrogatePairs(text, start, end) {
+  const isHigh = (c) => c >= 0xD800 && c <= 0xDBFF;
+  const isLow  = (c) => c >= 0xDC00 && c <= 0xDFFF;
+  if (start > 0 && isLow(text.charCodeAt(start)) && isHigh(text.charCodeAt(start - 1))) start--;
+  if (end < text.length && isLow(text.charCodeAt(end)) && isHigh(text.charCodeAt(end - 1))) end++;
+  return { start, end };
+}
+
+/**
+ * Wraps every text-filter match within `td`'s line content (everything but
+ * the `.line-prefix` marker) in <mark class="text-filter-hit">. Matches are
+ * found by `findRanges` (buildTextFilterRangeFinder()) on the cell's whole
+ * text, so a match spanning several syntax-highlighting / word-diff /
+ * keyword-highlight nodes is still highlighted (one <mark> per text node it
+ * covers). Applied after keyword highlight so the filter's fixed yellow wins.
+ */
+function applyTextFilterHighlight(td, findRanges) {
+  const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.parentElement.closest('.line-prefix')) textNodes.push(node);
+  }
+  if (textNodes.length === 0) return;
+  const text = textNodes.map(n => n.nodeValue).join('');
+
+  const ranges = findRanges(text);
+  if (ranges.length === 0) return;
+
+  let offset = 0;
+  let ri = 0;
+  for (const textNode of textNodes) {
+    const value = textNode.nodeValue;
+    const nodeStart = offset;
+    const nodeEnd = offset + value.length;
+    offset = nodeEnd;
+    while (ri < ranges.length && ranges[ri].end <= nodeStart) ri++;
+    if (ri >= ranges.length || ranges[ri].start >= nodeEnd) continue;
+
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (let k = ri; k < ranges.length && ranges[k].start < nodeEnd; k++) {
+      const s = Math.max(ranges[k].start, nodeStart) - nodeStart;
+      const e = Math.min(ranges[k].end, nodeEnd) - nodeStart;
+      if (s > pos) frag.appendChild(document.createTextNode(value.slice(pos, s)));
+      const mark = document.createElement('mark');
+      mark.className = 'text-filter-hit';
+      mark.textContent = value.slice(s, e);
+      frag.appendChild(mark);
+      pos = e;
+    }
+    if (pos < value.length) frag.appendChild(document.createTextNode(value.slice(pos)));
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
+}
+
+/**
  * Whether any of the hunk's diff lines (added, removed or context; without
  * the leading +/-/space marker) satisfies `matcher`. "\ No newline at end of
  * file" marker lines are not diff content and never match.
@@ -485,9 +632,10 @@ function computeLineRecords(hunk) {
  * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
  * @param {Array<{color:string, keywords:string[]}>} [keywordGroups] - active keyword categories to highlight within this cell's text (see applyKeywordHighlight)
  * @param {Array<{text:string, changed:boolean}>|null} [wordDiffSegments] - when set (word-diff mode, paired del/add line), renders these segments instead of hlLines/plain content
+ * @param {Function|null} [textFilterRanges] - range finder of the active text filter (buildTextFilterRangeFinder()) whose matches are highlighted (see applyTextFilterHighlight)
  * @returns {HTMLTableCellElement}
  */
-function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegments) {
+function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegments, textFilterRanges) {
   const td = document.createElement('td');
   td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
   if (!record) return td;
@@ -521,6 +669,7 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegm
   }
 
   if (keywordGroups && keywordGroups.length) applyKeywordHighlight(td, keywordGroups);
+  if (textFilterRanges && record.type !== '\\') applyTextFilterHighlight(td, textFilterRanges);
 
   return td;
 }
@@ -530,7 +679,7 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegm
  * `lineComments` is this hunk's { [lineIdx]: LineComment[] } map (or null),
  * whose comments are rendered as rows right below the line they belong to.
  */
-function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
+function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRanges) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
   const wordDiffPairs = app.wordDiff ? computeWordDiffPairs(records) : null;
@@ -569,7 +718,7 @@ function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
 
     const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
     const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
-    const tdCon = buildContentCell(record, hlLines, null, keywordGroups, wordDiffSegments);
+    const tdCon = buildContentCell(record, hlLines, null, keywordGroups, wordDiffSegments, textFilterRanges);
     tdOld.appendChild(buildLineCommentAddButton(record));
     for (const td of [tdOld, tdNew, tdCon]) td.dataset.lineIdx = String(record.idx);
     tr.dataset.anchorIdx = String(record.idx);
@@ -592,7 +741,7 @@ function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
  * for side-by-side diff views and does not require a full realignment
  * (Myers-style) of old vs. new content.
  */
-function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
+function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRanges) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -617,13 +766,13 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
     tdOldNum.className = 'line-num ' + oldCls;
     tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
 
-    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups, delSegments);
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups, delSegments, textFilterRanges);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider ' + newCls;
     tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
 
-    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups, addSegments);
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups, addSegments, textFilterRanges);
 
     if (delRec) {
       tdOldNum.appendChild(buildLineCommentAddButton(delRec));
@@ -663,7 +812,7 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
     // Context rows show identical content on both sides; build it once and
     // clone the node for the second column instead of re-parsing the same
     // highlighted HTML twice.
-    const tdOldContent = buildContentCell(record, hlLines, null, keywordGroups);
+    const tdOldContent = buildContentCell(record, hlLines, null, keywordGroups, null, textFilterRanges);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider';
@@ -816,6 +965,7 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   // Pre-compute highlighted lines for this hunk (may be null if unavailable).
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = getHighlightedHunkLines(hunk, language, filePath);
+  const textFilterRanges = buildTextFilterRangeFinder(app.textFilter);
 
   if (isSplit) {
     // With table-layout: fixed, column widths come from the first row; the
@@ -837,9 +987,9 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
     trHead.appendChild(thOld); trHead.appendChild(thNew);
     thead.appendChild(trHead);
     table.appendChild(thead);
-    table.appendChild(buildSplitTbody(hunk, hlLines, keywordGroups, lineComments));
+    table.appendChild(buildSplitTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRanges));
   } else {
-    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments));
+    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRanges));
   }
 
   body.appendChild(table);

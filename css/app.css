@@ -1439,6 +1439,13 @@ body {
   border-radius: 2px;
 }
 
+/* Text filter matches (fixed yellow; drawn on top of keyword highlight). */
+.text-filter-hit {
+  background: #ffff00;
+  color: #24292e;
+  border-radius: 2px;
+}
+
 .line-prefix {
   display: inline-block;
   width: calc(var(--diff-font-size) + 2px);
