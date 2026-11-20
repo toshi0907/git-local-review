@@ -564,7 +564,7 @@ buildHunkCard(filePath, hunk, status, language, lineComments?, keywordGroups?): 
 3. `REVIEW_STATUSES` から承認/要修正/保留の3ボタン（`.review-status-group`）を生成。クリックで `setHunkReviewStatus()` を呼び出し、既にアクティブなボタンをもう一度押すと未レビューに戻る
 4. Unified / Split の分岐で異なる `<table>` 構造を構築（行コメントの「+」ボタンとコメント行もここで生成。[Line comments](#line-comments) 参照）
 5. キーワードハイライト (`applyKeywordHighlight()`) を適用
-   - テキストフィルタが有効（クエリが空でなく、正規表現として正しい）な場合は、続けて `applyTextFilterHighlight()` で一致箇所を `<mark class="text-filter-hit">`（背景色は固定の黄色）で囲む。一致範囲を返す関数は `buildTextFilterRangeFinder(app.textFilter)` がハンクごとに1回生成し、表示判定（`buildTextFilterMatcher()`）と同じ比較規則を使う（通常文字列の大小区別なしは `toLowerCase()` した文字列での部分一致で、コードポイント単位の位置対応表で元の位置に戻す。正規表現は `compileTextFilterRegex()` と同じフラグ＋`g`。長さ0の一致は除外し、サロゲートペアの途中で切れる範囲はペア全体に広げる）。行頭の `+`/`-`/空白マーカー（`.line-prefix`）と "\ No newline" 行は対象外。一致はセル全体のテキストに対して求め、syntax highlight・単語差分・キーワードハイライトの複数ノードにまたがる一致もノードごとに `<mark>` を分けて囲む。キーワードハイライトの後に適用するため、重なった部分はテキストフィルタの黄色が優先される
+   - テキストフィルタが有効（クエリが空でなく、正規表現として正しい）な場合は、続けて `applyTextFilterHighlight()` で一致箇所を `<mark class="text-filter-hit">`（背景色は固定の黄色）で囲む。一致範囲を返す関数は `buildTextFilterRangeFinder(app.textFilter)` がハンクごとに1回生成し、表示判定（`buildTextFilterMatcher()`）と同じ比較規則を使う（通常文字列の大小区別なしは行全体を `toLowerCase()` した文字列での部分一致（語末の `Σ`→`ς` なども表示判定と一致）で、コードポイント単位の位置対応表で元の位置に戻す。正規表現は `compileTextFilterRegex()` と同じフラグ＋`g`。長さ0の一致は除外し、サロゲートペアの途中で切れる範囲はペア全体に広げる）。行頭の `+`/`-`/空白マーカー（`.line-prefix`）と "\ No newline" 行は対象外。一致はセル全体のテキストに対して求め、syntax highlight・単語差分・キーワードハイライトの複数ノードにまたがる一致もノードごとに `<mark>` を分けて囲む。キーワードハイライトの後に適用するため、重なった部分はテキストフィルタの黄色が優先される
 6. ハンクヘッダーに行コメント件数バッジ（`.hunk-comment-badge`）を配置し、行コメント操作用の委譲クリックリスナー（`handleLineCommentCardClick`）を登録
 
 **Unified 表示の行構造:**

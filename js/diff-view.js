@@ -329,8 +329,9 @@ function compileTextFilterRegex(textFilter) {
  * the filter is inactive (empty query) or the query is an invalid regular
  * expression. Uses the same comparison rules as buildTextFilterMatcher():
  * - plain, case-sensitive: exact substring search;
- * - plain, case-insensitive: substring search on toLowerCase()d text (done
- *   per code point with an offset map, since lowercasing can change length);
+ * - plain, case-insensitive: substring search on the toLowerCase()d text,
+ *   with a per-code-point offset map back to `text` (lowercasing can change
+ *   length);
  * - regex: the query compiled with 'g' (+ 'i' unless case-sensitive), no 'u'
  *   flag, exactly like compileTextFilterRegex(). Zero-length matches are
  *   skipped, and a range that would split a surrogate pair is widened to
@@ -375,7 +376,14 @@ function buildTextFilterRangeFinder(textFilter) {
       i += ch.length;
     }
     map.push(text.length);
-    return findAllSubstringRanges(lowerText, lowered, map, text);
+    // Search the whole-string lowercasing (what buildTextFilterMatcher()
+    // compares against): it differs from per-code-point lowercasing only in
+    // context-sensitive, length-preserving mappings such as a word-final 'Σ'
+    // → 'ς', so the per-code-point offset map still applies. Fall back to the
+    // per-code-point string should the lengths ever differ.
+    const wholeLower = text.toLowerCase();
+    const haystack = wholeLower.length === lowerText.length ? wholeLower : lowerText;
+    return findAllSubstringRanges(haystack, lowered, map, text);
   };
 }
 
