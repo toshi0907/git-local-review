@@ -208,6 +208,8 @@ function initTextFilter() {
     startProjectFileUpdateWatcher();
   } else {
     document.getElementById('open-folder-row').style.display = 'none';
+    // No FileSystemFileHandle can exist without the API, so there's nothing to reload.
+    document.getElementById('reload-all-btn').style.display = 'none';
     document.getElementById('settings-folder-row').style.display = 'none';
     document.getElementById('settings-save-section').style.display = 'none';
   }

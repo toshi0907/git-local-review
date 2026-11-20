@@ -303,6 +303,13 @@ body {
 
 #file-input { display: none; }
 
+.reload-all-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.reload-all-btn:disabled { opacity: 0.6; cursor: wait; }
+
 .io-btn-row {
   display: flex;
   gap: 8px;
