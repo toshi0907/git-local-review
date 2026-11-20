@@ -323,6 +323,77 @@ function compileTextFilterRegex(textFilter) {
 }
 
 /**
+ * The text filter's query as a global RegExp used to highlight the matched
+ * text within diff lines, or null when the filter is inactive (empty query)
+ * or the query is an invalid regular expression. Plain-text queries are
+ * escaped so they match literally.
+ */
+function buildTextFilterHighlightRegex(textFilter) {
+  const query = textFilter.query;
+  if (!query) return null;
+  const source = textFilter.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return new RegExp(source, 'g' + (textFilter.caseSensitive ? '' : 'i'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wraps every text-filter match within `td`'s line content (everything but
+ * the `.line-prefix` marker) in <mark class="text-filter-hit">. Matches are
+ * found on the cell's whole text, so a match spanning several syntax-
+ * highlighting / word-diff / keyword-highlight nodes is still highlighted
+ * (one <mark> per text node it covers). Zero-length regex matches are
+ * skipped. Applied after keyword highlight so the filter's fixed yellow wins.
+ */
+function applyTextFilterHighlight(td, re) {
+  const walker = document.createTreeWalker(td, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (!node.parentElement.closest('.line-prefix')) textNodes.push(node);
+  }
+  if (textNodes.length === 0) return;
+  const text = textNodes.map(n => n.nodeValue).join('');
+
+  const ranges = [];
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m[0].length === 0) { re.lastIndex++; continue; }
+    ranges.push({ start: m.index, end: m.index + m[0].length });
+  }
+  if (ranges.length === 0) return;
+
+  let offset = 0;
+  let ri = 0;
+  for (const textNode of textNodes) {
+    const value = textNode.nodeValue;
+    const nodeStart = offset;
+    const nodeEnd = offset + value.length;
+    offset = nodeEnd;
+    while (ri < ranges.length && ranges[ri].end <= nodeStart) ri++;
+    if (ri >= ranges.length || ranges[ri].start >= nodeEnd) continue;
+
+    const frag = document.createDocumentFragment();
+    let pos = 0;
+    for (let k = ri; k < ranges.length && ranges[k].start < nodeEnd; k++) {
+      const s = Math.max(ranges[k].start, nodeStart) - nodeStart;
+      const e = Math.min(ranges[k].end, nodeEnd) - nodeStart;
+      if (s > pos) frag.appendChild(document.createTextNode(value.slice(pos, s)));
+      const mark = document.createElement('mark');
+      mark.className = 'text-filter-hit';
+      mark.textContent = value.slice(s, e);
+      frag.appendChild(mark);
+      pos = e;
+    }
+    if (pos < value.length) frag.appendChild(document.createTextNode(value.slice(pos)));
+    textNode.parentNode.replaceChild(frag, textNode);
+  }
+}
+
+/**
  * Whether any of the hunk's diff lines (added, removed or context; without
  * the leading +/-/space marker) satisfies `matcher`. "\ No newline at end of
  * file" marker lines are not diff content and never match.
@@ -485,9 +556,10 @@ function computeLineRecords(hunk) {
  * @param {string|null} extraCls - additional CSS class(es) for this cell, or null for none
  * @param {Array<{color:string, keywords:string[]}>} [keywordGroups] - active keyword categories to highlight within this cell's text (see applyKeywordHighlight)
  * @param {Array<{text:string, changed:boolean}>|null} [wordDiffSegments] - when set (word-diff mode, paired del/add line), renders these segments instead of hlLines/plain content
+ * @param {RegExp|null} [textFilterRe] - global RegExp of the active text filter whose matches are highlighted (see applyTextFilterHighlight)
  * @returns {HTMLTableCellElement}
  */
-function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegments) {
+function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegments, textFilterRe) {
   const td = document.createElement('td');
   td.className = 'line-content' + (extraCls ? ' ' + extraCls : '');
   if (!record) return td;
@@ -521,6 +593,7 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegm
   }
 
   if (keywordGroups && keywordGroups.length) applyKeywordHighlight(td, keywordGroups);
+  if (textFilterRe && record.type !== '\\') applyTextFilterHighlight(td, textFilterRe);
 
   return td;
 }
@@ -530,7 +603,7 @@ function buildContentCell(record, hlLines, extraCls, keywordGroups, wordDiffSegm
  * `lineComments` is this hunk's { [lineIdx]: LineComment[] } map (or null),
  * whose comments are rendered as rows right below the line they belong to.
  */
-function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
+function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRe) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
   const wordDiffPairs = app.wordDiff ? computeWordDiffPairs(records) : null;
@@ -569,7 +642,7 @@ function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
 
     const tdOld = document.createElement('td'); tdOld.className = 'line-num'; tdOld.textContent = String(record.oldLabel);
     const tdNew = document.createElement('td'); tdNew.className = 'line-num'; tdNew.textContent = String(record.newLabel);
-    const tdCon = buildContentCell(record, hlLines, null, keywordGroups, wordDiffSegments);
+    const tdCon = buildContentCell(record, hlLines, null, keywordGroups, wordDiffSegments, textFilterRe);
     tdOld.appendChild(buildLineCommentAddButton(record));
     for (const td of [tdOld, tdNew, tdCon]) td.dataset.lineIdx = String(record.idx);
     tr.dataset.anchorIdx = String(record.idx);
@@ -592,7 +665,7 @@ function buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments) {
  * for side-by-side diff views and does not require a full realignment
  * (Myers-style) of old vs. new content.
  */
-function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
+function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRe) {
   const tbody = document.createElement('tbody');
   const records = computeLineRecords(hunk);
 
@@ -617,13 +690,13 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
     tdOldNum.className = 'line-num ' + oldCls;
     tdOldNum.textContent = delRec ? String(delRec.oldLabel) : '';
 
-    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups, delSegments);
+    const tdOldContent = buildContentCell(delRec, hlLines, oldCls, keywordGroups, delSegments, textFilterRe);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider ' + newCls;
     tdNewNum.textContent = addRec ? String(addRec.newLabel) : '';
 
-    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups, addSegments);
+    const tdNewContent = buildContentCell(addRec, hlLines, newCls, keywordGroups, addSegments, textFilterRe);
 
     if (delRec) {
       tdOldNum.appendChild(buildLineCommentAddButton(delRec));
@@ -663,7 +736,7 @@ function buildSplitTbody(hunk, hlLines, keywordGroups, lineComments) {
     // Context rows show identical content on both sides; build it once and
     // clone the node for the second column instead of re-parsing the same
     // highlighted HTML twice.
-    const tdOldContent = buildContentCell(record, hlLines, null, keywordGroups);
+    const tdOldContent = buildContentCell(record, hlLines, null, keywordGroups, null, textFilterRe);
 
     const tdNewNum = document.createElement('td');
     tdNewNum.className = 'line-num col-divider';
@@ -816,6 +889,7 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
   // Pre-compute highlighted lines for this hunk (may be null if unavailable).
   // When language is null, highlightHunkLines returns immediately (O(1)).
   const hlLines = getHighlightedHunkLines(hunk, language, filePath);
+  const textFilterRe = buildTextFilterHighlightRegex(app.textFilter);
 
   if (isSplit) {
     // With table-layout: fixed, column widths come from the first row; the
@@ -837,9 +911,9 @@ function buildHunkCard(filePath, hunk, status, language = null, lineComments = u
     trHead.appendChild(thOld); trHead.appendChild(thNew);
     thead.appendChild(trHead);
     table.appendChild(thead);
-    table.appendChild(buildSplitTbody(hunk, hlLines, keywordGroups, lineComments));
+    table.appendChild(buildSplitTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRe));
   } else {
-    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments));
+    table.appendChild(buildUnifiedTbody(hunk, hlLines, keywordGroups, lineComments, textFilterRe));
   }
 
   body.appendChild(table);
