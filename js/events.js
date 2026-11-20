@@ -88,6 +88,7 @@ document.getElementById('settings-folder-clear-btn').addEventListener('click', a
 });
 
 document.getElementById('settings-save-btn').addEventListener('click', saveSettingsToFolder);
+document.getElementById('reload-all-btn').addEventListener('click', reloadAllProjectFiles);
 document.getElementById('settings-load-btn').addEventListener('click', reloadSettingsFromFolderManually);
 document.getElementById('settings-reload-btn').addEventListener('click', reloadSettingsFromFolderManually);
 

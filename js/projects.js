@@ -760,16 +760,31 @@ async function loadDiffFiles(files, encodingPref = 'auto', fileHandles = null) {
  * state in place, without going through the file picker again.
  */
 async function reloadProjectFile(projectId) {
+  const result = await reloadProjectFileCore(projectId);
+  if (result.ok || !result.message) return;
+  alert(result.message);
+}
+
+/**
+ * Shared body of reloadProjectFile() / reloadAllProjectFiles(). Never shows
+ * an alert itself; returns `{ ok: true }` on success or
+ * `{ ok: false, message, reason }` (message: the full user-facing alert
+ * text, or '' when the project no longer exists; reason: a one-line
+ * summary) so a bulk reload can collect failures into one summary instead
+ * of one modal per project.
+ */
+async function reloadProjectFileCore(projectId) {
   const proj = loadProjects().find(p => p.id === projectId);
-  if (!proj) return;
+  if (!proj) return { ok: false, message: '' };
 
   const handle = await loadFileHandle(projectId);
   if (!handle) {
-    alert(
-      'このプロジェクトには再読み込み用のファイル参照が保存されていません。\n' +
-      '「📂 Diffファイルを開く」から選び直してください。'
-    );
-    return;
+    return {
+      ok: false,
+      reason: 'ファイル参照が保存されていません',
+      message: 'このプロジェクトには再読み込み用のファイル参照が保存されていません。\n' +
+        '「📂 Diffファイルを開く」から選び直してください。',
+    };
   }
 
   try {
@@ -778,13 +793,14 @@ async function reloadProjectFile(projectId) {
       permission = await handle.requestPermission({ mode: 'read' });
     }
     if (permission !== 'granted') {
-      alert(
-        'ファイルへのアクセスが許可されなかったため、保存していたファイル参照を破棄しました。\n' +
-        '「📂 Diffファイルを開く」から選び直してください。'
-      );
       await deleteFileHandleRecord(projectId);
       renderProjectList();
-      return;
+      return {
+        ok: false,
+        reason: 'ファイルへのアクセスが許可されませんでした（ファイル参照を破棄しました）',
+        message: 'ファイルへのアクセスが許可されなかったため、保存していたファイル参照を破棄しました。\n' +
+          '「📂 Diffファイルを開く」から選び直してください。',
+      };
     }
 
     const file = await handle.getFile();
@@ -792,24 +808,81 @@ async function reloadProjectFile(projectId) {
     const { text, encoding, messageEncoding } = decodeGitLog(buffer, normalizeEncoding(proj.encoding));
     const parsed = parseDiff(text);
     if (parsed.length === 0) {
-      alert(
-        '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
-        'ファイルの内容を確認してください。\n' +
-        '文字コードの判定・指定が誤っている可能性もあります。'
-      );
-      return;
+      return {
+        ok: false,
+        reason: '有効なdiffが見つかりませんでした',
+        message: '有効なdiff（unified diff形式）が見つかりませんでした。\n' +
+          'ファイルの内容を確認してください。\n' +
+          '文字コードの判定・指定が誤っている可能性もあります。',
+      };
     }
     await computeAllHashes(parsed);
     updateExistingProject(projectId, parsed, text, handle, proj.encoding, encoding, messageEncoding);
+    return { ok: true };
   } catch (err) {
     console.error('Failed to reload file for project', projectId, err);
-    alert(
-      `ファイルの再読み込みに失敗しました:\n${err.message}\n\n` +
-      'ファイルが移動または削除された可能性があります。「📂 Diffファイルを開く」から選び直してください。'
-    );
     if (err.name === 'NotFoundError') {
       await deleteFileHandleRecord(projectId);
       renderProjectList();
     }
+    return {
+      ok: false,
+      reason: `ファイルを読み込めませんでした（${err.message}）`,
+      message: `ファイルの再読み込みに失敗しました:\n${err.message}\n\n` +
+        'ファイルが移動または削除された可能性があります。「📂 Diffファイルを開く」から選び直してください。',
+    };
   }
+}
+
+/**
+ * Reload every project that has a remembered FileSystemFileHandle from disk
+ * (sidebar "🔃 全てのプロジェクトを再読み込み" button). Projects are reloaded
+ * one after another via reloadProjectFileCore(); since each reload goes
+ * through updateExistingProject() (which makes that project current), the
+ * project that was displayed beforehand is re-activated at the end. Results
+ * (and projects skipped for lack of a file reference) are summarized in a
+ * single alert.
+ */
+async function reloadAllProjectFiles() {
+  const projects = loadProjects();
+  if (projects.length === 0) {
+    alert('プロジェクトがありません。');
+    return;
+  }
+  const targets = projects.filter(p => projectIdsWithHandles.has(p.id));
+  const skipped = projects.length - targets.length;
+  if (targets.length === 0) {
+    alert(
+      '再読み込みできるプロジェクトがありません。\n' +
+      'ファイル参照が保存されているプロジェクトのみ再読み込みできます。「📂 Diffファイルを開く」から選び直してください。'
+    );
+    return;
+  }
+
+  const btn = document.getElementById('reload-all-btn');
+  if (btn) btn.disabled = true;
+  const originalId = app.currentProjectId;
+  const failures = [];
+  let succeeded = 0;
+  try {
+    for (const proj of targets) {
+      const result = await reloadProjectFileCore(proj.id);
+      if (result.ok) succeeded++;
+      else if (result.message) failures.push({ proj, reason: result.reason });
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+
+  if (originalId && originalId !== app.currentProjectId && loadProjects().some(p => p.id === originalId)) {
+    await activateProject(originalId);
+  }
+
+  let message = `${succeeded} 件のプロジェクトを再読み込みしました。`;
+  if (skipped > 0) message += `\nファイル参照が保存されていない ${skipped} 件はスキップしました。`;
+  if (failures.length > 0) {
+    message += `\n\n${failures.length} 件の再読み込みに失敗しました:\n` +
+      failures.map(f => `・${f.proj.fileName}（${f.proj.id}）\n  ${f.reason}`).join('\n');
+  }
+  alert(message);
 }

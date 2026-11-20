@@ -146,7 +146,7 @@ test/                ← テスト用 .diff サンプルファイル
 | `js/projects.js` | **Project actions** | プロジェクトの選択・削除（単体 `deleteProject()` / 一括 `deleteProjects()`）・並び替え |
 | `js/projects.js` | **Collection actions** | コレクションの作成・追加・除外・名前変更・解散（`createCollectionFromProjects()` / `addProjectsToCollection()` / `removeProjectsFromCollections()` / `renameCollection()` / `dissolveCollection()`）と、参加時の状態マージ（`mergeStateIntoOwner()`）・除外時の状態／設定コピー（`copyStateToOwner()` / `copyCollectionSettingsToProject()`） |
 | `js/projects.js` | **Conflict modal** | ファイル名衝突ダイアログ |
-| `js/projects.js` | **File loading** | ファイル選択・ドロップ時の読み込み処理 |
+| `js/projects.js` | **File loading** | ファイル選択・ドロップ時の読み込み処理、保存済みファイル参照からの再読み込み（単体 `reloadProjectFile()` / 全プロジェクト一括 `reloadAllProjectFiles()`、共通処理 `reloadProjectFileCore()`） |
 | `js/persistence.js` | **Export / Import** | JSON エクスポート / インポート。UI（ボタン・ファイル入力）は #83 で設定モーダルへ移動したが、データ層のこのセクション自体は移動していない |
 | `js/persistence.js` | **Settings folder** | 設定フォルダへの自動保存・読み込み、自動保存失敗時のトップ警告表示 |
 | `js/events.js` | **Event listeners** | UI イベントの登録（設定モーダルの開閉処理を含む。#61） |
@@ -457,6 +457,8 @@ renderProjectList()
 **コンパクト表示（issue #83）:** 各項目は標準でファイル名・更新時間・（あれば）再読み込みボタンのみを表示し、それ以外（プロジェクトID・文字コード選択・リセット/削除ボタン）は `.proj-details`（`.project-item.expanded` のときだけ `display: block`）に格納されて折りたたまれています。開閉は項目ごとの `▸`/`▾` トグルボタン（`.proj-expand-toggle`）で行い、開閉状態はモジュール変数 `expandedProjectIds`（`Set<projectId>`）が保持します。`localStorage` には保存されない揮発性の UI 状態で、ページを再読み込みするとすべて折りたたみ状態に戻ります。
 
 **外部更新の可視化（issue #83）:** モジュール変数 `projectsWithExternalFileUpdate`（`Set<projectId>`、`checkProjectFileUpdates()` が更新）にプロジェクトIDが含まれる場合、ファイル名の先頭に 🆕 バッジ（`.proj-update-badge`）が付き、再読み込みボタンに `.btn-reload-update` クラスが付いて配色が変わります。いずれもクリックで「🔃 再読み込み」を実行すれば通常の見た目に戻ります（`reloadProjectFile()` → `updateExistingProject()` 経由で `recordProjectFileBaseline()` が呼ばれ、`projectsWithExternalFileUpdate` からも削除されます）。
+
+**全プロジェクトの一括再読み込み:** サイドバーの「📂 Diffファイルを開く」の下にある「🔃 全てのプロジェクトを再読み込み」ボタン（`#reload-all-btn`）は `reloadAllProjectFiles()` を呼び、ファイル参照（`projectIdsWithHandles`）を持つ全プロジェクトを1件ずつ順に `reloadProjectFileCore()`（単体の `reloadProjectFile()` と共通の処理。アラートは出さずに結果を返す）で再読み込みします。各再読み込みは `updateExistingProject()` 経由で対象プロジェクトを表示中にするため、最後に実行前に表示していたプロジェクトを `activateProject()` で表示し直します。結果（成功件数・ファイル参照がなくスキップした件数・失敗したプロジェクトと理由）は最後に1つのアラートでまとめて表示します。実行中はボタンを無効化します。File System Access API が使えない環境ではファイル参照が存在しないため、ボタン自体を非表示にします（`init()`）。
 
 **レビュー進捗バッジ:** 各プロジェクトのファイル名の左に `.proj-progress-badge`（`<span>`）を1つ配置し、`updateProjectProgressBadge(projectId, el)` が中身を描画します。未レビューのハンクが残っていれば残数（`.badge-remaining`、赤系）、diff の全ハンクにレビューステータスが付いていれば ✓（`.badge-complete`、緑系。ハンクが0件の diff も「残りが無い」として ✓ 扱いになります）を表示し、そのプロジェクトの diff テキストが保存されていない、または計算がまだ完了していない（進捗が不明）場合のみバッジ自体を非表示（`hidden`）にします。
 
